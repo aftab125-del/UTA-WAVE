@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.uta.wave.player.WavePlayerState
-import com.uta.wave.ui.theme.CardBorder
+import com.uta.wave.ui.recognizer.BlushRose
 import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.SoftViolet
 import com.uta.wave.ui.theme.TextPrimary
@@ -94,21 +94,35 @@ fun MiniPlayer(
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
         modifier = modifier
     ) {
+        // Frosted Glassmorphism Container
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 4.dp)
-                .shadow(elevation = 12.dp, shape = RoundedCornerShape(28.dp), spotColor = ElectricViolet.copy(alpha = 0.2f))
+                .shadow(
+                    elevation = 18.dp,
+                    shape = RoundedCornerShape(28.dp),
+                    spotColor = Color.Black.copy(alpha = 0.6f)
+                )
                 .clip(RoundedCornerShape(28.dp))
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF2C2233),
-                            Color(0xFF1E1724)
+                            Color(0xD9281C30),
+                            Color(0xBF181120)
                         )
                     )
                 )
-                .border(1.dp, CardBorder.copy(alpha = 0.8f), RoundedCornerShape(28.dp))
+                .border(
+                    1.dp,
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.22f),
+                            Color.White.copy(alpha = 0.06f)
+                        )
+                    ),
+                    RoundedCornerShape(28.dp)
+                )
                 .clickable(onClick = onExpand)
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
@@ -154,9 +168,9 @@ fun MiniPlayer(
                     Box(
                         modifier = Modifier
                             .size(46.dp)
-                            .shadow(4.dp, CircleShape)
+                            .shadow(6.dp, CircleShape)
                             .clip(CircleShape)
-                            .border(1.5.dp, ElectricViolet.copy(alpha = 0.4f), CircleShape),
+                            .border(1.5.dp, BlushRose.copy(alpha = 0.5f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         AsyncImage(
@@ -168,13 +182,13 @@ fun MiniPlayer(
                                 .clip(CircleShape)
                                 .rotate(if (playerState.isPlaying) rotation else 0f)
                         )
-                        // Tiny center vinyl hole dot
+                        // Center vinyl hole dot
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
                                 .clip(CircleShape)
                                 .background(Color(0xFF1B1522))
-                                .border(1.dp, ElectricViolet, CircleShape)
+                                .border(1.dp, BlushRose, CircleShape)
                         )
                     }
 
@@ -207,12 +221,12 @@ fun MiniPlayer(
                         )
                     }
 
-                    // Play/Pause Action Button
+                    // Play/Pause Action Button with BlushRose Glass Accent
                     Box(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(ElectricViolet.copy(alpha = 0.2f))
+                            .background(BlushRose.copy(alpha = 0.2f))
                             .clickable(onClick = onTogglePlayPause),
                         contentAlignment = Alignment.Center
                     ) {
@@ -220,7 +234,7 @@ fun MiniPlayer(
                             playerState.isResolving || playerState.isBuffering -> {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
-                                    color = ElectricViolet,
+                                    color = BlushRose,
                                     strokeWidth = 2.dp
                                 )
                             }
@@ -228,7 +242,7 @@ fun MiniPlayer(
                                 Icon(
                                     imageVector = Icons.Default.Pause,
                                     contentDescription = "Pause",
-                                    tint = ElectricViolet,
+                                    tint = BlushRose,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -236,7 +250,7 @@ fun MiniPlayer(
                                 Icon(
                                     imageVector = Icons.Default.PlayArrow,
                                     contentDescription = "Play",
-                                    tint = ElectricViolet,
+                                    tint = BlushRose,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -276,7 +290,7 @@ fun MiniPlayer(
                             .height(2.dp)
                             .background(
                                 Brush.horizontalGradient(
-                                    colors = listOf(ElectricViolet, Color(0xFFFF75B5))
+                                    colors = listOf(BlushRose, ElectricViolet)
                                 )
                             )
                     )

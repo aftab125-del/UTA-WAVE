@@ -31,18 +31,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -66,12 +64,21 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.player.WavePlayerState
-import com.uta.wave.ui.theme.CardBorder
+import com.uta.wave.ui.recognizer.BlushRose
+import com.uta.wave.ui.recognizer.DarkBlushText
 import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.SoftViolet
 import com.uta.wave.ui.theme.TextMuted
 import com.uta.wave.ui.theme.TextPrimary
-import com.uta.wave.ui.theme.TextSecondary
+
+// Glassmorphism Gradients & Highlights
+val GlassBackgroundBrush = Brush.verticalGradient(
+    listOf(Color(0xD922182B), Color(0xBF140D1C))
+)
+
+val GlassBorderBrush = Brush.verticalGradient(
+    listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.05f))
+)
 
 data class NavTab(
     val index: Int,
@@ -95,7 +102,7 @@ fun FloatingNavBar(
     val tabs = listOf(
         NavTab(0, "Home", Icons.Filled.Home, Icons.Outlined.Home),
         NavTab(1, "Radio", Icons.Filled.Radio, Icons.Outlined.Radio),
-        NavTab(2, "Library", Icons.Filled.QueueMusic, Icons.Outlined.QueueMusic)
+        NavTab(2, "Library", Icons.AutoMirrored.Filled.QueueMusic, Icons.AutoMirrored.Outlined.QueueMusic)
     )
 
     // Infinite rotation for spinning vinyl disk
@@ -127,16 +134,16 @@ fun FloatingNavBar(
             label = "BottomBarModeAnimation"
         ) { merged ->
             if (merged && currentTrack != null) {
-                // COLLAPSED MERGED MODE: [Active Tab Circle] --- [Slim MiniPlayer Pill] --- [Search Circle]
+                // COLLAPSED MERGED MODE WITH GLASSMORPHISM: [Active Tab Circle] --- [Slim MiniPlayer Pill] --- [Search Circle]
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // 1. Left Active Tab Circular FAB
+                    // 1. Left Active Tab Circular FAB (Frosted Glass)
                     val activeIcon = when (selectedTab) {
                         1 -> Icons.Filled.Radio
-                        2 -> Icons.Filled.QueueMusic
+                        2 -> Icons.AutoMirrored.Filled.QueueMusic
                         3 -> Icons.Filled.Search
                         else -> Icons.Filled.Home
                     }
@@ -144,38 +151,34 @@ fun FloatingNavBar(
                     Box(
                         modifier = Modifier
                             .size(50.dp)
-                            .shadow(12.dp, CircleShape, spotColor = ElectricViolet.copy(alpha = 0.3f))
+                            .shadow(14.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.5f))
                             .clip(CircleShape)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xFF271F2E), Color(0xFF1B1522))
-                                )
-                            )
-                            .border(1.dp, ElectricViolet.copy(alpha = 0.5f), CircleShape)
+                            .background(GlassBackgroundBrush)
+                            .border(1.dp, GlassBorderBrush, CircleShape)
                             .clickable(onClick = onExpandBar),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = activeIcon,
                             contentDescription = "Active Tab",
-                            tint = ElectricViolet,
+                            tint = BlushRose,
                             modifier = Modifier.size(24.dp)
                         )
                     }
 
-                    // 2. Center Slim MiniPlayer Capsule Pill
+                    // 2. Center Slim MiniPlayer Capsule Pill (Frosted Glass)
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .height(50.dp)
-                            .shadow(12.dp, RoundedCornerShape(25.dp), spotColor = ElectricViolet.copy(alpha = 0.25f))
+                            .shadow(16.dp, RoundedCornerShape(25.dp), spotColor = Color.Black.copy(alpha = 0.6f))
                             .clip(RoundedCornerShape(25.dp))
                             .background(
                                 Brush.verticalGradient(
-                                    listOf(Color(0xFF2C2233), Color(0xFF1E1724))
+                                    listOf(Color(0xD9281C30), Color(0xBF181120))
                                 )
                             )
-                            .border(1.dp, CardBorder.copy(alpha = 0.8f), RoundedCornerShape(25.dp))
+                            .border(1.dp, GlassBorderBrush, RoundedCornerShape(25.dp))
                             .clickable(onClick = onExpandPlayer)
                     ) {
                         Column {
@@ -191,7 +194,7 @@ fun FloatingNavBar(
                                     modifier = Modifier
                                         .size(36.dp)
                                         .clip(CircleShape)
-                                        .border(1.dp, ElectricViolet.copy(alpha = 0.6f), CircleShape),
+                                        .border(1.dp, BlushRose.copy(alpha = 0.6f), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     AsyncImage(
@@ -203,13 +206,12 @@ fun FloatingNavBar(
                                             .clip(CircleShape)
                                             .rotate(if (playerState.isPlaying) rotation else 0f)
                                     )
-                                    // Spindle center dot
                                     Box(
                                         modifier = Modifier
                                             .size(6.dp)
                                             .clip(CircleShape)
                                             .background(Color(0xFF1B1522))
-                                            .border(0.5.dp, ElectricViolet, CircleShape)
+                                            .border(0.5.dp, BlushRose, CircleShape)
                                     )
                                 }
 
@@ -246,7 +248,7 @@ fun FloatingNavBar(
                                     modifier = Modifier
                                         .size(34.dp)
                                         .clip(CircleShape)
-                                        .background(ElectricViolet.copy(alpha = 0.2f))
+                                        .background(BlushRose.copy(alpha = 0.2f))
                                         .clickable(onClick = onTogglePlayPause),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -254,7 +256,7 @@ fun FloatingNavBar(
                                         playerState.isResolving || playerState.isBuffering -> {
                                             CircularProgressIndicator(
                                                 modifier = Modifier.size(16.dp),
-                                                color = ElectricViolet,
+                                                color = BlushRose,
                                                 strokeWidth = 2.dp
                                             )
                                         }
@@ -262,7 +264,7 @@ fun FloatingNavBar(
                                             Icon(
                                                 imageVector = Icons.Default.Pause,
                                                 contentDescription = "Pause",
-                                                tint = ElectricViolet,
+                                                tint = BlushRose,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -270,7 +272,7 @@ fun FloatingNavBar(
                                             Icon(
                                                 imageVector = Icons.Default.PlayArrow,
                                                 contentDescription = "Play",
-                                                tint = ElectricViolet,
+                                                tint = BlushRose,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -295,7 +297,7 @@ fun FloatingNavBar(
                                         .height(2.dp)
                                         .background(
                                             Brush.horizontalGradient(
-                                                listOf(ElectricViolet, Color(0xFFFF75B5))
+                                                listOf(BlushRose, ElectricViolet)
                                             )
                                         )
                                 )
@@ -303,48 +305,40 @@ fun FloatingNavBar(
                         }
                     }
 
-                    // 3. Right Search Circular FAB
+                    // 3. Right Search Circular FAB (Frosted Glass)
                     Box(
                         modifier = Modifier
                             .size(50.dp)
-                            .shadow(12.dp, CircleShape, spotColor = ElectricViolet.copy(alpha = 0.25f))
+                            .shadow(14.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.5f))
                             .clip(CircleShape)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xFF271F2E), Color(0xFF1B1522))
-                                )
-                            )
-                            .border(1.dp, CardBorder.copy(alpha = 0.6f), CircleShape)
+                            .background(GlassBackgroundBrush)
+                            .border(1.dp, GlassBorderBrush, CircleShape)
                             .clickable { onTabSelected(3) },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (selectedTab == 3) Icons.Filled.Search else Icons.Outlined.Search,
                             contentDescription = "Search",
-                            tint = if (selectedTab == 3) ElectricViolet else TextPrimary,
+                            tint = if (selectedTab == 3) BlushRose else TextPrimary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
                 }
             } else {
-                // EXPANDED MODE: [Left Capsule Pill: Home, Radio, Library] + [Right Circle: Search]
+                // EXPANDED MODE WITH GLASSMORPHISM: [Left Capsule Pill: Home, Radio, Library] + [Right Circle: Search]
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Left Capsule Pill
+                    // Left Capsule Pill (Frosted Glass)
                     Row(
                         modifier = Modifier
                             .height(54.dp)
-                            .shadow(16.dp, RoundedCornerShape(28.dp), spotColor = ElectricViolet.copy(alpha = 0.25f))
+                            .shadow(18.dp, RoundedCornerShape(28.dp), spotColor = Color.Black.copy(alpha = 0.6f))
                             .clip(RoundedCornerShape(28.dp))
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xFF271F2E), Color(0xFF1B1522))
-                                )
-                            )
-                            .border(1.dp, CardBorder.copy(alpha = 0.6f), RoundedCornerShape(28.dp))
+                            .background(GlassBackgroundBrush)
+                            .border(1.dp, GlassBorderBrush, RoundedCornerShape(28.dp))
                             .padding(horizontal = 6.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -352,16 +346,17 @@ fun FloatingNavBar(
                             val isSelected = selectedTab == tab.index
                             val interactionSource = remember { MutableInteractionSource() }
 
-                            val iconTint by animateColorAsState(
-                                targetValue = if (isSelected) ElectricViolet else TextMuted,
-                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                                label = "tabIconTint"
-                            )
-
+                            // Rose pill for active tab, matching Screenshot 1
                             val pillBackground by animateColorAsState(
-                                targetValue = if (isSelected) ElectricViolet.copy(alpha = 0.18f) else Color.Transparent,
+                                targetValue = if (isSelected) BlushRose else Color.Transparent,
                                 animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                                 label = "tabPillBackground"
+                            )
+
+                            val iconTint by animateColorAsState(
+                                targetValue = if (isSelected) DarkBlushText else Color.White.copy(alpha = 0.7f),
+                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                label = "tabIconTint"
                             )
 
                             Box(
@@ -389,7 +384,7 @@ fun FloatingNavBar(
                                     if (isSelected) {
                                         Text(
                                             text = "  ${tab.title}",
-                                            color = TextPrimary,
+                                            color = DarkBlushText,
                                             style = MaterialTheme.typography.labelMedium.copy(
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 12.sp
@@ -401,31 +396,23 @@ fun FloatingNavBar(
                         }
                     }
 
-                    // Right Standalone Circular Search Button
+                    // Right Standalone Circular Search Button (Frosted Glass)
                     val isSearchSelected = selectedTab == 3
-                    val searchBorderColor by animateColorAsState(
-                        targetValue = if (isSearchSelected) ElectricViolet else CardBorder.copy(alpha = 0.6f),
-                        label = "searchBorder"
-                    )
 
                     Box(
                         modifier = Modifier
                             .size(54.dp)
-                            .shadow(16.dp, CircleShape, spotColor = ElectricViolet.copy(alpha = 0.25f))
+                            .shadow(18.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.6f))
                             .clip(CircleShape)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xFF271F2E), Color(0xFF1B1522))
-                                )
-                            )
-                            .border(1.dp, searchBorderColor, CircleShape)
+                            .background(GlassBackgroundBrush)
+                            .border(1.dp, GlassBorderBrush, CircleShape)
                             .clickable { onTabSelected(3) },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (isSearchSelected) Icons.Filled.Search else Icons.Outlined.Search,
                             contentDescription = "Search",
-                            tint = if (isSearchSelected) ElectricViolet else TextPrimary,
+                            tint = if (isSearchSelected) BlushRose else TextPrimary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
