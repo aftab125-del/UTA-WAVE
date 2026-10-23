@@ -1,5 +1,7 @@
 package com.uta.wave.ui.library
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FileDownload
@@ -149,6 +152,8 @@ fun LibraryScreen(
     var newPlaylistName by remember { mutableStateOf("") }
     var ytmLinkInput by remember { mutableStateOf("") }
     var isImportingYtm by remember { mutableStateOf(false) }
+    var ytmImportProgressText by remember { mutableStateOf("") }
+    var ytmCurrentTrackText by remember { mutableStateOf("") }
 
     // Category sub-tabs and sort order
     var selectedSubTab by remember { mutableIntStateOf(0) } // 0: Playlists, 1: Songs, 2: Albums, 3: Artists
@@ -745,6 +750,11 @@ fun LibraryScreen(
                                 .clickable {
                                     showAddBottomSheet = false
                                     isImportOptionsExpanded = false
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                                    if (clipText.contains("youtube.com") || clipText.contains("youtu.be")) {
+                                        ytmLinkInput = clipText.trim()
+                                    }
                                     showYtmDialog = true
                                 }
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -837,7 +847,7 @@ fun LibraryScreen(
                 text = {
                     Column {
                         Text(
-                            text = "Paste the public YouTube Music playlist link below",
+                            text = "Paste the public YouTube or YouTube Music playlist link below:",
                             color = TextSecondary,
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
                         )
@@ -846,9 +856,24 @@ fun LibraryScreen(
                         OutlinedTextField(
                             value = ytmLinkInput,
                             onValueChange = { ytmLinkInput = it },
+                            placeholder = { Text("https://music.youtube.com/playlist?list=...", color = TextMuted, fontSize = 12.sp) },
                             shape = RoundedCornerShape(22.dp),
                             singleLine = true,
                             enabled = !isImportingYtm,
+                            trailingIcon = {
+                                IconButton(
+                                    enabled = !isImportingYtm,
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                        val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                                        if (clipText.isNotBlank()) {
+                                            ytmLinkInput = clipText.trim()
+                                        }
+                                    }
+                                ) {
+                                    Icon(Icons.Default.ContentPaste, contentDescription = "Paste", tint = BlushRose, modifier = Modifier.size(20.dp))
+                                }
+                            },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = BlushRose,
                                 unfocusedBorderColor = BlushRose.copy(alpha = 0.5f),
@@ -861,42 +886,61 @@ fun LibraryScreen(
 
                         if (isImportingYtm) {
                             Spacer(modifier = Modifier.height(12.dp))
-                            Row(
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                CircularProgressIndicator(color = BlushRose, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Importing playlist tracks...", color = TextSecondary, fontSize = 12.sp)
+                                CircularProgressIndicator(color = BlushRose, modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = ytmImportProgressText.ifBlank { "Connecting to YouTube Music..." },
+                                    color = TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (ytmCurrentTrackText.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = ytmCurrentTrackText,
+                                        color = TextSecondary,
+                                        fontSize = 11.sp,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
                     }
                 },
                 confirmButton = {
                     TextButton(
-                        enabled = !isImportingYtm,
+                        enabled = !isImportingYtm && ytmLinkInput.isNotBlank(),
                         onClick = {
-                            if (ytmLinkInput.isNotBlank()) {
-                                isImportingYtm = true
-                                scope.launch {
-                                    val (title, count) = PlaylistImporter.importFromYouTubeMusic(
-                                        context = context,
-                                        playlistUrlOrId = ytmLinkInput.trim()
-                                    )
-                                    isImportingYtm = false
-                                    showYtmDialog = false
-                                    ytmLinkInput = ""
-                                    if (count > 0) {
-                                        Toast.makeText(context, "Imported \"$title\" ($count tracks)!", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        Toast.makeText(context, "Could not import: $title", Toast.LENGTH_LONG).show()
+                            val link = ytmLinkInput.trim()
+                            isImportingYtm = true
+                            ytmImportProgressText = "Connecting to YouTube..."
+                            ytmCurrentTrackText = ""
+                            scope.launch {
+                                val (title, count) = PlaylistImporter.importFromYouTubeMusic(
+                                    context = context,
+                                    playlistUrlOrId = link,
+                                    onProgress = { cur, tot, trackTitle ->
+                                        ytmImportProgressText = "Importing track $cur of $tot..."
+                                        ytmCurrentTrackText = trackTitle
                                     }
+                                )
+                                isImportingYtm = false
+                                showYtmDialog = false
+                                ytmLinkInput = ""
+                                ytmCurrentTrackText = ""
+                                if (count > 0) {
+                                    Toast.makeText(context, "Imported \"$title\" ($count tracks)!", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "Could not import: $title", Toast.LENGTH_LONG).show()
                                 }
                             }
                         }
                     ) {
-                        Text("OK", color = BlushRose, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("Import", color = BlushRose, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 },
                 dismissButton = {

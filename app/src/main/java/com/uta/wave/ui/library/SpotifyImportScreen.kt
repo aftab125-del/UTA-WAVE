@@ -1,5 +1,7 @@
 package com.uta.wave.ui.library
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,7 +24,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.AddLink
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -52,7 +56,6 @@ import androidx.compose.ui.unit.sp
 import com.uta.wave.data.importer.PlaylistImporter
 import com.uta.wave.ui.recognizer.BlushRose
 import com.uta.wave.ui.theme.CardBorder
-import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.ObsidianBackground
 import com.uta.wave.ui.theme.SurfaceDark
 import com.uta.wave.ui.theme.TextMuted
@@ -67,11 +70,26 @@ fun SpotifyImportScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("uta_wave_spotify", Context.MODE_PRIVATE) }
+
+    var connectedUser by remember {
+        mutableStateOf(prefs.getString("connected_username", "Namikaze_aftab") ?: "Namikaze_aftab")
+    }
+    var isConnected by remember {
+        mutableStateOf(prefs.getBoolean("is_connected", true))
+    }
+
+    var showAccountDialog by remember { mutableStateOf(false) }
+    var editUsernameInput by remember { mutableStateOf(connectedUser) }
 
     var showLinkDialog by remember { mutableStateOf(false) }
     var spotifyLinkInput by remember { mutableStateOf("") }
     var isImporting by remember { mutableStateOf(false) }
     var importStatusText by remember { mutableStateOf("") }
+    var currentTrackText by remember { mutableStateOf("") }
+
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showSelectPlaylistsDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -134,10 +152,12 @@ fun SpotifyImportScreen(
                 // 1. Connected as User
                 SpotifyRowItem(
                     icon = Icons.Default.Checklist,
-                    title = "Connected as Namikaze_aftab",
-                    subtitle = "Spotify connection active",
+                    title = if (isConnected) "Connected as $connectedUser" else "Connect Spotify account",
+                    subtitle = if (isConnected) "Spotify connection active" else "Tap to configure Spotify username",
+                    isActive = isConnected,
                     onClick = {
-                        Toast.makeText(context, "Logged in as Namikaze_aftab", Toast.LENGTH_SHORT).show()
+                        editUsernameInput = connectedUser
+                        showAccountDialog = true
                     }
                 )
 
@@ -149,7 +169,7 @@ fun SpotifyImportScreen(
                     title = "Select Spotify playlists",
                     subtitle = "Browse your public playlists",
                     onClick = {
-                        showLinkDialog = true
+                        showSelectPlaylistsDialog = true
                     }
                 )
 
@@ -161,6 +181,12 @@ fun SpotifyImportScreen(
                     title = "Import playlist by link",
                     subtitle = "Paste a Spotify playlist link to import it, even if you don't own the playlist",
                     onClick = {
+                        // Check clipboard for Spotify link automatically
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                        if (clipText.contains("spotify.com") || clipText.contains("spotify.link")) {
+                            spotifyLinkInput = clipText.trim()
+                        }
                         showLinkDialog = true
                     }
                 )
@@ -173,7 +199,7 @@ fun SpotifyImportScreen(
                     title = "Import selected",
                     subtitle = "0 selected",
                     onClick = {
-                        showLinkDialog = true
+                        showSelectPlaylistsDialog = true
                     }
                 )
 
@@ -185,7 +211,7 @@ fun SpotifyImportScreen(
                     title = "Refresh Spotify library",
                     subtitle = "Connect Spotify, choose playlists, and mirror them to local UTA-wave playlists.",
                     onClick = {
-                        Toast.makeText(context, "Spotify library synced", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Spotify library is up to date", Toast.LENGTH_SHORT).show()
                     }
                 )
 
@@ -197,29 +223,47 @@ fun SpotifyImportScreen(
                     title = "Log out",
                     subtitle = "Manage Log out settings",
                     onClick = {
-                        Toast.makeText(context, "Spotify session logged out", Toast.LENGTH_SHORT).show()
+                        showLogoutDialog = true
                     }
                 )
             }
 
             if (isImporting) {
                 Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceDark)
+                        .border(1.dp, BlushRose.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator(color = BlushRose, modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(text = importStatusText, color = TextPrimary, fontSize = 13.sp)
+                    CircularProgressIndicator(color = BlushRose, modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = importStatusText,
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (currentTrackText.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = currentTrackText,
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
 
-        // Paste Spotify Link Dialog
+        // Dialog 1: Paste Spotify Link Dialog
         if (showLinkDialog) {
             AlertDialog(
-                onDismissRequest = { showLinkDialog = false },
+                onDismissRequest = { if (!isImporting) showLinkDialog = false },
                 containerColor = Color(0xFF201824),
                 shape = RoundedCornerShape(24.dp),
                 icon = {
@@ -243,7 +287,7 @@ fun SpotifyImportScreen(
                 text = {
                     Column {
                         Text(
-                            text = "Paste the public Spotify playlist link below:",
+                            text = "Paste any public Spotify playlist link below (or enter 22-char playlist ID):",
                             color = TextSecondary,
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
                         )
@@ -252,6 +296,112 @@ fun SpotifyImportScreen(
                             value = spotifyLinkInput,
                             onValueChange = { spotifyLinkInput = it },
                             placeholder = { Text("https://open.spotify.com/playlist/...", color = TextMuted, fontSize = 12.sp) },
+                            shape = RoundedCornerShape(16.dp),
+                            singleLine = true,
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                        val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                                        if (clipText.isNotBlank()) {
+                                            spotifyLinkInput = clipText.trim()
+                                        }
+                                    }
+                                ) {
+                                    Icon(Icons.Default.ContentPaste, contentDescription = "Paste", tint = BlushRose, modifier = Modifier.size(20.dp))
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BlushRose,
+                                unfocusedBorderColor = CardBorder,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary,
+                                cursorColor = BlushRose
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !isImporting && spotifyLinkInput.isNotBlank(),
+                        onClick = {
+                            val link = spotifyLinkInput.trim()
+                            showLinkDialog = false
+                            isImporting = true
+                            importStatusText = "Connecting to Spotify..."
+                            currentTrackText = ""
+                            scope.launch {
+                                val (title, count) = PlaylistImporter.importFromSpotify(
+                                    context = context,
+                                    spotifyUrlOrId = link,
+                                    onProgress = { cur, tot, trackTitle ->
+                                        importStatusText = "Importing track $cur of $tot..."
+                                        currentTrackText = trackTitle
+                                    }
+                                )
+                                isImporting = false
+                                spotifyLinkInput = ""
+                                currentTrackText = ""
+                                if (count > 0) {
+                                    Toast.makeText(context, "Imported \"$title\" ($count tracks)!", Toast.LENGTH_LONG).show()
+                                    onNavigateBack()
+                                } else {
+                                    Toast.makeText(context, "Import failed: $title", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    ) {
+                        Text("Import", color = BlushRose, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !isImporting,
+                        onClick = { showLinkDialog = false }
+                    ) {
+                        Text("Cancel", color = TextSecondary)
+                    }
+                }
+            )
+        }
+
+        // Dialog 2: Spotify Account Configuration
+        if (showAccountDialog) {
+            AlertDialog(
+                onDismissRequest = { showAccountDialog = false },
+                containerColor = Color(0xFF201824),
+                shape = RoundedCornerShape(24.dp),
+                icon = {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1DB954).copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF1DB954), modifier = Modifier.size(24.dp))
+                    }
+                },
+                title = {
+                    Text(
+                        text = "Spotify Account",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp),
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = "Set your Spotify username or account handle to personalize your library:",
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = editUsernameInput,
+                            onValueChange = { editUsernameInput = it },
+                            placeholder = { Text("e.g. Namikaze_aftab", color = TextMuted, fontSize = 12.sp) },
                             shape = RoundedCornerShape(16.dp),
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
@@ -268,36 +418,139 @@ fun SpotifyImportScreen(
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            if (spotifyLinkInput.isNotBlank()) {
-                                val link = spotifyLinkInput.trim()
-                                showLinkDialog = false
-                                isImporting = true
-                                importStatusText = "Connecting to Spotify..."
-                                scope.launch {
-                                    val (title, count) = PlaylistImporter.importFromSpotify(
-                                        context = context,
-                                        spotifyUrlOrId = link,
-                                        onProgress = { cur, tot ->
-                                            importStatusText = "Importing $cur of $tot tracks..."
-                                        }
-                                    )
-                                    isImporting = false
-                                    spotifyLinkInput = ""
-                                    if (count > 0) {
-                                        Toast.makeText(context, "Imported \"$title\" ($count tracks)!", Toast.LENGTH_LONG).show()
-                                        onNavigateBack()
-                                    } else {
-                                        Toast.makeText(context, "Import failed: $title", Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            }
+                            val newName = editUsernameInput.trim().ifBlank { "User" }
+                            connectedUser = newName
+                            isConnected = true
+                            prefs.edit()
+                                .putString("connected_username", newName)
+                                .putBoolean("is_connected", true)
+                                .apply()
+                            showAccountDialog = false
+                            Toast.makeText(context, "Connected as $newName", Toast.LENGTH_SHORT).show()
                         }
                     ) {
-                        Text("OK", color = BlushRose, fontWeight = FontWeight.Bold)
+                        Text("Save", color = BlushRose, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showLinkDialog = false }) {
+                    TextButton(onClick = { showAccountDialog = false }) {
+                        Text("Cancel", color = TextSecondary)
+                    }
+                }
+            )
+        }
+
+        // Dialog 3: Select Spotify Playlists Dialog
+        if (showSelectPlaylistsDialog) {
+            AlertDialog(
+                onDismissRequest = { showSelectPlaylistsDialog = false },
+                containerColor = Color(0xFF201824),
+                shape = RoundedCornerShape(24.dp),
+                icon = {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(BlushRose.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.PlaylistAdd, contentDescription = null, tint = BlushRose, modifier = Modifier.size(24.dp))
+                    }
+                },
+                title = {
+                    Text(
+                        text = "Select Spotify Playlists",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp),
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = "To import any Spotify playlist directly into UTA-wave without login credentials, use 'Import playlist by link' below.",
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Tip: Open Spotify, open your playlist, tap 'Share' -> 'Copy link', then tap 'Paste Link' below.",
+                            color = TextMuted,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp)
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showSelectPlaylistsDialog = false
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                            if (clipText.contains("spotify.com") || clipText.contains("spotify.link")) {
+                                spotifyLinkInput = clipText.trim()
+                            }
+                            showLinkDialog = true
+                        }
+                    ) {
+                        Text("Paste Link", color = BlushRose, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSelectPlaylistsDialog = false }) {
+                        Text("Close", color = TextSecondary)
+                    }
+                }
+            )
+        }
+
+        // Dialog 4: Logout Confirmation Dialog
+        if (showLogoutDialog) {
+            AlertDialog(
+                onDismissRequest = { showLogoutDialog = false },
+                containerColor = Color(0xFF201824),
+                shape = RoundedCornerShape(24.dp),
+                icon = {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(Color.Red.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(24.dp))
+                    }
+                },
+                title = {
+                    Text(
+                        text = "Log Out from Spotify?",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 17.sp),
+                        color = TextPrimary
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Are you sure you want to disconnect the Spotify account session from UTA-wave?",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            isConnected = false
+                            connectedUser = "Guest"
+                            prefs.edit()
+                                .putBoolean("is_connected", false)
+                                .putString("connected_username", "Guest")
+                                .apply()
+                            showLogoutDialog = false
+                            Toast.makeText(context, "Logged out from Spotify", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("Log Out", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLogoutDialog = false }) {
                         Text("Cancel", color = TextSecondary)
                     }
                 }
@@ -311,6 +564,7 @@ private fun SpotifyRowItem(
     icon: ImageVector,
     title: String,
     subtitle: String,
+    isActive: Boolean = false,
     onClick: () -> Unit
 ) {
     Row(
@@ -320,12 +574,22 @@ private fun SpotifyRowItem(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = title,
-            tint = TextSecondary,
-            modifier = Modifier.size(22.dp)
-        )
+        Box(contentAlignment = Alignment.TopEnd) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = if (isActive) Color(0xFF1DB954) else TextSecondary,
+                modifier = Modifier.size(22.dp)
+            )
+            if (isActive) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF1DB954))
+                )
+            }
+        }
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
