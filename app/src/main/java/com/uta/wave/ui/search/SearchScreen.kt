@@ -20,8 +20,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -41,6 +44,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.uta.wave.data.innertube.InnerTubeClient
@@ -72,13 +78,17 @@ fun SearchScreen(
 
     val innerTubeClient = remember { InnerTubeClient() }
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     var searchJob by remember { mutableStateOf<Job?>(null) }
+
+    val popularTags = listOf("Top 100", "Arijit Singh", "Taylor Swift", "Karan Aujla", "The Weeknd", "Lo-Fi Beats", "EDM Hits", "Bollywood")
 
     fun executeSearch(searchQuery: String) {
         if (searchQuery.isBlank()) return
         query = searchQuery
         suggestions = emptyList()
         isLoading = true
+        focusManager.clearFocus()
         scope.launch {
             results = innerTubeClient.search(searchQuery)
             isLoading = false
@@ -86,11 +96,18 @@ fun SearchScreen(
     }
 
     LaunchedEffect(query) {
-        if (query.length >= 2 && suggestions.isEmpty() && results.isEmpty()) {
+        if (query.trim().length >= 2) {
             searchJob?.cancel()
             searchJob = launch {
-                delay(250)
+                delay(300)
                 suggestions = innerTubeClient.getSearchSuggestions(query)
+                // Also trigger live search after 600ms if results are not already showing for this exact query
+                delay(300)
+                if (query.isNotBlank() && results.isEmpty()) {
+                    isLoading = true
+                    results = innerTubeClient.search(query)
+                    isLoading = false
+                }
             }
         } else if (query.isEmpty()) {
             suggestions = emptyList()
@@ -106,8 +123,11 @@ fun SearchScreen(
         // Search Input Bar
         TextField(
             value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("Search songs, artists, signal...", color = TextMuted) },
+            onValueChange = { 
+                query = it
+                if (it.isEmpty()) results = emptyList()
+            },
+            placeholder = { Text("Search songs, artists, albums...", color = TextMuted) },
             leadingIcon = {
                 Icon(Icons.Default.Search, contentDescription = "Search", tint = ElectricViolet)
             },
@@ -123,6 +143,8 @@ fun SearchScreen(
                 }
             },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { executeSearch(query) }),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = SurfaceElevated,
                 unfocusedContainerColor = SurfaceElevated,
@@ -132,7 +154,7 @@ fun SearchScreen(
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent
             ),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(28.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
@@ -150,7 +172,7 @@ fun SearchScreen(
                 items(suggestions) { item ->
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(18.dp))
                             .background(SurfaceElevated)
                             .clickable { executeSearch(item) }
                             .padding(horizontal = 14.dp, vertical = 8.dp)
@@ -165,7 +187,7 @@ fun SearchScreen(
             }
         }
 
-        // Search Results List
+        // Search Results / Empty State
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
@@ -175,31 +197,72 @@ fun SearchScreen(
                     CircularProgressIndicator(color = ElectricViolet)
                 }
                 results.isEmpty() && query.isNotBlank() && suggestions.isEmpty() -> {
-                    Text("No tracks found", color = TextMuted)
+                    Text("No tracks found for \"$query\"", color = TextMuted)
                 }
                 results.isEmpty() -> {
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 20.dp, vertical = 24.dp),
+                        horizontalAlignment = Alignment.Start
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = TextMuted,
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Search the open signal",
-                            color = TextMuted,
-                            style = MaterialTheme.typography.bodyLarge
+                            text = "QUICK DISCOVERY",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                letterSpacing = 1.5.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = ElectricViolet
                         )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(popularTags) { tag ->
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(SurfaceElevated)
+                                        .clickable { executeSearch(tag) }
+                                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        text = tag,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.Medium,
+                                            fontSize = 13.sp
+                                        ),
+                                        color = TextPrimary
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(36.dp))
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = TextMuted.copy(alpha = 0.5f),
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Search the open universe of music",
+                                color = TextMuted,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
                 }
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 100.dp)
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 150.dp)
                     ) {
                         items(results) { track ->
                             val isFavorite = favoritesList.any { it.id == track.id }

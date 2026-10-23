@@ -12,16 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,24 +23,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.player.PlaybackManager
+import com.uta.wave.ui.components.FloatingNavBar
 import com.uta.wave.ui.components.MiniPlayer
+import com.uta.wave.ui.explore.ChartsScreen
 import com.uta.wave.ui.explore.HomeScreen
 import com.uta.wave.ui.library.LibraryScreen
 import com.uta.wave.ui.player.FullscreenPlayerSheet
 import com.uta.wave.ui.search.SearchScreen
-import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.ObsidianBackground
-import com.uta.wave.ui.theme.SurfaceDark
-import com.uta.wave.ui.theme.TextMuted
 import kotlinx.coroutines.launch
 
 @Composable
@@ -72,55 +60,6 @@ fun WaveApp() {
     val isCurrentTrackFavorite = currentTrack != null && favoritesList.any { it.id == currentTrack.id }
 
     Scaffold(
-        bottomBar = {
-            NavigationBar(
-                containerColor = SurfaceDark,
-                contentColor = ElectricViolet,
-                modifier = Modifier.navigationBarsPadding()
-            ) {
-                NavigationBarItem(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    icon = { Icon(Icons.Default.Explore, contentDescription = "Explore") },
-                    label = { Text("Signal", fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = ElectricViolet,
-                        selectedTextColor = ElectricViolet,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted,
-                        indicatorColor = ElectricViolet.copy(alpha = 0.15f)
-                    )
-                )
-
-                NavigationBarItem(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                    label = { Text("Search", fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = ElectricViolet,
-                        selectedTextColor = ElectricViolet,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted,
-                        indicatorColor = ElectricViolet.copy(alpha = 0.15f)
-                    )
-                )
-
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Library") },
-                    label = { Text("Library", fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = ElectricViolet,
-                        selectedTextColor = ElectricViolet,
-                        unselectedIconColor = TextMuted,
-                        unselectedTextColor = TextMuted,
-                        indicatorColor = ElectricViolet.copy(alpha = 0.15f)
-                    )
-                )
-            }
-        },
         containerColor = ObsidianBackground
     ) { innerPadding ->
         Box(
@@ -128,6 +67,7 @@ fun WaveApp() {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            // Main Screen Content based on selected Tab
             when (selectedTab) {
                 0 -> HomeScreen(
                     currentTrackId = currentTrack?.id,
@@ -139,14 +79,15 @@ fun WaveApp() {
                         scope.launch { localDatabase.toggleFavorite(track) }
                     }
                 )
-                1 -> SearchScreen(
+                1 -> ChartsScreen(
                     currentTrackId = currentTrack?.id,
                     isPlaying = playerState.isPlaying,
                     favoritesList = favoritesList,
                     onPlayTrack = { track, queue -> playbackManager.playTrack(track, queue) },
                     onToggleFavorite = { track ->
                         scope.launch { localDatabase.toggleFavorite(track) }
-                    }
+                    },
+                    onNavigateToSearch = { selectedTab = 3 }
                 )
                 2 -> LibraryScreen(
                     currentTrackId = currentTrack?.id,
@@ -168,20 +109,38 @@ fun WaveApp() {
                         }
                     }
                 )
+                3 -> SearchScreen(
+                    currentTrackId = currentTrack?.id,
+                    isPlaying = playerState.isPlaying,
+                    favoritesList = favoritesList,
+                    onPlayTrack = { track, queue -> playbackManager.playTrack(track, queue) },
+                    onToggleFavorite = { track ->
+                        scope.launch { localDatabase.toggleFavorite(track) }
+                    }
+                )
             }
 
-            // Persistent MiniPlayer
+            // Floating Capsule MiniPlayer (Docks directly above the floating nav bar)
             if (currentTrack != null) {
                 MiniPlayer(
                     playerState = playerState,
                     onExpand = { isPlayerExpanded = true },
                     onTogglePlayPause = { playbackManager.togglePlayPause() },
                     onNext = { playbackManager.next() },
+                    onPrevious = { playbackManager.previous() },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .padding(bottom = 76.dp)
                         .fillMaxWidth()
                 )
             }
+
+            // Floating Capsule Navigation Bar ("Island" Nav at bottom)
+            FloatingNavBar(
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
     }
 
