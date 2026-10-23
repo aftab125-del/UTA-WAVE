@@ -1,5 +1,6 @@
 package com.uta.wave.ui.explore
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,16 +20,31 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.Cast
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +65,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,7 +77,6 @@ import com.uta.wave.ui.theme.CardBorder
 import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.ObsidianBackground
 import com.uta.wave.ui.theme.SoftViolet
-import com.uta.wave.ui.theme.SurfaceContainerHigh
 import com.uta.wave.ui.theme.SurfaceDark
 import com.uta.wave.ui.theme.SurfaceElevated
 import com.uta.wave.ui.theme.TextMuted
@@ -76,22 +92,54 @@ fun HomeScreen(
     recentHistory: List<TrackItem>,
     onPlayTrack: (TrackItem, List<TrackItem>) -> Unit,
     onToggleFavorite: (TrackItem) -> Unit,
+    onNavigateToCharts: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val innerTubeClient = remember { InnerTubeClient() }
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
     var trendingTracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
     var moodTracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
+    var similarTracks1 by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
+    var similarTracks2 by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
     var selectedMood by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
-    val moods = listOf("Romance", "Relax", "Feel good", "Energise", "Workout", "Commute", "Party", "Focus")
+    val moods = listOf("Romance", "Relax", "Feel good", "Energise", "Workout", "Commute", "Party", "Focus", "Sad", "Sleep")
+
+    val genres = listOf(
+        Pair("African", Color(0xFFFF5722)),
+        Pair("Pop", Color(0xFFE91E63)),
+        Pair("Hindi", Color(0xFFFF9800)),
+        Pair("2000s", Color(0xFF9C27B0)),
+        Pair("Folk and acoustic", Color(0xFF4CAF50)),
+        Pair("Country and Americana", Color(0xFF795548)),
+        Pair("1990s", Color(0xFF00BCD4)),
+        Pair("1970s", Color(0xFFFFC107)),
+        Pair("Rock", Color(0xFFF44336)),
+        Pair("Hip Hop", Color(0xFF673AB7))
+    )
 
     LaunchedEffect(Unit) {
-        trendingTracks = innerTubeClient.getTrending()
+        val trending = innerTubeClient.getTrending()
+        trendingTracks = trending
         isLoading = false
+
+        // Load similar artist recommendations in background
+        if (trending.isNotEmpty()) {
+            val artist1 = trending.firstOrNull()?.artist ?: "The Weeknd"
+            val artist2 = trending.getOrNull(4)?.artist ?: "Dua Lipa"
+            scope.launch {
+                similarTracks1 = innerTubeClient.search("$artist1 hits")
+            }
+            scope.launch {
+                similarTracks2 = innerTubeClient.search("$artist2 hits")
+            }
+        }
     }
 
     fun selectMood(mood: String) {
@@ -111,17 +159,20 @@ fun HomeScreen(
     val activeList = if (selectedMood != null && moodTracks.isNotEmpty()) moodTracks else trendingTracks
 
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize()
             .background(ObsidianBackground),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 150.dp)
+        contentPadding = PaddingValues(top = 10.dp, bottom = 140.dp)
     ) {
-        // 1. Header (UTA-wave + Top Action Icons: History, Stats, Cast, Profile)
+        // -------------------------------------------------------------
+        // 1. TOP BAR: "UTA-wave" + Utility Actions (History, Stats, Cast, Avatar)
+        // -------------------------------------------------------------
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -130,48 +181,83 @@ fun HomeScreen(
                     style = MaterialTheme.typography.headlineMedium.copy(
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 26.sp,
-                        letterSpacing = (-0.5).sp
+                        letterSpacing = (-0.6).sp
                     ),
                     color = TextPrimary
                 )
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     IconButton(onClick = onOpenDiagnostics) {
-                        Icon(Icons.Default.BugReport, contentDescription = "Diagnostics", tint = ElectricViolet, modifier = Modifier.size(22.dp))
+                        Icon(
+                            imageVector = Icons.Outlined.BugReport,
+                            contentDescription = "Diagnostics",
+                            tint = ElectricViolet,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    IconButton(onClick = {
+                        Toast.makeText(context, "History: ${recentHistory.size} tracks played", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Outlined.History,
+                            contentDescription = "History",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    IconButton(onClick = onNavigateToCharts) {
+                        Icon(
+                            imageVector = Icons.Outlined.TrendingUp,
+                            contentDescription = "Charts & Stats",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    IconButton(onClick = {
+                        Toast.makeText(context, "Listen Together room ready", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Cast,
+                            contentDescription = "Cast & Listen Together",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                     IconButton(onClick = {}) {
-                        Icon(Icons.Default.History, contentDescription = "History", tint = TextSecondary, modifier = Modifier.size(22.dp))
-                    }
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Default.TrendingUp, contentDescription = "Stats", tint = TextSecondary, modifier = Modifier.size(22.dp))
-                    }
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Default.Cast, contentDescription = "Connect", tint = TextSecondary, modifier = Modifier.size(22.dp))
-                    }
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Default.AccountCircle, contentDescription = "Profile", tint = TextSecondary, modifier = Modifier.size(24.dp))
+                        Icon(
+                            imageVector = Icons.Outlined.AccountCircle,
+                            contentDescription = "Profile",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                 }
             }
         }
 
-        // 2. Horizontal Mood Tags
+        // -------------------------------------------------------------
+        // 2. HORIZONTAL MOOD FILTER CHIPS
+        // -------------------------------------------------------------
         item {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(vertical = 8.dp)
+                modifier = Modifier.padding(vertical = 6.dp)
             ) {
                 items(moods) { mood ->
                     val isMoodActive = selectedMood == mood
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
-                            .background(if (isMoodActive) ElectricViolet else SurfaceElevated)
-                            .border(1.dp, if (isMoodActive) ElectricViolet else CardBorder, RoundedCornerShape(20.dp))
+                            .background(if (isMoodActive) ElectricViolet else Color(0xFF241C2B))
+                            .border(
+                                1.dp,
+                                if (isMoodActive) ElectricViolet else CardBorder.copy(alpha = 0.7f),
+                                RoundedCornerShape(20.dp)
+                            )
                             .clickable { selectMood(mood) }
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
@@ -193,112 +279,153 @@ fun HomeScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(260.dp),
+                        .height(280.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(color = ElectricViolet)
                 }
             }
         } else {
-            // 3. Hero Carousel Banner
+            // -------------------------------------------------------------
+            // 3. HORIZONTAL CENTERED HERO CAROUSEL
+            // -------------------------------------------------------------
             item {
-                if (activeList.isNotEmpty()) {
-                    val heroTrack = activeList.first()
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 10.dp)
-                            .height(170.dp)
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(SurfaceDark)
-                            .border(1.dp, CardBorder, RoundedCornerShape(22.dp))
-                            .clickable { onPlayTrack(heroTrack, activeList) }
-                    ) {
-                        AsyncImage(
-                            model = heroTrack.artworkUrl,
-                            contentDescription = heroTrack.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.matchParentSize()
-                        )
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color.Transparent,
-                                            Color(0xE60F0B12)
-                                        )
-                                    )
-                                )
-                        )
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "FEATURED TRACK",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        letterSpacing = 1.5.sp,
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    color = ElectricViolet
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = heroTrack.title,
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 17.sp
-                                    ),
-                                    color = TextPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = heroTrack.artist,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = SoftViolet,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                val heroItems = activeList.take(5)
+                if (heroItems.isNotEmpty()) {
+                    val pagerState = rememberPagerState(pageCount = { heroItems.size })
 
+                    Column(modifier = Modifier.padding(vertical = 10.dp)) {
+                        HorizontalPager(
+                            state = pagerState,
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            pageSpacing = 12.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                        ) { page ->
+                            val track = heroItems[page]
                             Box(
                                 modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(ElectricViolet),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxSize()
+                                    .shadow(8.dp, RoundedCornerShape(24.dp))
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(SurfaceDark)
+                                    .border(1.dp, CardBorder.copy(alpha = 0.8f), RoundedCornerShape(24.dp))
+                                    .clickable { onPlayTrack(track, activeList) }
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "Play",
-                                    tint = ObsidianBackground,
-                                    modifier = Modifier.size(24.dp)
+                                AsyncImage(
+                                    model = track.artworkUrl,
+                                    contentDescription = track.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.matchParentSize()
                                 )
+
+                                // Gradient Scrim
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    Color.Transparent,
+                                                    Color(0xB3150F1C),
+                                                    Color(0xF0100A15)
+                                                )
+                                            )
+                                        )
+                                )
+
+                                // Pill Tag at Top Left
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(14.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.Black.copy(alpha = 0.55f))
+                                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = selectedMood?.uppercase() ?: "FEATURED MIX",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 10.sp,
+                                            letterSpacing = 1.sp
+                                        ),
+                                        color = ElectricViolet
+                                    )
+                                }
+
+                                // Bottom Track Information & Play Button
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = track.title,
+                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 17.sp
+                                            ),
+                                            color = TextPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = track.artist,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium
+                                            ),
+                                            color = SoftViolet,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .shadow(8.dp, CircleShape, spotColor = ElectricViolet)
+                                            .clip(CircleShape)
+                                            .background(ElectricViolet),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Play",
+                                            tint = ObsidianBackground,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // 4. "MUSIC VIDEOS FOR YOU" / "QUICK PICKS" Grouped Container
+            // -------------------------------------------------------------
+            // 4. "STATION / LISTEN TOGETHER" Grouped Card (4 Tracks + Play all)
+            // -------------------------------------------------------------
             item {
-                val groupTracks = activeList.drop(1).take(4)
-                if (groupTracks.isNotEmpty()) {
+                val stationTracks = activeList.drop(5).take(4)
+                if (stationTracks.isNotEmpty()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
+                            .padding(horizontal = 20.dp, vertical = 10.dp)
+                            .shadow(6.dp, RoundedCornerShape(22.dp))
                             .clip(RoundedCornerShape(22.dp))
                             .background(SurfaceDark)
-                            .border(1.dp, CardBorder, RoundedCornerShape(22.dp))
+                            .border(1.dp, CardBorder.copy(alpha = 0.8f), RoundedCornerShape(22.dp))
                             .padding(14.dp)
                     ) {
                         Row(
@@ -307,21 +434,28 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "MUSIC VIDEOS FOR YOU",
+                                text = "STATION / LISTEN TOGETHER",
                                 style = MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
+                                    letterSpacing = 1.sp,
+                                    fontSize = 12.sp
                                 ),
                                 color = TextMuted
                             )
-                            TextButton(onClick = { onPlayTrack(groupTracks.first(), activeList) }) {
-                                Text("Play all", color = ElectricViolet, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            TextButton(
+                                onClick = { onPlayTrack(stationTracks.first(), activeList) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("Play all", color = ElectricViolet, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        groupTracks.forEach { track ->
+                        stationTracks.forEach { track ->
+                            val isCurrent = track.id == currentTrackId
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -344,14 +478,16 @@ fun HomeScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = track.title,
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                        color = if (track.id == currentTrackId) ElectricViolet else TextPrimary,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold
+                                        ),
+                                        color = if (isCurrent) ElectricViolet else TextPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = track.artist,
-                                        style = MaterialTheme.typography.bodySmall,
+                                        text = "${track.artist} • Station",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                                         color = TextSecondary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -359,7 +495,12 @@ fun HomeScreen(
                                 }
 
                                 IconButton(onClick = { onToggleFavorite(track) }) {
-                                    Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = TextMuted)
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "Options",
+                                        tint = TextMuted,
+                                        modifier = Modifier.size(20.dp)
+                                    )
                                 }
                             }
                         }
@@ -367,23 +508,141 @@ fun HomeScreen(
                 }
             }
 
-            // 5. "SPEED DIAL" 3-Column Square Grid
+            // -------------------------------------------------------------
+            // 5. "MUSIC VIDEOS FOR YOU" (Verified Badge + 4 Rows + Play all)
+            // -------------------------------------------------------------
             item {
-                val speedDialItems = activeList.drop(5).take(9)
+                val videoTracks = activeList.drop(9).take(4)
+                if (videoTracks.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 10.dp)
+                            .shadow(6.dp, RoundedCornerShape(22.dp))
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(SurfaceDark)
+                            .border(1.dp, CardBorder.copy(alpha = 0.8f), RoundedCornerShape(22.dp))
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "MUSIC VIDEOS FOR YOU",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp,
+                                    fontSize = 12.sp
+                                ),
+                                color = TextMuted
+                            )
+                            TextButton(
+                                onClick = { onPlayTrack(videoTracks.first(), activeList) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("Play all", color = ElectricViolet, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        videoTracks.forEach { track ->
+                            val isCurrent = track.id == currentTrackId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onPlayTrack(track, activeList) }
+                                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = track.artworkUrl,
+                                    contentDescription = track.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                )
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = track.title,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold
+                                        ),
+                                        color = if (isCurrent) ElectricViolet else TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = track.artist,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                            color = TextSecondary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.Verified,
+                                            contentDescription = "Verified Artist",
+                                            tint = ElectricViolet,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+                                }
+
+                                IconButton(onClick = { onToggleFavorite(track) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "Options",
+                                        tint = TextMuted,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // 6. "SPEED DIAL" 3-Column Square Grid with Frosted Center Play Button
+            // -------------------------------------------------------------
+            item {
+                val speedDialItems = activeList.drop(13).take(9).ifEmpty { activeList.take(9) }
                 if (speedDialItems.isNotEmpty()) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp, vertical = 12.dp)
                     ) {
-                        Text(
-                            text = "SPEED DIAL",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            ),
-                            color = TextPrimary
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = null,
+                                tint = ElectricViolet,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "SPEED DIAL",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                ),
+                                color = TextPrimary
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(12.dp))
 
@@ -402,7 +661,7 @@ fun HomeScreen(
                                             .aspectRatio(1f)
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(SurfaceDark)
-                                            .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
+                                            .border(1.dp, CardBorder.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
                                             .clickable { onPlayTrack(item, activeList) }
                                     ) {
                                         AsyncImage(
@@ -412,20 +671,21 @@ fun HomeScreen(
                                             modifier = Modifier.matchParentSize()
                                         )
 
+                                        // Dark scrim
                                         Box(
                                             modifier = Modifier
                                                 .matchParentSize()
-                                                .background(Color.Black.copy(alpha = 0.28f))
+                                                .background(Color.Black.copy(alpha = 0.32f))
                                         )
 
-                                        // Centered play pill
+                                        // Centered Frosted Glass Play Button
                                         Box(
                                             modifier = Modifier
                                                 .align(Alignment.Center)
                                                 .size(34.dp)
                                                 .clip(CircleShape)
-                                                .background(Color.Black.copy(alpha = 0.5f))
-                                                .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape),
+                                                .background(Color.Black.copy(alpha = 0.55f))
+                                                .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
@@ -436,7 +696,7 @@ fun HomeScreen(
                                             )
                                         }
 
-                                        // Title overlay at bottom
+                                        // Song title overlay at bottom
                                         Text(
                                             text = item.title,
                                             style = MaterialTheme.typography.labelSmall.copy(
@@ -452,7 +712,6 @@ fun HomeScreen(
                                         )
                                     }
                                 }
-                                // Fill empty slots if last row has less than 3
                                 repeat(3 - rowItems.size) {
                                     Spacer(modifier = Modifier.weight(1f))
                                 }
@@ -462,60 +721,415 @@ fun HomeScreen(
                 }
             }
 
-            // 6. FORGOTTEN FAVORITES / RECENT HISTORY
+            // -------------------------------------------------------------
+            // 7. "Your YouTube Playlists" Rich Gradient Cards
+            // -------------------------------------------------------------
             item {
-                val bottomList = if (recentHistory.isNotEmpty()) recentHistory else activeList.drop(14)
-                if (bottomList.isNotEmpty()) {
-                    Column(modifier = Modifier.padding(top = 10.dp)) {
-                        Text(
-                            text = if (recentHistory.isNotEmpty()) "Forgotten Favorites" else "Recommended Tracks",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = TextPrimary,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                        )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(ElectricViolet.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(22.dp))
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Your YouTube playlists",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                ),
+                                color = TextPrimary
+                            )
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextMuted)
+                    }
 
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 20.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            items(bottomList.take(8)) { track ->
-                                Column(
-                                    modifier = Modifier
-                                        .width(130.dp)
-                                        .clickable { onPlayTrack(track, bottomList) }
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(130.dp)
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(SurfaceDark)
-                                            .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
-                                    ) {
-                                        AsyncImage(
-                                            model = track.artworkUrl,
-                                            contentDescription = track.title,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.matchParentSize()
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Liked music Card (Hot Pink to Deep Violet)
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .width(180.dp)
+                                    .height(130.dp)
+                                    .shadow(8.dp, RoundedCornerShape(20.dp))
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFFFF2E93), Color(0xFF7928CA))
                                         )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                    Text(
-                                        text = track.title,
-                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                        color = TextPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    Text(
-                                        text = track.artist,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = TextSecondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                    .clickable {
+                                        if (favoritesList.isNotEmpty()) {
+                                            onPlayTrack(favoritesList.first(), favoritesList)
+                                        } else {
+                                            Toast.makeText(context, "No liked songs yet", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    .padding(14.dp)
+                            ) {
+                                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                                    Icon(Icons.Default.Favorite, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                                    Column {
+                                        Text("Liked music", color = Color.White, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp))
+                                        Text("Auto playlist • ${favoritesList.size.coerceAtLeast(1)} songs", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp))
+                                    }
+                                }
+                            }
+                        }
+
+                        // Sounds from Shorts Card (Yellow to Coral)
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .width(180.dp)
+                                    .height(130.dp)
+                                    .shadow(8.dp, RoundedCornerShape(20.dp))
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFFFFB703), Color(0xFFFF006E))
+                                        )
+                                    )
+                                    .clickable {
+                                        if (activeList.isNotEmpty()) {
+                                            onPlayTrack(activeList.random(), activeList)
+                                        }
+                                    }
+                                    .padding(14.dp)
+                            ) {
+                                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                                    Column {
+                                        Text("Sounds from Shorts", color = Color.White, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp))
+                                        Text("Auto playlist • 12 songs", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp))
+                                    }
+                                }
+                            }
+                        }
+
+                        // Episodes for Later Card (Indigo to Cyan)
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .width(180.dp)
+                                    .height(130.dp)
+                                    .shadow(8.dp, RoundedCornerShape(20.dp))
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFF3A0CA3), Color(0xFF4CC9F0))
+                                        )
+                                    )
+                                    .clickable {
+                                        Toast.makeText(context, "Episodes playlist loaded", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(14.dp)
+                            ) {
+                                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                                    Icon(Icons.Default.Bookmark, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
+                                    Column {
+                                        Text("Episodes for Later", color = Color.White, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp))
+                                        Text("Auto playlist • 6 episodes", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp))
+                                    }
+                                }
+                            }
+                        }
+
+                        // UTA-wave Favorites Card (Electric Violet to Blue)
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .width(180.dp)
+                                    .height(130.dp)
+                                    .shadow(8.dp, RoundedCornerShape(20.dp))
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(ElectricViolet, Color(0xFF4361EE))
+                                        )
+                                    )
+                                    .clickable {
+                                        if (favoritesList.isNotEmpty()) {
+                                            onPlayTrack(favoritesList.first(), favoritesList)
+                                        }
+                                    }
+                                    .padding(14.dp)
+                            ) {
+                                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                                    Icon(Icons.Default.Star, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                                    Column {
+                                        Text("UTA-wave Favorites", color = Color.White, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp))
+                                        Text("${favoritesList.size} custom tracks", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // 8. "Similar to [Artist]" Horizontal Carousels
+            // -------------------------------------------------------------
+            val artist1Name = activeList.firstOrNull()?.artist ?: "The Weeknd"
+            val artist1Tracks = if (similarTracks1.isNotEmpty()) similarTracks1 else activeList.drop(2).take(8)
+
+            item {
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(
+                                model = artist1Tracks.firstOrNull()?.artworkUrl,
+                                contentDescription = artist1Name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .border(1.dp, ElectricViolet, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Similar to $artist1Name",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                ),
+                                color = TextPrimary
+                            )
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextMuted)
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(artist1Tracks) { track ->
+                            Column(
+                                modifier = Modifier
+                                    .width(135.dp)
+                                    .clickable { onPlayTrack(track, artist1Tracks) }
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(135.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(SurfaceDark)
+                                        .border(1.dp, CardBorder.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
+                                ) {
+                                    AsyncImage(
+                                        model = track.artworkUrl,
+                                        contentDescription = track.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.matchParentSize()
                                     )
                                 }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    text = track.title,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = track.artist,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Second "Similar to [Artist 2]" Carousel
+            val artist2Name = activeList.getOrNull(4)?.artist ?: "Dua Lipa"
+            val artist2Tracks = if (similarTracks2.isNotEmpty()) similarTracks2 else activeList.drop(6).take(8)
+
+            item {
+                Column(modifier = Modifier.padding(top = 16.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AsyncImage(
+                                model = artist2Tracks.firstOrNull()?.artworkUrl,
+                                contentDescription = artist2Name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .border(1.dp, ElectricViolet, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Similar to $artist2Name",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                ),
+                                color = TextPrimary
+                            )
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextMuted)
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(artist2Tracks) { track ->
+                            Column(
+                                modifier = Modifier
+                                    .width(135.dp)
+                                    .clickable { onPlayTrack(track, artist2Tracks) }
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(135.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(SurfaceDark)
+                                        .border(1.dp, CardBorder.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
+                                ) {
+                                    AsyncImage(
+                                        model = track.artworkUrl,
+                                        contentDescription = track.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.matchParentSize()
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    text = track.title,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = track.artist,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // 9. "MOOD AND GENRES" 2-Column Grid
+            // -------------------------------------------------------------
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                ) {
+                    Text(
+                        text = "MOOD AND GENRES",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        ),
+                        color = TextPrimary
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val chunkedGenres = genres.chunked(2)
+                    chunkedGenres.forEach { rowPair ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            rowPair.forEach { (genreName, accentColor) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(56.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(SurfaceDark)
+                                        .border(1.dp, CardBorder.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
+                                        .clickable {
+                                            selectMood(genreName)
+                                            scope.launch {
+                                                listState.animateScrollToItem(0)
+                                            }
+                                        }
+                                        .padding(horizontal = 14.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(4.dp)
+                                                .height(26.dp)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(accentColor)
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = genreName,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            ),
+                                            color = TextPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                            if (rowPair.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
                             }
                         }
                     }

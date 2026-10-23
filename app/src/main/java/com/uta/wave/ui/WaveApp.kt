@@ -23,6 +23,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -57,9 +61,30 @@ fun WaveApp() {
     var selectedTab by remember { mutableIntStateOf(0) }
     var isPlayerExpanded by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }
+    var isBottomBarCollapsed by remember { mutableStateOf(false) }
 
     val currentTrack = playerState.currentTrack
     val isCurrentTrackFavorite = currentTrack != null && favoritesList.any { it.id == currentTrack.id }
+
+    // Scroll Coordinator: Detects scroll direction to dynamically collapse/expand the bottom bar & MiniPlayer
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < -8f) {
+                    // Scrolling down: collapse nav bar and merge MiniPlayer inline
+                    if (!isBottomBarCollapsed) {
+                        isBottomBarCollapsed = true
+                    }
+                } else if (available.y > 8f) {
+                    // Scrolling up: expand nav bar and dock MiniPlayer above
+                    if (isBottomBarCollapsed) {
+                        isBottomBarCollapsed = false
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     Scaffold(
         containerColor = ObsidianBackground
@@ -68,6 +93,7 @@ fun WaveApp() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .nestedScroll(nestedScrollConnection)
         ) {
             // Main Screen Content based on selected Tab
             when (selectedTab) {
@@ -80,6 +106,14 @@ fun WaveApp() {
                     onToggleFavorite = { track ->
                         scope.launch { localDatabase.toggleFavorite(track) }
                     },
+                    onNavigateToCharts = {
+                        selectedTab = 1
+                        isBottomBarCollapsed = false
+                    },
+                    onNavigateToSearch = {
+                        selectedTab = 3
+                        isBottomBarCollapsed = false
+                    },
                     onOpenDiagnostics = { showDiagnostics = true }
                 )
                 1 -> ChartsScreen(
@@ -90,7 +124,10 @@ fun WaveApp() {
                     onToggleFavorite = { track ->
                         scope.launch { localDatabase.toggleFavorite(track) }
                     },
-                    onNavigateToSearch = { selectedTab = 3 }
+                    onNavigateToSearch = {
+                        selectedTab = 3
+                        isBottomBarCollapsed = false
+                    }
                 )
                 2 -> LibraryScreen(
                     currentTrackId = currentTrack?.id,
@@ -123,26 +160,39 @@ fun WaveApp() {
                 )
             }
 
-            // Floating Capsule MiniPlayer (Docks directly above the floating nav bar)
-            if (currentTrack != null) {
+            // 1. Floating Capsule MiniPlayer (Docks directly above the floating nav bar in Expanded Mode)
+            AnimatedVisibility(
+                visible = !isBottomBarCollapsed && currentTrack != null,
+                enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 76.dp)
+                    .fillMaxWidth()
+            ) {
                 MiniPlayer(
                     playerState = playerState,
                     onExpand = { isPlayerExpanded = true },
                     onTogglePlayPause = { playbackManager.togglePlayPause() },
                     onNext = { playbackManager.next() },
                     onPrevious = { playbackManager.previous() },
-                    onOpenDiagnostics = { showDiagnostics = true },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 76.dp)
-                        .fillMaxWidth()
+                    onOpenDiagnostics = { showDiagnostics = true }
                 )
             }
 
-            // Floating Capsule Navigation Bar ("Island" Nav at bottom)
+            // 2. Floating Navigation Bar (Supports both expanded split pill+circle, and collapsed inline merged pill)
             FloatingNavBar(
                 selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it },
+                onTabSelected = {
+                    selectedTab = it
+                    isBottomBarCollapsed = false
+                },
+                isCollapsed = isBottomBarCollapsed,
+                onExpandBar = { isBottomBarCollapsed = false },
+                currentTrack = currentTrack,
+                playerState = playerState,
+                onExpandPlayer = { isPlayerExpanded = true },
+                onTogglePlayPause = { playbackManager.togglePlayPause() },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -165,14 +215,14 @@ fun WaveApp() {
             onTogglePlayPause = { playbackManager.togglePlayPause() },
             onNext = { playbackManager.next() },
             onPrevious = { playbackManager.previous() },
-            onSeekTo = { pos -> playbackManager.seekTo(pos) },
+            onSeekTo = { positionMs -> playbackManager.seekTo(positionMs) },
             onToggleShuffle = { playbackManager.toggleShuffle() },
             onToggleRepeat = { playbackManager.toggleRepeat() },
             onCollapse = { isPlayerExpanded = false }
         )
     }
 
-    // Live Diagnostics BottomSheet
+    // Diagnostic Log & Stream Sheet
     if (showDiagnostics) {
         DiagnosticSheet(
             playerState = playerState,
