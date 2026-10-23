@@ -1,13 +1,16 @@
 package com.uta.wave.player
 
 import android.content.Context
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.uta.wave.data.innertube.InnerTubeClient
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
@@ -26,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap
 class PlaybackManager private constructor(private val context: Context) {
 
     companion object {
+        private const val TAG = "PlaybackManager"
         @Volatile
         private var INSTANCE: PlaybackManager? = null
 
@@ -43,10 +47,18 @@ class PlaybackManager private constructor(private val context: Context) {
     private val streamCache = ConcurrentHashMap<String, Pair<String, Long>>()
     private val STREAM_CACHE_TTL_MS = 2 * 60 * 60 * 1000L // 2 hours
 
-    val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
-        repeatMode = Player.REPEAT_MODE_OFF
-        playWhenReady = true
-    }
+    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+        .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        .setAllowCrossProtocolRedirects(true)
+        .setConnectTimeoutMs(15000)
+        .setReadTimeoutMs(20000)
+
+    val player: ExoPlayer = ExoPlayer.Builder(context)
+        .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpDataSourceFactory))
+        .build().apply {
+            repeatMode = Player.REPEAT_MODE_OFF
+            playWhenReady = true
+        }
 
     private val _state = MutableStateFlow(WavePlayerState())
     val state = _state.asStateFlow()
