@@ -168,10 +168,23 @@ class PlaybackManager private constructor(private val context: Context) {
         resolveJob = scope.launch {
             val videoId = track.videoId
             AppLogger.i("▶ playTrack requested: title=\"${track.title}\", videoId=$videoId")
-            val cached = getCachedStreamUrl(videoId)
 
-            val streamUrl = cached ?: innerTubeClient.resolveStreamUrl(videoId)?.also {
-                setCachedStreamUrl(videoId, it)
+            val localDb = com.uta.wave.data.local.LocalDatabase.getInstance(context)
+            val downloadedPath = localDb.getDownloadPathSync(track.id)
+            val isLocalMedia = track.videoId.startsWith("content://") || track.videoId.startsWith("file://")
+
+            val streamUrl = when {
+                isLocalMedia -> track.videoId
+                downloadedPath != null && java.io.File(downloadedPath).exists() -> {
+                    AppLogger.i("▶ Playing offline downloaded file: $downloadedPath")
+                    android.net.Uri.fromFile(java.io.File(downloadedPath)).toString()
+                }
+                else -> {
+                    val cached = getCachedStreamUrl(videoId)
+                    cached ?: innerTubeClient.resolveStreamUrl(videoId)?.also {
+                        setCachedStreamUrl(videoId, it)
+                    }
+                }
             }
 
             if (streamUrl != null) {
