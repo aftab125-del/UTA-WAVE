@@ -41,6 +41,7 @@ import com.uta.wave.ui.explore.ChartsScreen
 import com.uta.wave.ui.explore.HomeScreen
 import com.uta.wave.ui.library.LibraryScreen
 import com.uta.wave.ui.player.FullscreenPlayerSheet
+import com.uta.wave.ui.recognizer.RecognizeMusicScreen
 import com.uta.wave.ui.search.SearchScreen
 import com.uta.wave.ui.theme.ObsidianBackground
 import kotlinx.coroutines.launch
@@ -116,16 +117,15 @@ fun WaveApp() {
                     },
                     onOpenDiagnostics = { showDiagnostics = true }
                 )
-                1 -> ChartsScreen(
+                1 -> RecognizeMusicScreen(
                     currentTrackId = currentTrack?.id,
                     isPlaying = playerState.isPlaying,
-                    favoritesList = favoritesList,
                     onPlayTrack = { track, queue -> playbackManager.playTrack(track, queue) },
                     onToggleFavorite = { track ->
                         scope.launch { localDatabase.toggleFavorite(track) }
                     },
-                    onNavigateToSearch = {
-                        selectedTab = 3
+                    onNavigateBack = {
+                        selectedTab = 0
                         isBottomBarCollapsed = false
                     }
                 )

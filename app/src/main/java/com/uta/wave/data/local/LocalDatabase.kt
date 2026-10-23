@@ -48,7 +48,11 @@ class LocalDatabase private constructor(context: Context) :
     private val _historyFlow = MutableStateFlow<List<TrackItem>>(emptyList())
     val historyFlow: Flow<List<TrackItem>> = _historyFlow.asStateFlow()
 
+    private val _recognizedFlow = MutableStateFlow<List<TrackItem>>(emptyList())
+    val recognizedFlow: Flow<List<TrackItem>> = _recognizedFlow.asStateFlow()
+
     init {
+        ensureRecognizedTable()
         refreshAllFlows()
     }
 
@@ -125,14 +129,77 @@ class LocalDatabase private constructor(context: Context) :
         // Migration strategy
     }
 
+    private fun ensureRecognizedTable() {
+        try {
+            val db = writableDatabase
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS recognized (
+                    track_id TEXT PRIMARY KEY NOT NULL,
+                    recognized_at INTEGER NOT NULL,
+                    FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_recognized_time ON recognized (recognized_at DESC)")
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
     private fun refreshAllFlows() {
         try {
             _favoritesFlow.value = queryFavoritesSync()
             _playlistsFlow.value = queryPlaylistsSync()
             _historyFlow.value = queryHistorySync()
+            _recognizedFlow.value = queryRecognizedSync()
         } catch (e: Exception) {
             // ignore
         }
+    }
+
+    suspend fun insertRecognizedTrack(track: TrackItem) = withContext(Dispatchers.IO) {
+        insertTrack(track)
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("track_id", track.id)
+            put("recognized_at", System.currentTimeMillis())
+        }
+        db.insertWithOnConflict("recognized", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        refreshAllFlows()
+    }
+
+    private fun queryRecognizedSync(): List<TrackItem> {
+        val tracks = mutableListOf<TrackItem>()
+        val db = readableDatabase
+        val sql = """
+            SELECT t.id, t.video_id, t.title, t.artist, t.album, t.artwork_url, t.duration_seconds, t.is_synced_lyrics
+            FROM tracks t
+            INNER JOIN recognized r ON t.id = r.track_id
+            ORDER BY r.recognized_at DESC
+            LIMIT 50
+        """.trimIndent()
+        try {
+            db.rawQuery(sql, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    tracks.add(
+                        TrackItem(
+                            id = cursor.getString(0),
+                            videoId = cursor.getString(1),
+                            title = cursor.getString(2),
+                            artist = cursor.getString(3),
+                            album = cursor.getString(4),
+                            artworkUrl = cursor.getString(5),
+                            durationSeconds = cursor.getInt(6),
+                            isSynced = cursor.getInt(7) == 1
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return tracks
     }
 
     suspend fun insertTrack(track: TrackItem) = withContext(Dispatchers.IO) {
