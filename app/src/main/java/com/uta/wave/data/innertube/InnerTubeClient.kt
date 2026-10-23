@@ -215,15 +215,28 @@ class InnerTubeClient(
         search(query)
     }
 
+    fun extractYouTubePlaylistId(input: String): String {
+        val trimmed = input.trim()
+        return when {
+            trimmed.contains("list=") -> {
+                trimmed.substringAfter("list=").substringBefore("&").substringBefore("#").substringBefore("\"").trim()
+            }
+            trimmed.contains("/browse/VL") -> {
+                trimmed.substringAfter("/browse/VL").substringBefore("?").substringBefore("&").substringBefore("/").trim()
+            }
+            trimmed.contains("/browse/") -> {
+                trimmed.substringAfter("/browse/").substringBefore("?").substringBefore("&").substringBefore("/").trim()
+            }
+            trimmed.startsWith("VL") -> trimmed.removePrefix("VL").trim()
+            else -> trimmed
+        }
+    }
+
     suspend fun getPlaylist(playlistId: String): Pair<String, List<TrackItem>> = withContext(Dispatchers.IO) {
         refreshVisitorDataIfNeeded()
-        val cleanId = playlistId.trim()
-            .removePrefix("https://music.youtube.com/playlist?list=")
-            .removePrefix("https://www.youtube.com/playlist?list=")
-            .substringBefore("&")
-
+        val cleanId = extractYouTubePlaylistId(playlistId)
         val browseId = if (cleanId.startsWith("VL")) cleanId else "VL$cleanId"
-        AppLogger.i("Fetching playlist browseId: $browseId")
+        AppLogger.i("Fetching playlist cleanId: $cleanId, browseId: $browseId")
 
         try {
             val payload = JSONObject().apply {
@@ -248,15 +261,49 @@ class InnerTubeClient(
                         val tracks = mutableListOf<TrackItem>()
                         parseTracksRecursively(root, tracks)
 
-                        // Extract playlist title if present
-                        var title = "Imported Playlist"
+                        // Extract playlist title
+                        var title = ""
                         try {
-                            val header = root.optJSONObject("header")
-                                ?.optJSONObject("musicResponsiveHeaderRenderer")
-                                ?: root.optJSONObject("header")?.optJSONObject("musicDetailHeaderRenderer")
-                            val titleText = header?.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                            if (!titleText.isNullOrBlank()) title = titleText
-                        } catch (e: Exception) {}
+                            // 1. microformat
+                            title = root.optJSONObject("microformat")
+                                ?.optJSONObject("microformatDataRenderer")
+                                ?.optString("title", "") ?: ""
+
+                            // 2. tabs -> sectionList -> musicResponsiveHeaderRenderer
+                            if (title.isBlank()) {
+                                val tabs = root.optJSONObject("contents")
+                                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                                    ?.optJSONArray("tabs")
+                                val tabContent = tabs?.optJSONObject(0)
+                                    ?.optJSONObject("tabRenderer")
+                                    ?.optJSONObject("content")
+                                    ?.optJSONObject("sectionListRenderer")
+                                    ?.optJSONArray("contents")
+                                title = tabContent?.optJSONObject(0)
+                                    ?.optJSONObject("musicResponsiveHeaderRenderer")
+                                    ?.optJSONObject("title")
+                                    ?.optJSONArray("runs")
+                                    ?.optJSONObject(0)
+                                    ?.optString("text", "") ?: ""
+                            }
+
+                            // 3. header fallback
+                            if (title.isBlank()) {
+                                val header = root.optJSONObject("header")
+                                    ?.optJSONObject("musicResponsiveHeaderRenderer")
+                                    ?: root.optJSONObject("header")?.optJSONObject("musicDetailHeaderRenderer")
+                                title = header?.optJSONObject("title")
+                                    ?.optJSONArray("runs")
+                                    ?.optJSONObject(0)
+                                    ?.optString("text", "") ?: ""
+                            }
+                        } catch (e: Exception) {
+                            AppLogger.w("Could not extract playlist title: ${e.message}")
+                        }
+
+                        if (title.isBlank()) {
+                            title = "Imported Playlist"
+                        }
 
                         if (tracks.isNotEmpty()) {
                             AppLogger.i("Successfully parsed ${tracks.size} tracks from playlist: $title")
@@ -269,7 +316,49 @@ class InnerTubeClient(
             AppLogger.e("Failed to get playlist: ${e.message}", e)
         }
 
-        // Fallback: search for playlist title or query
+        // Fallback 2: If WEB_REMIX returned 0, try standard WEB client for standard YouTube playlists
+        try {
+            AppLogger.i("Trying WEB client fallback for playlist: $browseId")
+            val webPayload = JSONObject().apply {
+                val clientObj = JSONObject().apply {
+                    put("clientName", "WEB")
+                    put("clientVersion", "2.20240101.01.00")
+                    put("hl", "en")
+                    put("gl", "US")
+                }
+                put("context", JSONObject().put("client", clientObj))
+                put("browseId", browseId)
+            }
+            val webReq = Request.Builder()
+                .url("https://www.youtube.com/youtubei/v1/browse")
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .post(webPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(webReq).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val webBody = resp.body?.string()
+                    if (webBody != null) {
+                        val webRoot = JSONObject(webBody)
+                        val webTracks = mutableListOf<TrackItem>()
+                        parseTracksRecursively(webRoot, webTracks)
+                        val webTitle = webRoot.optJSONObject("metadata")
+                            ?.optJSONObject("playlistMetadataRenderer")
+                            ?.optString("title", "YouTube Playlist")
+                            ?: "YouTube Playlist"
+                        if (webTracks.isNotEmpty()) {
+                            AppLogger.i("Successfully parsed ${webTracks.size} tracks via WEB client fallback: $webTitle")
+                            return@withContext Pair(webTitle, webTracks)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.e("WEB fallback failed: ${e.message}", e)
+        }
+
+        // Fallback 3: search for playlist title or query
         val searchFallback = search(cleanId)
         Pair("YouTube Playlist", searchFallback)
     }
@@ -649,12 +738,44 @@ class InnerTubeClient(
         }
     }
 
+    private fun parsePlaylistVideoRenderer(renderer: JSONObject): TrackItem? {
+        val videoId = renderer.optString("videoId")
+        if (videoId.length != 11) return null
+
+        val title = renderer.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: renderer.optJSONObject("title")?.optString("simpleText")
+            ?: "Unknown Title"
+
+        val artist = renderer.optJSONObject("shortBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: "YouTube"
+
+        val duration = renderer.optString("lengthSeconds").toIntOrNull() ?: 0
+        val thumbnail = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+        return TrackItem(
+            id = "youtube:$videoId",
+            videoId = videoId,
+            title = title,
+            artist = artist,
+            artworkUrl = thumbnail,
+            durationSeconds = duration,
+            isSynced = true
+        )
+    }
+
     private fun parseTracksRecursively(json: Any?, outTracks: MutableList<TrackItem>) {
         when (json) {
             is JSONObject -> {
-                val renderer = json.optJSONObject("musicResponsiveListItemRenderer")
-                if (renderer != null) {
-                    val track = parseTrackRenderer(renderer)
+                val musicRenderer = json.optJSONObject("musicResponsiveListItemRenderer")
+                if (musicRenderer != null) {
+                    val track = parseTrackRenderer(musicRenderer)
+                    if (track != null && outTracks.none { it.videoId == track.videoId }) {
+                        outTracks.add(track)
+                    }
+                }
+                val videoRenderer = json.optJSONObject("playlistVideoRenderer")
+                if (videoRenderer != null) {
+                    val track = parsePlaylistVideoRenderer(videoRenderer)
                     if (track != null && outTracks.none { it.videoId == track.videoId }) {
                         outTracks.add(track)
                     }
