@@ -1,6 +1,7 @@
 package com.uta.wave.data.innertube
 
 import android.util.Log
+import com.uta.wave.player.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -55,15 +56,25 @@ class InnerTubeClient(
                     val raw = res.body?.string() ?: return@use
                     if (raw.length > 5) {
                         val json = JSONArray(raw.substring(5))
+                        // The sw.js_data JSON array has visitorData at data[0][7] or in nested array data[0][2]
                         val array0 = json.optJSONArray(0)
+                        val s7 = array0?.optString(7, "")
+                        if (!s7.isNullOrBlank() && s7.startsWith("Cg")) {
+                            cachedVisitorData = s7
+                            hasRefreshedVisitorData = true
+                            AppLogger.i("Refreshed visitorData from sw.js_data (${s7.take(20)}...)")
+                            return@withContext
+                        }
+
                         val array2 = array0?.optJSONArray(2)
                         if (array2 != null) {
                             for (i in 0 until array2.length()) {
                                 val s = array2.optString(i, "")
-                                if (s.startsWith("Cgt")) {
+                                if (s.startsWith("Cg")) {
                                     cachedVisitorData = s
                                     hasRefreshedVisitorData = true
-                                    break
+                                    AppLogger.i("Refreshed visitorData from array2 (${s.take(20)}...)")
+                                    return@withContext
                                 }
                             }
                         }
@@ -71,7 +82,7 @@ class InnerTubeClient(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to refresh visitor data: ${e.message}")
+            AppLogger.w("Failed to refresh visitorData: ${e.message}")
         }
     }
 
@@ -90,14 +101,16 @@ class InnerTubeClient(
 
     suspend fun search(query: String): List<TrackItem> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
+        AppLogger.i("🔍 Searching for: \"$query\"")
         refreshVisitorDataIfNeeded()
 
         // 1. Try with SONGS_PARAM filter
         var results = searchInternal(query.trim(), SONGS_PARAM)
         if (results.isEmpty()) {
-            // 2. Fallback to general search without filter
+            AppLogger.i("Songs filter returned 0, attempting general search fallback...")
             results = searchInternal(query.trim(), null)
         }
+        AppLogger.i("Search for \"$query\" found ${results.size} tracks")
         results
     }
 
@@ -121,12 +134,15 @@ class InnerTubeClient(
                 .build()
 
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return emptyList()
+                if (!response.isSuccessful) {
+                    AppLogger.w("Search HTTP failed: ${response.code} ${response.message}")
+                    return emptyList()
+                }
                 val body = response.body?.string() ?: return emptyList()
                 return parseSearchTracks(JSONObject(body))
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Search error for query: $query", e)
+            AppLogger.e("Search network error for: $query", e)
             return emptyList()
         }
     }
@@ -181,12 +197,15 @@ class InnerTubeClient(
                     val body = response.body?.string()
                     if (body != null) {
                         val parsed = parseBrowseTracks(JSONObject(body))
-                        if (parsed.isNotEmpty()) return@withContext parsed
+                        if (parsed.isNotEmpty()) {
+                            AppLogger.i("Loaded ${parsed.size} trending tracks from FEmusic_charts")
+                            return@withContext parsed
+                        }
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to get trending: ${e.message}")
+            AppLogger.w("Failed to get trending: ${e.message}")
         }
         search("Top Global Hits 2026")
     }
@@ -197,35 +216,46 @@ class InnerTubeClient(
     }
 
     suspend fun resolveStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+        AppLogger.i("🎯 Resolving audio stream for videoId: $videoId")
         refreshVisitorDataIfNeeded()
 
-        // 1. Primary: ANDROID_VR client (1.65.10) with visitorData - returns clean direct audio streams
+        // 1. Primary: VISIONOS client (1.02, Client ID 101) - proven to serve whole unthrottled audio stream without 403
+        val visionResult = tryResolveVisionOS(videoId)
+        if (!visionResult.isNullOrBlank()) {
+            AppLogger.i("✅ Resolved stream via VISIONOS client for $videoId")
+            return@withContext visionResult
+        }
+
+        // 2. Secondary: ANDROID_VR client (1.65.10) with visitorData
+        AppLogger.w("VISIONOS returned no stream, falling back to ANDROID_VR...")
         val vrResult = tryResolveVR(videoId)
         if (!vrResult.isNullOrBlank()) {
+            AppLogger.i("✅ Resolved stream via ANDROID_VR client for $videoId")
             return@withContext vrResult
         }
 
-        // 2. Secondary: TVHTML5 client
-        val tvResult = tryResolveTV(videoId)
-        if (!tvResult.isNullOrBlank()) {
-            return@withContext tvResult
+        // 3. Tertiary: IOS client (19.45.4, Client ID 5)
+        AppLogger.w("ANDROID_VR returned no stream, falling back to IOS...")
+        val iosResult = tryResolveIOS(videoId)
+        if (!iosResult.isNullOrBlank()) {
+            AppLogger.i("✅ Resolved stream via IOS client for $videoId")
+            return@withContext iosResult
         }
 
-        // 3. Fallback: Piped API instance
-        val pipedResult = tryResolvePiped(videoId)
-        if (!pipedResult.isNullOrBlank()) {
-            return@withContext pipedResult
-        }
-
+        AppLogger.e("❌ All stream extractors failed for videoId: $videoId")
         null
     }
 
-    private fun tryResolveVR(videoId: String): String? {
+    private fun tryResolveVisionOS(videoId: String): String? {
         try {
             val payload = JSONObject().apply {
                 val clientObj = JSONObject().apply {
-                    put("clientName", "ANDROID_VR")
-                    put("clientVersion", "1.65.10")
+                    put("clientName", "VISIONOS")
+                    put("clientVersion", "1.02")
+                    put("osName", "visionOS")
+                    put("osVersion", "1.0")
+                    put("deviceMake", "Apple")
+                    put("deviceModel", "RealityDevice14,1")
                     put("hl", "en")
                     put("gl", "US")
                     put("visitorData", cachedVisitorData)
@@ -237,18 +267,23 @@ class InnerTubeClient(
             val request = Request.Builder()
                 .url("https://www.youtube.com/youtubei/v1/player")
                 .addHeader("Content-Type", "application/json")
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15")
+                .addHeader("X-YouTube-Client-Name", "101")
+                .addHeader("X-YouTube-Client-Version", "1.02")
                 .addHeader("X-Goog-Visitor-Id", cachedVisitorData)
-                .addHeader("Origin", "https://music.youtube.com")
-                .addHeader("Referer", "https://music.youtube.com/")
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
 
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
+                if (!response.isSuccessful) {
+                    AppLogger.w("VISIONOS HTTP ${response.code}: ${response.message}")
+                    return null
+                }
                 val body = response.body?.string() ?: return null
                 val json = JSONObject(body)
                 val status = json.optJSONObject("playabilityStatus")?.optString("status", "")
+                val reason = json.optJSONObject("playabilityStatus")?.optString("reason", "")
+                AppLogger.i("VISIONOS playabilityStatus: $status (reason: $reason)")
                 if (status != "OK") return null
 
                 val streamData = json.optJSONObject("streamingData") ?: return null
@@ -275,17 +310,17 @@ class InnerTubeClient(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "VR resolve failed: ${e.message}")
+            AppLogger.w("VISIONOS resolve failed: ${e.message}")
         }
         return null
     }
 
-    private fun tryResolveTV(videoId: String): String? {
+    private fun tryResolveVR(videoId: String): String? {
         try {
             val payload = JSONObject().apply {
                 val clientObj = JSONObject().apply {
-                    put("clientName", "TVHTML5")
-                    put("clientVersion", "7.20230405.08.01")
+                    put("clientName", "ANDROID_VR")
+                    put("clientVersion", "1.65.10")
                     put("hl", "en")
                     put("gl", "US")
                     put("visitorData", cachedVisitorData)
@@ -303,9 +338,77 @@ class InnerTubeClient(
                 .build()
 
             client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    AppLogger.w("ANDROID_VR HTTP ${response.code}: ${response.message}")
+                    return null
+                }
+                val body = response.body?.string() ?: return null
+                val json = JSONObject(body)
+                val status = json.optJSONObject("playabilityStatus")?.optString("status", "")
+                val reason = json.optJSONObject("playabilityStatus")?.optString("reason", "")
+                AppLogger.i("ANDROID_VR playabilityStatus: $status (reason: $reason)")
+                if (status != "OK") return null
+
+                val streamData = json.optJSONObject("streamingData") ?: return null
+                val adaptive = streamData.optJSONArray("adaptiveFormats") ?: JSONArray()
+                
+                for (i in 0 until adaptive.length()) {
+                    val format = adaptive.optJSONObject(i) ?: continue
+                    val mime = format.optString("mimeType", "")
+                    val url = format.optString("url", "")
+                    if (mime.contains("audio/mp4") && url.isNotBlank()) {
+                        return url
+                    }
+                }
+
+                for (i in 0 until adaptive.length()) {
+                    val format = adaptive.optJSONObject(i) ?: continue
+                    val mime = format.optString("mimeType", "")
+                    val url = format.optString("url", "")
+                    if (mime.contains("audio/") && url.isNotBlank()) {
+                        return url
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.w("ANDROID_VR resolve failed: ${e.message}")
+        }
+        return null
+    }
+
+    private fun tryResolveIOS(videoId: String): String? {
+        try {
+            val payload = JSONObject().apply {
+                val clientObj = JSONObject().apply {
+                    put("clientName", "IOS")
+                    put("clientVersion", "19.45.4")
+                    put("deviceMake", "Apple")
+                    put("deviceModel", "iPhone16,2")
+                    put("hl", "en")
+                    put("gl", "US")
+                    put("visitorData", cachedVisitorData)
+                }
+                put("context", JSONObject().put("client", clientObj))
+                put("videoId", videoId)
+            }
+
+            val request = Request.Builder()
+                .url("https://www.youtube.com/youtubei/v1/player")
+                .addHeader("Content-Type", "application/json")
+                .addHeader("User-Agent", "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X; en_US)")
+                .addHeader("X-YouTube-Client-Name", "5")
+                .addHeader("X-YouTube-Client-Version", "19.45.4")
+                .addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return null
                 val body = response.body?.string() ?: return null
                 val json = JSONObject(body)
+                val status = json.optJSONObject("playabilityStatus")?.optString("status", "")
+                if (status != "OK") return null
+
                 val streamData = json.optJSONObject("streamingData") ?: return null
                 val adaptive = streamData.optJSONArray("adaptiveFormats") ?: JSONArray()
                 for (i in 0 until adaptive.length()) {
@@ -318,41 +421,7 @@ class InnerTubeClient(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "TV resolve failed: ${e.message}")
-        }
-        return null
-    }
-
-    private fun tryResolvePiped(videoId: String): String? {
-        val pipedHosts = listOf(
-            "https://pipedapi.kavin.rocks",
-            "https://api.piped.privacydev.net"
-        )
-        for (host in pipedHosts) {
-            try {
-                val request = Request.Builder()
-                    .url("$host/streams/$videoId")
-                    .header("User-Agent", "Mozilla/5.0")
-                    .get()
-                    .build()
-
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: return@use
-                        val json = JSONObject(body)
-                        val audioStreams = json.optJSONArray("audioStreams") ?: JSONArray()
-                        for (i in 0 until audioStreams.length()) {
-                            val stream = audioStreams.optJSONObject(i) ?: continue
-                            val url = stream.optString("url", "")
-                            if (url.isNotBlank()) {
-                                return url
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                // try next
-            }
+            AppLogger.w("IOS resolve failed: ${e.message}")
         }
         return null
     }

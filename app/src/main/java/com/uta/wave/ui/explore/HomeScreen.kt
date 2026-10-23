@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
@@ -75,6 +76,7 @@ fun HomeScreen(
     recentHistory: List<TrackItem>,
     onPlayTrack: (TrackItem, List<TrackItem>) -> Unit,
     onToggleFavorite: (TrackItem) -> Unit,
+    onOpenDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val innerTubeClient = remember { InnerTubeClient() }
@@ -137,6 +139,9 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    IconButton(onClick = onOpenDiagnostics) {
+                        Icon(Icons.Default.BugReport, contentDescription = "Diagnostics", tint = ElectricViolet, modifier = Modifier.size(22.dp))
+                    }
                     IconButton(onClick = {}) {
                         Icon(Icons.Default.History, contentDescription = "History", tint = TextSecondary, modifier = Modifier.size(22.dp))
                     }

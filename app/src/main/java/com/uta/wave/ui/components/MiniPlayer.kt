@@ -69,6 +69,7 @@ fun MiniPlayer(
     onTogglePlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val track = playerState.currentTrack ?: return
@@ -126,6 +127,23 @@ fun MiniPlayer(
                 }
         ) {
             Column {
+                if (playerState.error != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFE53935))
+                            .clickable(onClick = onOpenDiagnostics)
+                            .padding(horizontal = 12.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "⚠️ ${playerState.error} • Tap for details",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

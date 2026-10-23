@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.player.PlaybackManager
+import com.uta.wave.ui.components.DiagnosticSheet
 import com.uta.wave.ui.components.FloatingNavBar
 import com.uta.wave.ui.components.MiniPlayer
 import com.uta.wave.ui.explore.ChartsScreen
@@ -55,6 +56,7 @@ fun WaveApp() {
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var isPlayerExpanded by remember { mutableStateOf(false) }
+    var showDiagnostics by remember { mutableStateOf(false) }
 
     val currentTrack = playerState.currentTrack
     val isCurrentTrackFavorite = currentTrack != null && favoritesList.any { it.id == currentTrack.id }
@@ -77,7 +79,8 @@ fun WaveApp() {
                     onPlayTrack = { track, queue -> playbackManager.playTrack(track, queue) },
                     onToggleFavorite = { track ->
                         scope.launch { localDatabase.toggleFavorite(track) }
-                    }
+                    },
+                    onOpenDiagnostics = { showDiagnostics = true }
                 )
                 1 -> ChartsScreen(
                     currentTrackId = currentTrack?.id,
@@ -128,6 +131,7 @@ fun WaveApp() {
                     onTogglePlayPause = { playbackManager.togglePlayPause() },
                     onNext = { playbackManager.next() },
                     onPrevious = { playbackManager.previous() },
+                    onOpenDiagnostics = { showDiagnostics = true },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 76.dp)
@@ -165,6 +169,14 @@ fun WaveApp() {
             onToggleShuffle = { playbackManager.toggleShuffle() },
             onToggleRepeat = { playbackManager.toggleRepeat() },
             onCollapse = { isPlayerExpanded = false }
+        )
+    }
+
+    // Live Diagnostics BottomSheet
+    if (showDiagnostics) {
+        DiagnosticSheet(
+            playerState = playerState,
+            onDismiss = { showDiagnostics = false }
         )
     }
 }

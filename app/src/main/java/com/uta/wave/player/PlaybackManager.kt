@@ -111,18 +111,18 @@ class PlaybackManager private constructor(private val context: Context) {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                val errMsg = "Playback error (${error.errorCodeName}): ${error.message ?: error.localizedMessage}"
+                AppLogger.e(errMsg, error)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(context, errMsg, android.widget.Toast.LENGTH_LONG).show()
+                }
                 _state.update {
                     it.copy(
                         isPlaying = false,
                         isBuffering = false,
                         isResolving = false,
-                        error = error.localizedMessage ?: "Playback error encountered"
+                        error = errMsg
                     )
-                }
-                // Try advancing to next song if queue available
-                val currentState = _state.value
-                if (currentState.queue.isNotEmpty() && currentState.queueIndex + 1 < currentState.queue.size) {
-                    next()
                 }
             }
         })
@@ -167,6 +167,7 @@ class PlaybackManager private constructor(private val context: Context) {
         resolveJob?.cancel()
         resolveJob = scope.launch {
             val videoId = track.videoId
+            AppLogger.i("▶ playTrack requested: title=\"${track.title}\", videoId=$videoId")
             val cached = getCachedStreamUrl(videoId)
 
             val streamUrl = cached ?: innerTubeClient.resolveStreamUrl(videoId)?.also {
@@ -174,6 +175,7 @@ class PlaybackManager private constructor(private val context: Context) {
             }
 
             if (streamUrl != null) {
+                AppLogger.i("▶ Resolved stream URL (${streamUrl.take(65)}...), setting ExoPlayer...")
                 val mediaMetadata = MediaMetadata.Builder()
                     .setTitle(track.title)
                     .setArtist(track.artist)
@@ -189,6 +191,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 player.setMediaItem(mediaItem)
                 player.prepare()
                 player.play()
+                AppLogger.i("▶ ExoPlayer.prepare() and play() called successfully")
 
                 // Pre-resolve next track if available
                 if (targetIndex + 1 < queue.size) {
@@ -202,11 +205,16 @@ class PlaybackManager private constructor(private val context: Context) {
                     }
                 }
             } else {
+                val errMsg = "Failed to resolve stream for ${track.title} ($videoId)"
+                AppLogger.e(errMsg)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(context, errMsg, android.widget.Toast.LENGTH_LONG).show()
+                }
                 _state.update {
                     it.copy(
                         isResolving = false,
                         isBuffering = false,
-                        error = "Unable to resolve stream for ${track.title}"
+                        error = errMsg
                     )
                 }
             }
