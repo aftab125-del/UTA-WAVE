@@ -1,22 +1,22 @@
 feature,area,priority,original,clone,notes
-Direct InnerTube Music Search,search,must,yes,no,Zero quota consumption via WEB_REMIX endpoint
-Real-time Search Autocomplete Suggestions,search,should,yes,no,Instant autocomplete dropdown on typing
-Filter search by Songs / Artists / Albums,search,should,yes,no,Material 3 filter chips
-Instant CDN Audio Stream Resolution,playback,must,yes,no,VISIONOS and mobile client profile fallback
-ExoPlayer / Media3 Audio Engine,playback,must,yes,no,androidx.media3 implementation
-Background Audio Service,playback,must,yes,no,Foreground MediaSessionService with persistent notification
-Lock Screen Playback Controls & Artwork,playback,must,yes,no,System MediaSession integration
-Persistent Bottom Mini-Player,player,must,yes,no,Glanceable mini-bar with playback toggle and scrub
-Fullscreen Ambient Player,player,must,yes,no,Dynamic canvas blur and rotating album art
-Syllable / Line Synchronized Lyrics,lyrics,must,yes,no,Real-time auto-scrolling with white glow highlight
-Multi-Provider Lyrics Fallback,lyrics,should,yes,no,Cascades LrcLib -> KuGou -> YouLyPlus
-Local Room SQLite Database,storage,must,yes,no,100% offline-ready Room database with zero cloud locks
-Favorites / Liked Songs Tab,library,must,yes,no,Instant toggle heart with persistent storage
-Custom Playlists Creation & Management,library,must,yes,no,Add tracks remove tracks and reorder
-Listening History & Quick Picks,library,must,yes,no,Tracks frequency and play count locally
-Full JSON Library Backup & Restore,library,must,yes,no,Export/import playlists and favorites via SAF picker
-Pure Black OLED Theme,ui,should,yes,no,True #000000 background for battery saving
-Sleep Timer,settings,could,yes,no,Fade out and stop playback after specified minutes
-Playback Speed Controls,settings,could,yes,no,0.5x to 2.0x pitch-preserved playback
-No Cloud Accounts Required,auth,must,yes,no,Complete freedom with zero login friction
-No Cloud Server Storage Required,infra,must,yes,no,Zero Supabase storage quota or server locks
+Direct InnerTube Music Search,search,must,yes,yes,Zero quota consumption via WEB_REMIX endpoint
+Real-time Search Autocomplete Suggestions,search,should,yes,yes,Instant autocomplete dropdown on typing
+Filter search by Songs / Artists / Albums,search,should,yes,yes,Material 3 filter chips
+Instant CDN Audio Stream Resolution,playback,must,yes,yes,VISIONOS and mobile client profile fallback
+ExoPlayer / Media3 Audio Engine,playback,must,yes,yes,androidx.media3 implementation
+Background Audio Service,playback,must,yes,yes,Foreground MediaSessionService with persistent notification
+Lock Screen Playback Controls & Artwork,playback,must,yes,yes,System MediaSession integration
+Persistent Bottom Mini-Player,player,must,yes,yes,Glanceable mini-bar with playback toggle and scrub
+Fullscreen Ambient Player,player,must,yes,yes,Dynamic canvas blur and rotating album art
+Syllable / Line Synchronized Lyrics,lyrics,must,yes,yes,Real-time auto-scrolling with white glow highlight
+Multi-Provider Lyrics Fallback,lyrics,should,yes,yes,LrcLib synced and plain text parsing
+Local Room SQLite Database,storage,must,yes,yes,100% offline-ready SQLite database with zero cloud locks
+Favorites / Liked Songs Tab,library,must,yes,yes,Instant toggle heart with persistent storage
+Custom Playlists Creation & Management,library,must,yes,yes,Add tracks remove tracks and create
+Listening History & Quick Picks,library,must,yes,yes,Tracks frequency and play count locally
+Full JSON Library Backup & Restore,library,must,yes,yes,Export/import playlists and favorites via clipboard/JSON
+Pure Black OLED Theme,ui,should,yes,yes,True #030305 obsidian background
+Sleep Timer,settings,could,yes,no,Scheduled for next minor update
+Playback Speed Controls,settings,could,yes,no,Scheduled for next minor update
+No Cloud Accounts Required,auth,must,yes,yes,Complete freedom with zero login friction
+No Cloud Server Storage Required,infra,must,yes,yes,Zero Supabase storage quota or server locks
