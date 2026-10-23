@@ -215,6 +215,65 @@ class InnerTubeClient(
         search(query)
     }
 
+    suspend fun getPlaylist(playlistId: String): Pair<String, List<TrackItem>> = withContext(Dispatchers.IO) {
+        refreshVisitorDataIfNeeded()
+        val cleanId = playlistId.trim()
+            .removePrefix("https://music.youtube.com/playlist?list=")
+            .removePrefix("https://www.youtube.com/playlist?list=")
+            .substringBefore("&")
+
+        val browseId = if (cleanId.startsWith("VL")) cleanId else "VL$cleanId"
+        AppLogger.i("Fetching playlist browseId: $browseId")
+
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("browseId", browseId)
+            }
+
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/browse")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (body != null) {
+                        val root = JSONObject(body)
+                        val tracks = mutableListOf<TrackItem>()
+                        parseTracksRecursively(root, tracks)
+
+                        // Extract playlist title if present
+                        var title = "Imported Playlist"
+                        try {
+                            val header = root.optJSONObject("header")
+                                ?.optJSONObject("musicResponsiveHeaderRenderer")
+                                ?: root.optJSONObject("header")?.optJSONObject("musicDetailHeaderRenderer")
+                            val titleText = header?.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                            if (!titleText.isNullOrBlank()) title = titleText
+                        } catch (e: Exception) {}
+
+                        if (tracks.isNotEmpty()) {
+                            AppLogger.i("Successfully parsed ${tracks.size} tracks from playlist: $title")
+                            return@withContext Pair(title, tracks)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.e("Failed to get playlist: ${e.message}", e)
+        }
+
+        // Fallback: search for playlist title or query
+        val searchFallback = search(cleanId)
+        Pair("YouTube Playlist", searchFallback)
+    }
+
     suspend fun resolveStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
         AppLogger.i("🎯 Resolving audio stream for videoId: $videoId")
         refreshVisitorDataIfNeeded()
@@ -587,6 +646,30 @@ class InnerTubeClient(
             2 -> parts[0] * 60 + parts[1]
             3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
             else -> 0
+        }
+    }
+
+    private fun parseTracksRecursively(json: Any?, outTracks: MutableList<TrackItem>) {
+        when (json) {
+            is JSONObject -> {
+                val renderer = json.optJSONObject("musicResponsiveListItemRenderer")
+                if (renderer != null) {
+                    val track = parseTrackRenderer(renderer)
+                    if (track != null && outTracks.none { it.videoId == track.videoId }) {
+                        outTracks.add(track)
+                    }
+                }
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    parseTracksRecursively(json.opt(key), outTracks)
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until json.length()) {
+                    parseTracksRecursively(json.opt(i), outTracks)
+                }
+            }
         }
     }
 }

@@ -51,8 +51,12 @@ class LocalDatabase private constructor(context: Context) :
     private val _recognizedFlow = MutableStateFlow<List<TrackItem>>(emptyList())
     val recognizedFlow: Flow<List<TrackItem>> = _recognizedFlow.asStateFlow()
 
+    private val _downloadsFlow = MutableStateFlow<List<TrackItem>>(emptyList())
+    val downloadsFlow: Flow<List<TrackItem>> = _downloadsFlow.asStateFlow()
+
     init {
         ensureRecognizedTable()
+        ensureDownloadsTable()
         refreshAllFlows()
     }
 
@@ -147,15 +151,195 @@ class LocalDatabase private constructor(context: Context) :
         }
     }
 
+    private fun ensureDownloadsTable() {
+        try {
+            val db = writableDatabase
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS downloads (
+                    track_id TEXT PRIMARY KEY NOT NULL,
+                    file_path TEXT NOT NULL,
+                    downloaded_at INTEGER NOT NULL,
+                    file_size_bytes INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_downloads_time ON downloads (downloaded_at DESC)")
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
     private fun refreshAllFlows() {
         try {
             _favoritesFlow.value = queryFavoritesSync()
             _playlistsFlow.value = queryPlaylistsSync()
             _historyFlow.value = queryHistorySync()
             _recognizedFlow.value = queryRecognizedSync()
+            _downloadsFlow.value = queryDownloadsSync()
         } catch (e: Exception) {
             // ignore
         }
+    }
+
+    suspend fun insertDownload(track: TrackItem, filePath: String, fileSizeBytes: Long) = withContext(Dispatchers.IO) {
+        insertTrack(track)
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("track_id", track.id)
+            put("file_path", filePath)
+            put("downloaded_at", System.currentTimeMillis())
+            put("file_size_bytes", fileSizeBytes)
+        }
+        db.insertWithOnConflict("downloads", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        refreshAllFlows()
+    }
+
+    suspend fun deleteDownload(trackId: String) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.delete("downloads", "track_id = ?", arrayOf(trackId))
+        refreshAllFlows()
+    }
+
+    fun isDownloadedSync(trackId: String): Boolean {
+        val db = readableDatabase
+        db.rawQuery("SELECT 1 FROM downloads WHERE track_id = ?", arrayOf(trackId)).use { cursor ->
+            return cursor.moveToFirst()
+        }
+    }
+
+    fun getDownloadPathSync(trackId: String): String? {
+        val db = readableDatabase
+        db.rawQuery("SELECT file_path FROM downloads WHERE track_id = ?", arrayOf(trackId)).use { cursor ->
+            if (cursor.moveToFirst()) return cursor.getString(0)
+        }
+        return null
+    }
+
+    private fun queryDownloadsSync(): List<TrackItem> {
+        val tracks = mutableListOf<TrackItem>()
+        val db = readableDatabase
+        val sql = """
+            SELECT t.id, t.video_id, t.title, t.artist, t.album, t.artwork_url, t.duration_seconds, t.is_synced_lyrics
+            FROM tracks t
+            INNER JOIN downloads d ON t.id = d.track_id
+            ORDER BY d.downloaded_at DESC
+        """.trimIndent()
+        try {
+            db.rawQuery(sql, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    tracks.add(
+                        TrackItem(
+                            id = cursor.getString(0),
+                            videoId = cursor.getString(1),
+                            title = cursor.getString(2),
+                            artist = cursor.getString(3),
+                            album = cursor.getString(4),
+                            artworkUrl = cursor.getString(5),
+                            durationSeconds = cursor.getInt(6),
+                            isSynced = cursor.getInt(7) == 1
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return tracks
+    }
+
+    suspend fun getTop50(): List<TrackItem> = withContext(Dispatchers.IO) {
+        val tracks = mutableListOf<TrackItem>()
+        val db = readableDatabase
+        val sql = """
+            SELECT t.id, t.video_id, t.title, t.artist, t.album, t.artwork_url, t.duration_seconds, t.is_synced_lyrics
+            FROM tracks t
+            INNER JOIN history h ON t.id = h.track_id
+            ORDER BY h.play_count DESC, h.last_played_at DESC
+            LIMIT 50
+        """.trimIndent()
+        try {
+            db.rawQuery(sql, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    tracks.add(
+                        TrackItem(
+                            id = cursor.getString(0),
+                            videoId = cursor.getString(1),
+                            title = cursor.getString(2),
+                            artist = cursor.getString(3),
+                            album = cursor.getString(4),
+                            artworkUrl = cursor.getString(5),
+                            durationSeconds = cursor.getInt(6),
+                            isSynced = cursor.getInt(7) == 1
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        tracks
+    }
+
+    suspend fun getBottom50(): List<TrackItem> = withContext(Dispatchers.IO) {
+        val tracks = mutableListOf<TrackItem>()
+        val db = readableDatabase
+        val sql = """
+            SELECT t.id, t.video_id, t.title, t.artist, t.album, t.artwork_url, t.duration_seconds, t.is_synced_lyrics
+            FROM tracks t
+            INNER JOIN history h ON t.id = h.track_id
+            ORDER BY h.play_count ASC, h.last_played_at ASC
+            LIMIT 50
+        """.trimIndent()
+        try {
+            db.rawQuery(sql, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    tracks.add(
+                        TrackItem(
+                            id = cursor.getString(0),
+                            videoId = cursor.getString(1),
+                            title = cursor.getString(2),
+                            artist = cursor.getString(3),
+                            album = cursor.getString(4),
+                            artworkUrl = cursor.getString(5),
+                            durationSeconds = cursor.getInt(6),
+                            isSynced = cursor.getInt(7) == 1
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        tracks
+    }
+
+    suspend fun getAllTracks(): List<TrackItem> = withContext(Dispatchers.IO) {
+        val tracks = mutableListOf<TrackItem>()
+        val db = readableDatabase
+        val sql = "SELECT id, video_id, title, artist, album, artwork_url, duration_seconds, is_synced_lyrics FROM tracks ORDER BY cached_at DESC LIMIT 100"
+        try {
+            db.rawQuery(sql, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    tracks.add(
+                        TrackItem(
+                            id = cursor.getString(0),
+                            videoId = cursor.getString(1),
+                            title = cursor.getString(2),
+                            artist = cursor.getString(3),
+                            album = cursor.getString(4),
+                            artworkUrl = cursor.getString(5),
+                            durationSeconds = cursor.getInt(6),
+                            isSynced = cursor.getInt(7) == 1
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        tracks
     }
 
     suspend fun insertRecognizedTrack(track: TrackItem) = withContext(Dispatchers.IO) {

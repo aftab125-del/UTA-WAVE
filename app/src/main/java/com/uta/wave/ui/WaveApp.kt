@@ -147,7 +147,8 @@ fun WaveApp() {
                             clipboardManager.setText(AnnotatedString(json))
                             Toast.makeText(context, "Library JSON copied to clipboard!", Toast.LENGTH_LONG).show()
                         }
-                    }
+                    },
+                    onOpenDiagnostics = { showDiagnostics = true }
                 )
                 3 -> SearchScreen(
                     currentTrackId = currentTrack?.id,
