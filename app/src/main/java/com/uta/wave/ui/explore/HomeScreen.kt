@@ -97,6 +97,7 @@ fun HomeScreen(
     onOpenDiagnostics: () -> Unit = {},
     onOpenArtist: (String) -> Unit = {},
     onOpenAlbum: (String) -> Unit = {},
+    onOpenAccount: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -228,10 +229,10 @@ fun HomeScreen(
                             modifier = Modifier.size(22.dp)
                         )
                     }
-                    IconButton(onClick = {}) {
+                    IconButton(onClick = onOpenAccount) {
                         Icon(
                             imageVector = Icons.Outlined.AccountCircle,
-                            contentDescription = "Profile",
+                            contentDescription = "Profile & Settings",
                             tint = TextSecondary,
                             modifier = Modifier.size(24.dp)
                         )

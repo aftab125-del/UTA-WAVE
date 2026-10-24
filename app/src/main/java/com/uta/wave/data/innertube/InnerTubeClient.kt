@@ -32,6 +32,23 @@ class InnerTubeClient(
         private var cachedVisitorData: String = "CgtqVExzZXIxN21sZyiX6-zWBjIKCgJJThIEGgAgS2KrAgqoAkN0c0JDQVVTalFFQjhRWnVacVhJUUk4a1psd1ZkR3k4anl6UlVabUhOczhSaDVrSjVvVGduSVExZDc5QnFjenZtVzlFeGRhMzFPeXZLckVwSG4yQXJTT0hVRVpxTTVvRkpjSmx2RnMyaGtWZkxCY0J1WFVoQWRaUHZMcjhHZW5OQ0I0ZlMxVE5lNi1MRDB2V1VEMGNrX2ZXMFJab0VSNXZtUjFhdVhqV2ZEcHJEQmY4UWl6ZGlxalg0T1JFVGZzdm5SaGFuQkVvQlRKRkFkNnBuVS1BUFJDWW9oZXVNajJQUWxGUkZGWU85N0dva2ZmOFV4VENmRzNnLTE4ZElHVmMwVTdkY2Zhb203djNja0xqRDNKdlhyczZtdVFNUzRRTjJ3MGw3cGtG"
         @Volatile
         private var hasRefreshedVisitorData = false
+
+        @Volatile
+        var authCookie: String? = null
+        @Volatile
+        var authSapisid: String? = null
+
+        fun applyAuthHeaders(builder: okhttp3.Request.Builder) {
+            authCookie?.let { builder.addHeader("Cookie", it) }
+            authSapisid?.let {
+                val timestamp = System.currentTimeMillis() / 1000
+                val input = "$timestamp $it https://music.youtube.com"
+                val md = java.security.MessageDigest.getInstance("SHA-1")
+                val digest = md.digest(input.toByteArray(Charsets.UTF_8))
+                val sha1 = digest.joinToString("") { b -> "%02x".format(b) }
+                builder.addHeader("Authorization", "SAPISIDHASH ${timestamp}_$sha1")
+            }
+        }
     }
 
     private val commonHeaders: Map<String, String> = mapOf(

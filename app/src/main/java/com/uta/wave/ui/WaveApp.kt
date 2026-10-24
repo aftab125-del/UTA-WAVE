@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.player.PlaybackManager
+import com.uta.wave.ui.account.AccountBottomSheet
 import com.uta.wave.ui.album.AlbumScreen
 import com.uta.wave.ui.artist.ArtistScreen
 import com.uta.wave.ui.components.DiagnosticSheet
@@ -50,6 +52,7 @@ import com.uta.wave.ui.player.AmbientModeScreen
 import com.uta.wave.ui.player.FullscreenPlayerSheet
 import com.uta.wave.ui.recognizer.RecognizeMusicScreen
 import com.uta.wave.ui.search.SearchScreen
+import com.uta.wave.ui.settings.SettingsScreen
 import com.uta.wave.ui.theme.ObsidianBackground
 import kotlinx.coroutines.launch
 
@@ -58,8 +61,17 @@ fun WaveApp() {
     val context = LocalContext.current
     val playbackManager = remember { PlaybackManager.getInstance(context) }
     val localDatabase = remember { LocalDatabase.getInstance(context) }
+    val accountManager = remember { com.uta.wave.data.account.AccountManager.getInstance(context) }
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
+
+    LaunchedEffect(Unit) {
+        val profile = accountManager.currentProfile
+        if (profile.isLoggedIn) {
+            com.uta.wave.data.innertube.InnerTubeClient.authCookie = profile.cookie
+            com.uta.wave.data.innertube.InnerTubeClient.authSapisid = profile.sapisid
+        }
+    }
 
     val playerState by playbackManager.state.collectAsState()
     val favoritesList by localDatabase.favoritesFlow.collectAsState(initial = emptyList())
@@ -76,6 +88,8 @@ fun WaveApp() {
     var viewingAlbumId by remember { mutableStateOf<String?>(null) }
     var viewingAlbumArtistHint by remember { mutableStateOf<String?>(null) }
     var isAmbientModeActive by remember { mutableStateOf(false) }
+    var isSettingsOpen by remember { mutableStateOf(false) }
+    var isAccountSheetOpen by remember { mutableStateOf(false) }
 
     val currentTrack = playerState.currentTrack
     val isCurrentTrackFavorite = currentTrack != null && favoritesList.any { it.id == currentTrack.id }
@@ -101,6 +115,9 @@ fun WaveApp() {
     }
 
     // Hardware / Gesture Back Navigation Handlers
+    BackHandler(enabled = isSettingsOpen) {
+        isSettingsOpen = false
+    }
     BackHandler(enabled = isAmbientModeActive) {
         isAmbientModeActive = false
     }
@@ -148,7 +165,8 @@ fun WaveApp() {
                     onOpenAlbum = { albumId ->
                         viewingAlbumId = albumId
                     },
-                    onOpenDiagnostics = { showDiagnostics = true }
+                    onOpenDiagnostics = { showDiagnostics = true },
+                    onOpenAccount = { isAccountSheetOpen = true }
                 )
                 1 -> RecognizeMusicScreen(
                     currentTrackId = currentTrack?.id,
@@ -181,7 +199,8 @@ fun WaveApp() {
                             Toast.makeText(context, "Library JSON copied to clipboard!", Toast.LENGTH_LONG).show()
                         }
                     },
-                    onOpenDiagnostics = { showDiagnostics = true }
+                    onOpenDiagnostics = { showDiagnostics = true },
+                    onOpenAccount = { isAccountSheetOpen = true }
                 )
                 3 -> SearchScreen(
                     currentTrackId = currentTrack?.id,
@@ -355,6 +374,36 @@ fun WaveApp() {
         DiagnosticSheet(
             playerState = playerState,
             onDismiss = { showDiagnostics = false }
+        )
+    }
+
+    // Account Profile Bottom Sheet
+    if (isAccountSheetOpen) {
+        AccountBottomSheet(
+            onDismiss = { isAccountSheetOpen = false },
+            onOpenSettings = {
+                isAccountSheetOpen = false
+                isSettingsOpen = true
+            },
+            onOpenBackup = {
+                isAccountSheetOpen = false
+                scope.launch {
+                    val json = localDatabase.exportJson()
+                    clipboardManager.setText(AnnotatedString(json))
+                    Toast.makeText(context, "Library backup JSON copied to clipboard!", Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+    }
+
+    // Settings Screen Layer
+    AnimatedVisibility(
+        visible = isSettingsOpen,
+        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+    ) {
+        SettingsScreen(
+            onBack = { isSettingsOpen = false }
         )
     }
 }

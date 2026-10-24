@@ -129,6 +129,7 @@ fun LibraryScreen(
     onCreatePlaylist: (String) -> Unit,
     onExportJson: () -> Unit,
     onOpenDiagnostics: () -> Unit = {},
+    onOpenAccount: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -371,8 +372,8 @@ fun LibraryScreen(
                         IconButton(onClick = {}) {
                             Icon(Icons.Outlined.Cast, contentDescription = "Cast", tint = TextSecondary, modifier = Modifier.size(22.dp))
                         }
-                        IconButton(onClick = {}) {
-                            Icon(Icons.Outlined.AccountCircle, contentDescription = "Profile", tint = TextSecondary, modifier = Modifier.size(24.dp))
+                        IconButton(onClick = onOpenAccount) {
+                            Icon(Icons.Outlined.AccountCircle, contentDescription = "Profile & Settings", tint = TextSecondary, modifier = Modifier.size(24.dp))
                         }
                     }
                 }
