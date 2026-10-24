@@ -27,6 +27,8 @@ data class AppSettings(
     val wavyPlayPause: Boolean = true,             // 9-sided rotating wavy cookie play/pause button
     val enableSliderHaptics: Boolean = true,       // Haptic ticks on seek scrub
     val enableSwipeToChangeSong: Boolean = true,   // Swipe left/right on artwork or miniplayer to change song
+    val rotatingThumbnail: Boolean = false,        // Rotating turntable vinyl animation on player artwork
+    val canvasThumbnailAnimation: Boolean = true,  // Animated looping video canvases for songs
     val lyricsAnimation: String = "ALPHABET_V2",   // ALPHABET_V2 (Smooth Letter flow), WORD_BY_WORD
     val ambientCanvasEnabled: Boolean = true,
 
@@ -141,6 +143,8 @@ class UserPreferences private constructor(context: Context) {
             wavyPlayPause = prefs.getBoolean("wavy_play_pause", true),
             enableSliderHaptics = prefs.getBoolean("enable_slider_haptics", true),
             enableSwipeToChangeSong = prefs.getBoolean("enable_swipe_to_change_song", true),
+            rotatingThumbnail = prefs.getBoolean("rotating_thumbnail", false),
+            canvasThumbnailAnimation = prefs.getBoolean("canvas_thumbnail_animation", true),
             lyricsAnimation = prefs.getString("lyrics_animation", "ALPHABET_V2") ?: "ALPHABET_V2",
             ambientCanvasEnabled = prefs.getBoolean("ambient_canvas_enabled", true),
 
@@ -308,6 +312,16 @@ class UserPreferences private constructor(context: Context) {
     fun updateEnableSwipeToChangeSong(enabled: Boolean) {
         prefs.edit().putBoolean("enable_swipe_to_change_song", enabled).apply()
         _settingsFlow.update { it.copy(enableSwipeToChangeSong = enabled) }
+    }
+
+    fun updateRotatingThumbnail(enabled: Boolean) {
+        prefs.edit().putBoolean("rotating_thumbnail", enabled).apply()
+        _settingsFlow.update { it.copy(rotatingThumbnail = enabled) }
+    }
+
+    fun updateCanvasThumbnailAnimation(enabled: Boolean) {
+        prefs.edit().putBoolean("canvas_thumbnail_animation", enabled).apply()
+        _settingsFlow.update { it.copy(canvasThumbnailAnimation = enabled) }
     }
 
     fun updateLyricsAnimation(style: String) {
