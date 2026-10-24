@@ -37,6 +37,10 @@ class InnerTubeClient(
         var authCookie: String? = null
         @Volatile
         var authSapisid: String? = null
+        @Volatile
+        var contentCountry: String = "US"
+        @Volatile
+        var contentLanguage: String = "en"
 
         fun applyAuthHeaders(builder: okhttp3.Request.Builder) {
             authCookie?.let { builder.addHeader("Cookie", it) }
@@ -107,8 +111,8 @@ class InnerTubeClient(
         val clientObj = JSONObject().apply {
             put("clientName", clientName)
             put("clientVersion", clientVersion)
-            put("hl", "en")
-            put("gl", "US")
+            put("hl", contentLanguage)
+            put("gl", if (contentCountry == "GLOBAL") "US" else contentCountry)
             put("visitorData", cachedVisitorData)
         }
         val context = JSONObject()

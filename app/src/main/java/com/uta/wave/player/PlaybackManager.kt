@@ -68,6 +68,16 @@ class PlaybackManager private constructor(private val context: Context) {
 
     init {
         setupPlayerListener()
+        val userPrefs = com.uta.wave.data.preferences.UserPreferences.getInstance(context)
+        scope.launch {
+            userPrefs.settingsFlow.collect { settings ->
+                try {
+                    player.skipSilenceEnabled = settings.skipSilence
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+        }
     }
 
     private fun setupPlayerListener() {
