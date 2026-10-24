@@ -37,10 +37,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.uta.wave.data.preferences.UserPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,6 +76,10 @@ fun MiniPlayer(
     modifier: Modifier = Modifier
 ) {
     val track = playerState.currentTrack ?: return
+    val context = LocalContext.current
+    val userPrefs = remember { UserPreferences.getInstance(context) }
+    val settings by userPrefs.settingsFlow.collectAsState()
+    val isPureBlack = settings.pureBlackMiniPlayer || settings.pureBlack
 
     // Infinite rotation for the vinyl disk when playing
     val infiniteTransition = rememberInfiniteTransition(label = "VinylSpin")
@@ -94,33 +101,46 @@ fun MiniPlayer(
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
         modifier = modifier
     ) {
-        // Frosted Glassmorphism Container
+        // Container: Pure Black AMOLED or Frosted Glassmorphism
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 4.dp)
                 .shadow(
-                    elevation = 18.dp,
+                    elevation = if (isPureBlack) 8.dp else 18.dp,
                     shape = RoundedCornerShape(28.dp),
                     spotColor = Color.Black.copy(alpha = 0.6f)
                 )
                 .clip(RoundedCornerShape(28.dp))
                 .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xD9281C30),
-                            Color(0xBF181120)
+                    if (isPureBlack) {
+                        Brush.linearGradient(listOf(Color.Black, Color.Black))
+                    } else {
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xD9281C30),
+                                Color(0xBF181120)
+                            )
                         )
-                    )
+                    }
                 )
                 .border(
                     1.dp,
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.22f),
-                            Color.White.copy(alpha = 0.06f)
+                    if (isPureBlack) {
+                        Brush.linearGradient(
+                            listOf(
+                                Color.White.copy(alpha = 0.15f),
+                                Color.White.copy(alpha = 0.05f)
+                            )
                         )
-                    ),
+                    } else {
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.White.copy(alpha = 0.22f),
+                                Color.White.copy(alpha = 0.06f)
+                            )
+                        )
+                    },
                     RoundedCornerShape(28.dp)
                 )
                 .clickable(onClick = onExpand)

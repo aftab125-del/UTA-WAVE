@@ -10,8 +10,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 data class AppSettings(
-    // Appearance
-    val themeMode: String = "OBSIDIAN",            // OBSIDIAN (Default), AMOLED, DIM, SYSTEM
+    // Appearance & Themes (EchoMusic Theme & Colors System)
+    val themeMode: String = "OBSIDIAN",            // OBSIDIAN (Default), AMOLED, DIM, SYSTEM, LIGHT
+    val darkMode: String = "ON",                   // AUTO (Follow System), ON (Dark), OFF (Light)
+    val pureBlack: Boolean = false,                // True AMOLED pitch-black
+    val pureBlackMiniPlayer: Boolean = false,      // OLED true black miniplayer
+    val isDynamicPalette: Boolean = true,          // Dynamic color palette
     val accentColorHex: String = "#F2AEC7",        // Blush Pink (#F2AEC7), Violet (#A855F7), Sky Blue (#38BDF8), Emerald (#10B981), Amber (#F59E0B)
     val fontScale: Float = 1.0f,                   // 0.9f, 1.0f, 1.15f
     val miniplayerStyle: String = "FLOATING",      // FLOATING, BOTTOM_ATTACHED
@@ -98,6 +102,10 @@ class UserPreferences private constructor(context: Context) {
     private fun loadSettings(): AppSettings {
         return AppSettings(
             themeMode = prefs.getString("theme_mode", "OBSIDIAN") ?: "OBSIDIAN",
+            darkMode = prefs.getString("dark_mode", "ON") ?: "ON",
+            pureBlack = prefs.getBoolean("pure_black", false),
+            pureBlackMiniPlayer = prefs.getBoolean("pure_black_mini_player", false),
+            isDynamicPalette = prefs.getBoolean("is_dynamic_palette", true),
             accentColorHex = prefs.getString("accent_color_hex", "#F2AEC7") ?: "#F2AEC7",
             fontScale = prefs.getFloat("font_scale", 1.0f),
             miniplayerStyle = prefs.getString("miniplayer_style", "FLOATING") ?: "FLOATING",
@@ -149,15 +157,60 @@ class UserPreferences private constructor(context: Context) {
         )
     }
 
-    // Appearance Updates
+    // Appearance Updates (EchoMusic Theme & Colors)
+    fun updateDarkMode(mode: String) {
+        val calculatedTheme = when (mode) {
+            "OFF" -> "LIGHT"
+            "AUTO" -> "SYSTEM"
+            else -> if (_settingsFlow.value.pureBlack) "AMOLED" else "OBSIDIAN"
+        }
+        prefs.edit()
+            .putString("dark_mode", mode)
+            .putString("theme_mode", calculatedTheme)
+            .apply()
+        _settingsFlow.update { it.copy(darkMode = mode, themeMode = calculatedTheme) }
+    }
+
+    fun updatePureBlack(enabled: Boolean) {
+        val calculatedTheme = if (enabled) "AMOLED" else "OBSIDIAN"
+        prefs.edit()
+            .putBoolean("pure_black", enabled)
+            .putString("theme_mode", calculatedTheme)
+            .apply()
+        _settingsFlow.update { it.copy(pureBlack = enabled, themeMode = calculatedTheme) }
+    }
+
+    fun updatePureBlackMiniPlayer(enabled: Boolean) {
+        prefs.edit().putBoolean("pure_black_mini_player", enabled).apply()
+        _settingsFlow.update { it.copy(pureBlackMiniPlayer = enabled) }
+    }
+
+    fun updateDynamicPalette(enabled: Boolean) {
+        prefs.edit().putBoolean("is_dynamic_palette", enabled).apply()
+        _settingsFlow.update { it.copy(isDynamicPalette = enabled) }
+    }
+
     fun updateThemeMode(theme: String) {
-        prefs.edit().putString("theme_mode", theme).apply()
-        _settingsFlow.update { it.copy(themeMode = theme) }
+        val (dark, amoled) = when (theme) {
+            "LIGHT" -> Pair("OFF", false)
+            "SYSTEM" -> Pair("AUTO", false)
+            "AMOLED" -> Pair("ON", true)
+            else -> Pair("ON", false)
+        }
+        prefs.edit()
+            .putString("theme_mode", theme)
+            .putString("dark_mode", dark)
+            .putBoolean("pure_black", amoled)
+            .apply()
+        _settingsFlow.update { it.copy(themeMode = theme, darkMode = dark, pureBlack = amoled) }
     }
 
     fun updateAccentColor(hex: String) {
-        prefs.edit().putString("accent_color_hex", hex).apply()
-        _settingsFlow.update { it.copy(accentColorHex = hex) }
+        prefs.edit()
+            .putString("accent_color_hex", hex)
+            .putBoolean("is_dynamic_palette", false)
+            .apply()
+        _settingsFlow.update { it.copy(accentColorHex = hex, isDynamicPalette = false) }
     }
 
     fun updateFontScale(scale: Float) {

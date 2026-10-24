@@ -20,6 +20,10 @@ class MainActivity : ComponentActivity() {
             val settings by userPrefs.settingsFlow.collectAsState()
 
             UtaWaveTheme(
+                darkMode = settings.darkMode,
+                pureBlack = settings.pureBlack,
+                accentColorHex = settings.accentColorHex,
+                isDynamicPalette = settings.isDynamicPalette,
                 selectedFont = settings.selectedFont,
                 customFontPath = settings.customFontPath
             ) {

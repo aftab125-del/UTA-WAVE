@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FontDownload
 import com.uta.wave.ui.settings.font.FontSelectionScreen
 import com.uta.wave.ui.settings.icon.AppIconSettingsScreen
+import com.uta.wave.ui.settings.theme.ThemeScreen
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
@@ -155,6 +156,11 @@ fun SettingsScreen(
         return
     }
 
+    if (activeSubSection == "Theme") {
+        ThemeScreen(onBack = { activeSubSection = null })
+        return
+    }
+
     if (activeSubSection == "App Icon") {
         AppIconSettingsScreen(onBack = { activeSubSection = null })
         return
@@ -250,13 +256,33 @@ fun SettingsScreen(
                     }
 
                     // ---------------------------------------------------------
-                    // GROUP 3: Appearance, Player and audio, Listen Together
+                    // GROUP 3: Theme, Appearance, Audio, Listen Together
                     // ---------------------------------------------------------
                     SettingsGroupCard {
+                        val accentColor = remember(settings.accentColorHex) {
+                            try {
+                                Color(android.graphics.Color.parseColor(settings.accentColorHex))
+                            } catch (e: Exception) {
+                                Color(0xFFF2AEC7)
+                            }
+                        }
                         SettingsGroupItem(
                             icon = Icons.Default.Palette,
-                            title = "Appearance",
-                            subtitle = "Themes, colors, and UI layout",
+                            title = "Theme & Colors",
+                            subtitle = when {
+                                settings.pureBlack -> "AMOLED Pure Black"
+                                settings.darkMode == "OFF" -> "Light Mode"
+                                settings.darkMode == "AUTO" -> "Follow System"
+                                else -> "Dark Mode"
+                            },
+                            accentColor = accentColor,
+                            onClick = { activeSubSection = "Theme" }
+                        )
+                        SettingsItemDivider()
+                        SettingsGroupItem(
+                            icon = Icons.Default.Tune,
+                            title = "Appearance & Layout",
+                            subtitle = "Player layout, lyrics, canvas & styles",
                             accentColor = Color(0xFFF2AEC7),
                             onClick = { activeSubSection = "Appearance" }
                         )
@@ -377,6 +403,7 @@ fun SettingsScreen(
                         "Appearance" -> AppearanceSettingsSection(
                             userPrefs,
                             settings,
+                            onNavigateToTheme = { activeSubSection = "Theme" },
                             onNavigateToAppIcon = { activeSubSection = "App Icon" },
                             onNavigateToAppFont = { activeSubSection = "App Font" }
                         )
@@ -540,9 +567,85 @@ private fun AIHubSettingsSection(prefs: UserPreferences, settings: AppSettings) 
 private fun AppearanceSettingsSection(
     prefs: UserPreferences,
     settings: AppSettings,
+    onNavigateToTheme: () -> Unit = {},
     onNavigateToAppIcon: () -> Unit = {},
     onNavigateToAppFont: () -> Unit = {}
 ) {
+    val currentAccent = remember(settings.accentColorHex) {
+        try {
+            Color(android.graphics.Color.parseColor(settings.accentColorHex))
+        } catch (e: Exception) {
+            Color(0xFFF2AEC7)
+        }
+    }
+
+    SectionHeader("Theme & Dynamic Colors")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+            .clickable(onClick = onNavigateToTheme)
+            .padding(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(currentAccent.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Palette,
+                        contentDescription = null,
+                        tint = currentAccent,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Customize Theme & Colors",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        ),
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = when {
+                            settings.pureBlack -> "AMOLED Pure Black • OLED power saving"
+                            settings.darkMode == "OFF" -> "Light Theme • Custom palette"
+                            settings.darkMode == "AUTO" -> "Following System Theme"
+                            else -> "Obsidian Dark • Custom palette"
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = Color.White.copy(alpha = 0.60f)
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.35f),
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
     SectionHeader("App Launcher Icon")
 
     Column(
@@ -760,7 +863,6 @@ private fun AppearanceSettingsSection(
     Spacer(modifier = Modifier.height(14.dp))
     SectionHeader("Live Accent Preview")
 
-    val currentAccent = Color(android.graphics.Color.parseColor(settings.accentColorHex))
     Box(
         modifier = Modifier
             .fillMaxWidth()
