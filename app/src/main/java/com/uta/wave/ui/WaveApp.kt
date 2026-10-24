@@ -1,10 +1,13 @@
 package com.uta.wave.ui
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -34,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.player.PlaybackManager
+import com.uta.wave.ui.album.AlbumScreen
+import com.uta.wave.ui.artist.ArtistScreen
 import com.uta.wave.ui.components.DiagnosticSheet
 import com.uta.wave.ui.components.FloatingNavBar
 import com.uta.wave.ui.components.MiniPlayer
@@ -64,6 +69,11 @@ fun WaveApp() {
     var showDiagnostics by remember { mutableStateOf(false) }
     var isBottomBarCollapsed by remember { mutableStateOf(false) }
 
+    // Artist & Album Viewing Navigation Stack
+    var viewingArtistId by remember { mutableStateOf<String?>(null) }
+    var viewingAlbumId by remember { mutableStateOf<String?>(null) }
+    var viewingAlbumArtistHint by remember { mutableStateOf<String?>(null) }
+
     val currentTrack = playerState.currentTrack
     val isCurrentTrackFavorite = currentTrack != null && favoritesList.any { it.id == currentTrack.id }
 
@@ -85,6 +95,17 @@ fun WaveApp() {
                 return Offset.Zero
             }
         }
+    }
+
+    // Hardware / Gesture Back Navigation Handlers
+    BackHandler(enabled = isPlayerExpanded) {
+        isPlayerExpanded = false
+    }
+    BackHandler(enabled = viewingAlbumId != null) {
+        viewingAlbumId = null
+    }
+    BackHandler(enabled = viewingArtistId != null) {
+        viewingArtistId = null
     }
 
     Scaffold(
@@ -114,6 +135,12 @@ fun WaveApp() {
                     onNavigateToSearch = {
                         selectedTab = 3
                         isBottomBarCollapsed = false
+                    },
+                    onOpenArtist = { artistId ->
+                        viewingArtistId = artistId
+                    },
+                    onOpenAlbum = { albumId ->
+                        viewingAlbumId = albumId
                     },
                     onOpenDiagnostics = { showDiagnostics = true }
                 )
@@ -230,12 +257,13 @@ fun WaveApp() {
                 }
             },
             onViewArtist = { artistName ->
-                selectedTab = 3
                 isPlayerExpanded = false
+                viewingArtistId = currentTrack?.artistId ?: artistName
             },
             onViewAlbum = { albumName ->
-                selectedTab = 3
                 isPlayerExpanded = false
+                viewingAlbumId = currentTrack?.albumId ?: (currentTrack?.album ?: albumName)
+                viewingAlbumArtistHint = currentTrack?.artist
             },
             playlists = playlists,
             onCreatePlaylist = { name ->
@@ -245,6 +273,52 @@ fun WaveApp() {
                 scope.launch { localDatabase.addTrackToPlaylist(playlistId, track) }
             }
         )
+    }
+
+    // Artist Profile Screen Layer
+    AnimatedVisibility(
+        visible = viewingArtistId != null,
+        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+    ) {
+        viewingArtistId?.let { artistTarget ->
+            ArtistScreen(
+                artistIdOrName = artistTarget,
+                currentTrackId = currentTrack?.id,
+                isPlaying = playerState.isPlaying,
+                favoritesList = favoritesList,
+                onPlayTrack = { track, queue -> playbackManager.playTrack(track, queue) },
+                onToggleFavorite = { track ->
+                    scope.launch { localDatabase.toggleFavorite(track) }
+                },
+                onOpenAlbum = { albumId -> viewingAlbumId = albumId },
+                onOpenArtist = { artistId -> viewingArtistId = artistId },
+                onBack = { viewingArtistId = null }
+            )
+        }
+    }
+
+    // Album Tracklist Screen Layer
+    AnimatedVisibility(
+        visible = viewingAlbumId != null,
+        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+    ) {
+        viewingAlbumId?.let { albumTarget ->
+            AlbumScreen(
+                albumIdOrName = albumTarget,
+                artistNameHint = viewingAlbumArtistHint ?: currentTrack?.artist,
+                currentTrackId = currentTrack?.id,
+                isPlaying = playerState.isPlaying,
+                favoritesList = favoritesList,
+                onPlayTrack = { track, queue -> playbackManager.playTrack(track, queue) },
+                onToggleFavorite = { track ->
+                    scope.launch { localDatabase.toggleFavorite(track) }
+                },
+                onOpenArtist = { artistId -> viewingArtistId = artistId },
+                onBack = { viewingAlbumId = null }
+            )
+        }
     }
 
     // Diagnostic Log & Stream Sheet
