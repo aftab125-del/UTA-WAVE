@@ -90,6 +90,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.uta.wave.data.account.AccountManager
 import com.uta.wave.data.downloads.AudioDownloadManager
 import com.uta.wave.data.importer.PlaylistImporter
 import com.uta.wave.data.innertube.TrackItem
@@ -130,11 +132,14 @@ fun LibraryScreen(
     onExportJson: () -> Unit,
     onOpenDiagnostics: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
+    onOpenListeningSummary: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val localDatabase = remember { LocalDatabase.getInstance(context) }
+    val accountManager = remember { AccountManager.getInstance(context) }
+    val userProfile by accountManager.profileFlow.collectAsState()
     val downloadManager = remember { AudioDownloadManager.getInstance(context) }
 
     val downloadedTracks by localDatabase.downloadsFlow.collectAsState(initial = emptyList())
@@ -363,8 +368,8 @@ fun LibraryScreen(
                         IconButton(onClick = onOpenDiagnostics) {
                             Icon(Icons.Default.BugReport, contentDescription = "Diagnostics", tint = ElectricViolet, modifier = Modifier.size(22.dp))
                         }
-                        IconButton(onClick = {}) {
-                            Icon(Icons.Outlined.History, contentDescription = "History", tint = TextSecondary, modifier = Modifier.size(22.dp))
+                        IconButton(onClick = onOpenListeningSummary) {
+                            Icon(Icons.Outlined.History, contentDescription = "Listening Summary & History", tint = TextSecondary, modifier = Modifier.size(22.dp))
                         }
                         IconButton(onClick = {}) {
                             Icon(Icons.Outlined.TrendingUp, contentDescription = "Stats", tint = TextSecondary, modifier = Modifier.size(22.dp))
@@ -372,8 +377,20 @@ fun LibraryScreen(
                         IconButton(onClick = {}) {
                             Icon(Icons.Outlined.Cast, contentDescription = "Cast", tint = TextSecondary, modifier = Modifier.size(22.dp))
                         }
-                        IconButton(onClick = onOpenAccount) {
-                            Icon(Icons.Outlined.AccountCircle, contentDescription = "Profile & Settings", tint = TextSecondary, modifier = Modifier.size(24.dp))
+                        if (!userProfile.avatarUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = userProfile.avatarUrl,
+                                contentDescription = "Profile & Settings",
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .border(1.5.dp, Color(0xFFF2AEC7).copy(alpha = 0.6f), CircleShape)
+                                    .clickable(onClick = onOpenAccount)
+                            )
+                        } else {
+                            IconButton(onClick = onOpenAccount) {
+                                Icon(Icons.Outlined.AccountCircle, contentDescription = "Profile & Settings", tint = TextSecondary, modifier = Modifier.size(24.dp))
+                            }
                         }
                     }
                 }

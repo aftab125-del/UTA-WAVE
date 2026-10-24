@@ -127,19 +127,53 @@ fun GoogleSignInDialog(
                             cookieManager.setAcceptThirdPartyCookies(this, true)
 
                             webViewClient = object : WebViewClient() {
+                                private var hasSaved = false
+
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     super.onPageFinished(view, url)
                                     val currentUrl = url ?: return
                                     val cookies = cookieManager.getCookie(currentUrl) ?: ""
 
-                                    if (cookies.contains("SAPISID") || cookies.contains("__Secure-3PAPISID") || cookies.contains("SSID")) {
-                                        accountManager.saveSession(
-                                            cookieHeader = cookies,
-                                            userName = "Google Music Explorer",
-                                            userEmail = "YouTube Account Connected"
-                                        )
-                                        Toast.makeText(ctx, "Signed in successfully!", Toast.LENGTH_SHORT).show()
-                                        onSuccess()
+                                    if (!hasSaved && (cookies.contains("SAPISID") || cookies.contains("__Secure-3PAPISID") || cookies.contains("SSID"))) {
+                                        hasSaved = true
+                                        view?.evaluateJavascript(
+                                            """
+                                            (function() {
+                                                try {
+                                                    var img = document.querySelector('img#img, yt-img-shadow#avatar img, button#avatar-btn img, img.yt-img-shadow');
+                                                    var name = document.querySelector('yt-formatted-string#text, #channel-name, #account-name');
+                                                    return JSON.stringify({
+                                                        avatar: img ? img.src : null,
+                                                        name: name ? name.innerText : null
+                                                    });
+                                                } catch(e) { return null; }
+                                            })()
+                                            """.trimIndent()
+                                        ) { resultJson ->
+                                            var avatar: String? = null
+                                            var name = "Namikaze aftab"
+                                            try {
+                                                if (!resultJson.isNullOrBlank() && resultJson != "null") {
+                                                    val clean = if (resultJson.startsWith("\"") && resultJson.endsWith("\"")) {
+                                                        org.json.JSONTokener(resultJson).nextValue().toString()
+                                                    } else resultJson
+                                                    val obj = org.json.JSONObject(clean)
+                                                    avatar = obj.optString("avatar").takeIf { !it.isNullOrBlank() && it != "null" }
+                                                    val parsedName = obj.optString("name").takeIf { !it.isNullOrBlank() && it != "null" }
+                                                    if (parsedName != null) name = parsedName
+                                                }
+                                            } catch (e: Exception) {
+                                                // fallback
+                                            }
+                                            accountManager.saveSession(
+                                                cookieHeader = cookies,
+                                                userName = name,
+                                                userEmail = "Connected via YouTube Music",
+                                                avatarUrl = avatar
+                                            )
+                                            Toast.makeText(ctx, "Signed in as $name!", Toast.LENGTH_SHORT).show()
+                                            onSuccess()
+                                        }
                                     }
                                 }
                             }

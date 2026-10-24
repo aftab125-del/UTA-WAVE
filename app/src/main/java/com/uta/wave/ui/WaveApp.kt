@@ -40,6 +40,7 @@ import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.player.PlaybackManager
 import com.uta.wave.ui.account.AccountBottomSheet
+import com.uta.wave.ui.account.AccountScreen
 import com.uta.wave.ui.album.AlbumScreen
 import com.uta.wave.ui.artist.ArtistScreen
 import com.uta.wave.ui.components.DiagnosticSheet
@@ -53,6 +54,7 @@ import com.uta.wave.ui.player.FullscreenPlayerSheet
 import com.uta.wave.ui.recognizer.RecognizeMusicScreen
 import com.uta.wave.ui.search.SearchScreen
 import com.uta.wave.ui.settings.SettingsScreen
+import com.uta.wave.ui.stats.ListeningSummaryScreen
 import com.uta.wave.ui.theme.ObsidianBackground
 import kotlinx.coroutines.launch
 
@@ -90,6 +92,8 @@ fun WaveApp() {
     var isAmbientModeActive by remember { mutableStateOf(false) }
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isAccountSheetOpen by remember { mutableStateOf(false) }
+    var isAccountScreenOpen by remember { mutableStateOf(false) }
+    var isListeningSummaryOpen by remember { mutableStateOf(false) }
 
     val currentTrack = playerState.currentTrack
     val isCurrentTrackFavorite = currentTrack != null && favoritesList.any { it.id == currentTrack.id }
@@ -115,6 +119,12 @@ fun WaveApp() {
     }
 
     // Hardware / Gesture Back Navigation Handlers
+    BackHandler(enabled = isAccountScreenOpen) {
+        isAccountScreenOpen = false
+    }
+    BackHandler(enabled = isListeningSummaryOpen) {
+        isListeningSummaryOpen = false
+    }
     BackHandler(enabled = isSettingsOpen) {
         isSettingsOpen = false
     }
@@ -166,7 +176,8 @@ fun WaveApp() {
                         viewingAlbumId = albumId
                     },
                     onOpenDiagnostics = { showDiagnostics = true },
-                    onOpenAccount = { isAccountSheetOpen = true }
+                    onOpenAccount = { isAccountScreenOpen = true },
+                    onOpenListeningSummary = { isListeningSummaryOpen = true }
                 )
                 1 -> RecognizeMusicScreen(
                     currentTrackId = currentTrack?.id,
@@ -200,7 +211,8 @@ fun WaveApp() {
                         }
                     },
                     onOpenDiagnostics = { showDiagnostics = true },
-                    onOpenAccount = { isAccountSheetOpen = true }
+                    onOpenAccount = { isAccountScreenOpen = true },
+                    onOpenListeningSummary = { isListeningSummaryOpen = true }
                 )
                 3 -> SearchScreen(
                     currentTrackId = currentTrack?.id,
@@ -403,7 +415,35 @@ fun WaveApp() {
         exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
     ) {
         SettingsScreen(
-            onBack = { isSettingsOpen = false }
+            onBack = { isSettingsOpen = false },
+            onNavigateToAccount = {
+                isAccountScreenOpen = true
+            },
+            onNavigateToListeningSummary = {
+                isListeningSummaryOpen = true
+            }
+        )
+    }
+
+    // Account Screen Layer (1:1 Replica from Echo Music)
+    AnimatedVisibility(
+        visible = isAccountScreenOpen,
+        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+    ) {
+        AccountScreen(
+            onBack = { isAccountScreenOpen = false }
+        )
+    }
+
+    // Listening Summary Screen Layer (1:1 Replica with Weekly 7-day Bar Chart)
+    AnimatedVisibility(
+        visible = isListeningSummaryOpen,
+        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+    ) {
+        ListeningSummaryScreen(
+            onBack = { isListeningSummaryOpen = false }
         )
     }
 }
