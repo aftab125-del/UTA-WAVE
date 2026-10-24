@@ -1512,6 +1512,44 @@ private fun AppearanceSettingsSection(
                 )
             )
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Swipe to change song
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Swipe to change song",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Swipe left or right on the album artwork or mini player to skip tracks",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.enableSwipeToChangeSong,
+                onCheckedChange = { prefs.updateEnableSwipeToChangeSong(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
     }
 }
 

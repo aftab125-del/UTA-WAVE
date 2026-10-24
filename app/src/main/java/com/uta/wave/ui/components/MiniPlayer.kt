@@ -360,7 +360,6 @@ fun MiniPlayer(
         label = "DiskRotation"
     )
 
-    var totalDrag by remember { mutableFloatStateOf(0f) }
 
     AnimatedVisibility(
         visible = true,
@@ -374,21 +373,11 @@ fun MiniPlayer(
                 .padding(horizontal = 14.dp, vertical = 4.dp)
                 .liquidGlass(config = glassConfig, shape = RoundedCornerShape(28.dp))
                 .clickable(onClick = onExpand)
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { totalDrag = 0f },
-                        onDragEnd = {
-                            if (totalDrag < -60f) {
-                                onNext()
-                            } else if (totalDrag > 60f) {
-                                onPrevious()
-                            }
-                        },
-                        onHorizontalDrag = { _, dragAmount ->
-                            totalDrag += dragAmount
-                        }
-                    )
-                }
+                .swipeToChangeSong(
+                    enabled = settings.enableSwipeToChangeSong,
+                    onPrevious = onPrevious,
+                    onNext = onNext
+                )
         } else {
             Modifier
                 .fillMaxWidth()
@@ -436,21 +425,11 @@ fun MiniPlayer(
                     RoundedCornerShape(28.dp)
                 )
                 .clickable(onClick = onExpand)
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { totalDrag = 0f },
-                        onDragEnd = {
-                            if (totalDrag < -60f) {
-                                onNext()
-                            } else if (totalDrag > 60f) {
-                                onPrevious()
-                            }
-                        },
-                        onHorizontalDrag = { _, dragAmount ->
-                            totalDrag += dragAmount
-                        }
-                    )
-                }
+                .swipeToChangeSong(
+                    enabled = settings.enableSwipeToChangeSong,
+                    onPrevious = onPrevious,
+                    onNext = onNext
+                )
         }
 
         Box(
