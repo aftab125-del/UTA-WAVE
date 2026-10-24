@@ -36,6 +36,14 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
+import com.uta.wave.data.preferences.UserPreferences
+import com.uta.wave.ui.components.GlassEffectConfig
+import com.uta.wave.ui.components.LocalAppBackdrop
+import com.uta.wave.ui.components.LocalGlassEffectConfig
+import com.uta.wave.ui.components.backdrop.backdrops.layerBackdrop
+import com.uta.wave.ui.components.backdrop.backdrops.rememberLayerBackdrop
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.player.PlaybackManager
@@ -61,11 +69,50 @@ import kotlinx.coroutines.launch
 @Composable
 fun WaveApp() {
     val context = LocalContext.current
+    val userPrefs = remember { UserPreferences.getInstance(context) }
+    val settings by userPrefs.settingsFlow.collectAsState()
     val playbackManager = remember { PlaybackManager.getInstance(context) }
     val localDatabase = remember { LocalDatabase.getInstance(context) }
     val accountManager = remember { com.uta.wave.data.account.AccountManager.getInstance(context) }
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
+
+    val glassConfig = remember(
+        settings.liquidGlassGlobalEnabled,
+        settings.liquidGlassVibrancy,
+        settings.liquidGlassBlurRadius,
+        settings.liquidGlassLensHeight,
+        settings.liquidGlassLensAmount,
+        settings.liquidGlassChromaticAberration,
+        settings.liquidGlassDepthEffect,
+        settings.liquidGlassSurfaceTintColorInt,
+        settings.liquidGlassSurfaceOpacity,
+        settings.liquidGlassTextColorInt,
+        settings.liquidGlassPlayerEnabled,
+        settings.liquidGlassMiniPlayerEnabled,
+        settings.liquidGlassNavBarEnabled
+    ) {
+        GlassEffectConfig(
+            globalEnabled = settings.liquidGlassGlobalEnabled,
+            vibrancy = settings.liquidGlassVibrancy,
+            blurRadius = settings.liquidGlassBlurRadius,
+            lensHeight = settings.liquidGlassLensHeight,
+            lensAmount = settings.liquidGlassLensAmount,
+            chromaticAberration = settings.liquidGlassChromaticAberration,
+            depthEffect = settings.liquidGlassDepthEffect,
+            surfaceTintColor = if (settings.liquidGlassSurfaceTintColorInt == 0) Color.Unspecified else Color(settings.liquidGlassSurfaceTintColorInt),
+            surfaceOpacity = settings.liquidGlassSurfaceOpacity,
+            textColor = if (settings.liquidGlassTextColorInt == 0) Color.Unspecified else Color(settings.liquidGlassTextColorInt),
+            playerEnabled = settings.liquidGlassPlayerEnabled,
+            miniPlayerEnabled = settings.liquidGlassMiniPlayerEnabled,
+            navBarEnabled = settings.liquidGlassNavBarEnabled
+        )
+    }
+
+    val appBackdrop = rememberLayerBackdrop {
+        drawRect(ObsidianBackground)
+        drawContent()
+    }
 
     LaunchedEffect(Unit) {
         val profile = accountManager.currentProfile
@@ -141,18 +188,27 @@ fun WaveApp() {
         viewingArtistId = null
     }
 
-    Scaffold(
-        containerColor = ObsidianBackground
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .nestedScroll(nestedScrollConnection)
-        ) {
-            // Main Screen Content based on selected Tab
-            when (selectedTab) {
-                0 -> HomeScreen(
+    CompositionLocalProvider(
+        LocalAppBackdrop provides appBackdrop,
+        LocalGlassEffectConfig provides glassConfig
+    ) {
+        Scaffold(
+            containerColor = ObsidianBackground
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .nestedScroll(nestedScrollConnection)
+            ) {
+                // Main Screen Content based on selected Tab (recorded in appBackdrop for liquid glass sampling)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .layerBackdrop(appBackdrop)
+                ) {
+                    when (selectedTab) {
+                        0 -> HomeScreen(
                     currentTrackId = currentTrack?.id,
                     isPlaying = playerState.isPlaying,
                     favoritesList = favoritesList,
@@ -226,6 +282,7 @@ fun WaveApp() {
                     }
                 )
             }
+        }
 
             // 1. Floating Capsule MiniPlayer (Docks directly above the floating nav bar in Expanded Mode)
             AnimatedVisibility(
@@ -454,5 +511,6 @@ fun WaveApp() {
         ListeningSummaryScreen(
             onBack = { isListeningSummaryOpen = false }
         )
+    }
     }
 }

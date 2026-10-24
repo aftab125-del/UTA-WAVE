@@ -51,6 +51,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -59,6 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.uta.wave.player.WavePlayerState
+import com.uta.wave.ui.components.GlassComponent
+import com.uta.wave.ui.components.LocalGlassEffectConfig
+import com.uta.wave.ui.components.liquidGlass
 import com.uta.wave.ui.recognizer.BlushRose
 import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.SoftViolet
@@ -81,6 +86,20 @@ fun MiniPlayer(
     val settings by userPrefs.settingsFlow.collectAsState()
     val isPureBlack = settings.pureBlackMiniPlayer || settings.pureBlack
 
+    val glassConfig = LocalGlassEffectConfig.current
+    val useGlass = glassConfig.isEnabledFor(GlassComponent.MINI_PLAYER) && !isPureBlack
+
+    val adaptiveTextColor =
+        if (glassConfig.textColor.isSpecified) {
+            glassConfig.textColor
+        } else if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
+            Color.Black
+        } else {
+            Color.White
+        }
+
+    val contentAccentColor = if (useGlass) adaptiveTextColor else BlushRose
+
     // Infinite rotation for the vinyl disk when playing
     val infiniteTransition = rememberInfiniteTransition(label = "VinylSpin")
     val rotation by infiniteTransition.animateFloat(
@@ -101,9 +120,29 @@ fun MiniPlayer(
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
         modifier = modifier
     ) {
-        // Container: Pure Black AMOLED or Frosted Glassmorphism
-        Box(
-            modifier = Modifier
+        val containerModifier = if (useGlass) {
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 4.dp)
+                .liquidGlass(config = glassConfig, shape = RoundedCornerShape(28.dp))
+                .clickable(onClick = onExpand)
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDrag = 0f },
+                        onDragEnd = {
+                            if (totalDrag < -60f) {
+                                onNext()
+                            } else if (totalDrag > 60f) {
+                                onPrevious()
+                            }
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            totalDrag += dragAmount
+                        }
+                    )
+                }
+        } else {
+            Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 4.dp)
                 .shadow(
@@ -159,6 +198,10 @@ fun MiniPlayer(
                         }
                     )
                 }
+        }
+
+        Box(
+            modifier = containerModifier
         ) {
             Column {
                 if (playerState.error != null) {
@@ -224,7 +267,7 @@ fun MiniPlayer(
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp
                             ),
-                            color = TextPrimary,
+                            color = if (useGlass) adaptiveTextColor else TextPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -235,18 +278,18 @@ fun MiniPlayer(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium
                             ),
-                            color = SoftViolet,
+                            color = if (useGlass) adaptiveTextColor.copy(alpha = 0.7f) else SoftViolet,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    // Play/Pause Action Button with BlushRose Glass Accent
+                    // Play/Pause Action Button with Glass/BlushRose Accent
                     Box(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(BlushRose.copy(alpha = 0.2f))
+                            .background(contentAccentColor.copy(alpha = if (useGlass) 0.15f else 0.2f))
                             .clickable(onClick = onTogglePlayPause),
                         contentAlignment = Alignment.Center
                     ) {
@@ -254,7 +297,7 @@ fun MiniPlayer(
                             playerState.isResolving || playerState.isBuffering -> {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
-                                    color = BlushRose,
+                                    color = contentAccentColor,
                                     strokeWidth = 2.dp
                                 )
                             }
@@ -262,7 +305,7 @@ fun MiniPlayer(
                                 Icon(
                                     imageVector = Icons.Default.Pause,
                                     contentDescription = "Pause",
-                                    tint = BlushRose,
+                                    tint = contentAccentColor,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -270,7 +313,7 @@ fun MiniPlayer(
                                 Icon(
                                     imageVector = Icons.Default.PlayArrow,
                                     contentDescription = "Play",
-                                    tint = BlushRose,
+                                    tint = contentAccentColor,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -287,7 +330,7 @@ fun MiniPlayer(
                         Icon(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = "Next",
-                            tint = TextSecondary,
+                            tint = if (useGlass) adaptiveTextColor.copy(alpha = 0.8f) else TextSecondary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -309,9 +352,15 @@ fun MiniPlayer(
                             .fillMaxWidth(fraction = progress)
                             .height(2.dp)
                             .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(BlushRose, ElectricViolet)
-                                )
+                                if (useGlass) {
+                                    Brush.horizontalGradient(
+                                        colors = listOf(adaptiveTextColor, adaptiveTextColor.copy(alpha = 0.35f))
+                                    )
+                                } else {
+                                    Brush.horizontalGradient(
+                                        colors = listOf(BlushRose, ElectricViolet)
+                                    )
+                                }
                             )
                     )
                 }

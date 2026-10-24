@@ -75,9 +75,13 @@ import com.uta.wave.player.RepeatMode as PlayerRepeatMode
 import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.components.AmbientCanvas
 import com.uta.wave.ui.components.DownloadQualityBottomSheet
+import com.uta.wave.ui.components.GlassComponent
+import com.uta.wave.ui.components.LocalGlassEffectConfig
+import com.uta.wave.ui.components.PLAYER_BLUR_MULTIPLIER
 import com.uta.wave.ui.components.PlaylistSelectionSheet
 import com.uta.wave.ui.components.ScallopedFlowerShape
 import com.uta.wave.ui.components.SongDetailsDialog
+import com.uta.wave.ui.components.liquidGlass
 import com.uta.wave.ui.components.SquigglySlider
 import com.uta.wave.ui.components.TrimRingtoneBottomSheet
 import kotlinx.coroutines.Job
@@ -164,10 +168,26 @@ fun FullscreenPlayerSheet(
         } else null
     }
 
-    Box(
-        modifier = modifier
+    val glassConfig = LocalGlassEffectConfig.current
+    val useGlass = glassConfig.isEnabledFor(GlassComponent.PLAYER)
+
+    val playerContainerModifier = if (useGlass) {
+        modifier
+            .fillMaxSize()
+            .liquidGlass(
+                config = glassConfig,
+                shape = RoundedCornerShape(0.dp),
+                applyEdgeEffects = false,
+                blurRadiusDp = glassConfig.blurRadius * PLAYER_BLUR_MULTIPLIER
+            )
+    } else {
+        modifier
             .fillMaxSize()
             .background(Color(0xFF0F0A12))
+    }
+
+    Box(
+        modifier = playerContainerModifier
     ) {
         // Dynamic Ambient Glow
         AmbientCanvas(

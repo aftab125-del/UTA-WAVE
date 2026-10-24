@@ -71,7 +71,23 @@ data class AppSettings(
 
     // Typography & Font
     val selectedFont: String = "GOOGLE_SANS",      // SYSTEM, GOOGLE_SANS, SANS_FLEX, OUTFIT, PLUS_JAKARTA_SANS, CUSTOM
-    val customFontPath: String? = null
+    val customFontPath: String? = null,
+
+    // Liquid Glass (Beta)
+    val liquidGlassGlobalEnabled: Boolean = false,
+    val liquidGlassVibrancy: Float = 1.0f,
+    val liquidGlassBlurRadius: Float = 8.0f,
+    val liquidGlassLensHeight: Float = 0.5f,
+    val liquidGlassLensAmount: Float = 0.5f,
+    val liquidGlassChromaticAberration: Boolean = true,
+    val liquidGlassDepthEffect: Boolean = true,
+    val liquidGlassSurfaceTintColorInt: Int = 0, // 0 = adaptive
+    val liquidGlassSurfaceOpacity: Float = 0.4f,
+    val liquidGlassTextColorInt: Int = 0, // 0 = adaptive
+    val liquidGlassPlayerEnabled: Boolean = true,
+    val liquidGlassMiniPlayerEnabled: Boolean = true,
+    val liquidGlassNavBarEnabled: Boolean = true,
+    val useFloatingNavBar: Boolean = true
 )
 
 class UserPreferences private constructor(context: Context) {
@@ -153,7 +169,22 @@ class UserPreferences private constructor(context: Context) {
             useCustomIconInApp = prefs.getBoolean("use_custom_icon_in_app", true),
 
             selectedFont = prefs.getString("selected_font", "GOOGLE_SANS") ?: "GOOGLE_SANS",
-            customFontPath = prefs.getString("custom_font_path", null)
+            customFontPath = prefs.getString("custom_font_path", null),
+
+            liquidGlassGlobalEnabled = prefs.getBoolean("liquid_glass_global_enabled", false),
+            liquidGlassVibrancy = prefs.getFloat("liquid_glass_vibrancy", 1.0f),
+            liquidGlassBlurRadius = prefs.getFloat("liquid_glass_blur_radius", 8.0f),
+            liquidGlassLensHeight = prefs.getFloat("liquid_glass_lens_height", 0.5f),
+            liquidGlassLensAmount = prefs.getFloat("liquid_glass_lens_amount", 0.5f),
+            liquidGlassChromaticAberration = prefs.getBoolean("liquid_glass_chromatic_aberration", true),
+            liquidGlassDepthEffect = prefs.getBoolean("liquid_glass_depth_effect", true),
+            liquidGlassSurfaceTintColorInt = prefs.getInt("liquid_glass_surface_tint_color", 0),
+            liquidGlassSurfaceOpacity = prefs.getFloat("liquid_glass_surface_opacity", 0.4f),
+            liquidGlassTextColorInt = prefs.getInt("liquid_glass_text_color", 0),
+            liquidGlassPlayerEnabled = prefs.getBoolean("liquid_glass_player_enabled", true),
+            liquidGlassMiniPlayerEnabled = prefs.getBoolean("liquid_glass_mini_player_enabled", true),
+            liquidGlassNavBarEnabled = prefs.getBoolean("liquid_glass_nav_bar_enabled", true),
+            useFloatingNavBar = prefs.getBoolean("use_floating_nav_bar", true)
         )
     }
 
@@ -408,5 +439,103 @@ class UserPreferences private constructor(context: Context) {
     fun updateAutoBackupSchedule(schedule: String) {
         prefs.edit().putString("auto_backup_schedule", schedule).apply()
         _settingsFlow.update { it.copy(autoBackupSchedule = schedule) }
+    }
+
+    // Liquid Glass Updates
+    fun updateLiquidGlassGlobalEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("liquid_glass_global_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(liquidGlassGlobalEnabled = enabled) }
+    }
+
+    fun updateLiquidGlassVibrancy(vibrancy: Float) {
+        prefs.edit().putFloat("liquid_glass_vibrancy", vibrancy).apply()
+        _settingsFlow.update { it.copy(liquidGlassVibrancy = vibrancy) }
+    }
+
+    fun updateLiquidGlassBlurRadius(radius: Float) {
+        prefs.edit().putFloat("liquid_glass_blur_radius", radius).apply()
+        _settingsFlow.update { it.copy(liquidGlassBlurRadius = radius) }
+    }
+
+    fun updateLiquidGlassLensHeight(height: Float) {
+        prefs.edit().putFloat("liquid_glass_lens_height", height).apply()
+        _settingsFlow.update { it.copy(liquidGlassLensHeight = height) }
+    }
+
+    fun updateLiquidGlassLensAmount(amount: Float) {
+        prefs.edit().putFloat("liquid_glass_lens_amount", amount).apply()
+        _settingsFlow.update { it.copy(liquidGlassLensAmount = amount) }
+    }
+
+    fun updateLiquidGlassChromaticAberration(enabled: Boolean) {
+        prefs.edit().putBoolean("liquid_glass_chromatic_aberration", enabled).apply()
+        _settingsFlow.update { it.copy(liquidGlassChromaticAberration = enabled) }
+    }
+
+    fun updateLiquidGlassDepthEffect(enabled: Boolean) {
+        prefs.edit().putBoolean("liquid_glass_depth_effect", enabled).apply()
+        _settingsFlow.update { it.copy(liquidGlassDepthEffect = enabled) }
+    }
+
+    fun updateLiquidGlassSurfaceTintColorInt(color: Int) {
+        prefs.edit().putInt("liquid_glass_surface_tint_color", color).apply()
+        _settingsFlow.update { it.copy(liquidGlassSurfaceTintColorInt = color) }
+    }
+
+    fun updateLiquidGlassSurfaceOpacity(opacity: Float) {
+        prefs.edit().putFloat("liquid_glass_surface_opacity", opacity).apply()
+        _settingsFlow.update { it.copy(liquidGlassSurfaceOpacity = opacity) }
+    }
+
+    fun updateLiquidGlassTextColorInt(color: Int) {
+        prefs.edit().putInt("liquid_glass_text_color", color).apply()
+        _settingsFlow.update { it.copy(liquidGlassTextColorInt = color) }
+    }
+
+    fun updateLiquidGlassPlayerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("liquid_glass_player_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(liquidGlassPlayerEnabled = enabled) }
+    }
+
+    fun updateLiquidGlassMiniPlayerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("liquid_glass_mini_player_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(liquidGlassMiniPlayerEnabled = enabled) }
+    }
+
+    fun updateLiquidGlassNavBarEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("liquid_glass_nav_bar_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(liquidGlassNavBarEnabled = enabled) }
+    }
+
+    fun updateUseFloatingNavBar(enabled: Boolean) {
+        prefs.edit().putBoolean("use_floating_nav_bar", enabled).apply()
+        _settingsFlow.update { it.copy(useFloatingNavBar = enabled) }
+    }
+
+    fun resetLiquidGlassToDefaults() {
+        prefs.edit()
+            .putFloat("liquid_glass_vibrancy", 1.0f)
+            .putFloat("liquid_glass_blur_radius", 8.0f)
+            .putFloat("liquid_glass_lens_height", 0.5f)
+            .putFloat("liquid_glass_lens_amount", 0.5f)
+            .putBoolean("liquid_glass_chromatic_aberration", true)
+            .putBoolean("liquid_glass_depth_effect", true)
+            .putInt("liquid_glass_surface_tint_color", 0)
+            .putFloat("liquid_glass_surface_opacity", 0.4f)
+            .putInt("liquid_glass_text_color", 0)
+            .apply()
+        _settingsFlow.update {
+            it.copy(
+                liquidGlassVibrancy = 1.0f,
+                liquidGlassBlurRadius = 8.0f,
+                liquidGlassLensHeight = 0.5f,
+                liquidGlassLensAmount = 0.5f,
+                liquidGlassChromaticAberration = true,
+                liquidGlassDepthEffect = true,
+                liquidGlassSurfaceTintColorInt = 0,
+                liquidGlassSurfaceOpacity = 0.4f,
+                liquidGlassTextColorInt = 0
+            )
+        }
     }
 }

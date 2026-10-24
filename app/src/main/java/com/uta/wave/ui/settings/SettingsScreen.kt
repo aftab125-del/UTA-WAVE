@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.CropOriginal
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FontDownload
 import com.uta.wave.ui.settings.font.FontSelectionScreen
+import com.uta.wave.ui.settings.glass.GlassEffectSettingsScreen
 import com.uta.wave.ui.settings.icon.AppIconSettingsScreen
 import com.uta.wave.ui.settings.theme.ThemeScreen
 import com.uta.wave.ui.theme.*
@@ -169,6 +170,11 @@ fun SettingsScreen(
 
     if (activeSubSection == "App Font") {
         FontSelectionScreen(onBack = { activeSubSection = null })
+        return
+    }
+
+    if (activeSubSection == "Liquid Glass") {
+        GlassEffectSettingsScreen(onBack = { activeSubSection = null })
         return
     }
 
@@ -408,7 +414,8 @@ fun SettingsScreen(
                             settings,
                             onNavigateToTheme = { activeSubSection = "Theme" },
                             onNavigateToAppIcon = { activeSubSection = "App Icon" },
-                            onNavigateToAppFont = { activeSubSection = "App Font" }
+                            onNavigateToAppFont = { activeSubSection = "App Font" },
+                            onNavigateToLiquidGlass = { activeSubSection = "Liquid Glass" }
                         )
                         "Player and audio" -> PlayerAudioSettingsSection(userPrefs, settings)
                         "Listen Together" -> ListenTogetherSettingsSection(userPrefs, settings)
@@ -572,7 +579,8 @@ private fun AppearanceSettingsSection(
     settings: AppSettings,
     onNavigateToTheme: () -> Unit = {},
     onNavigateToAppIcon: () -> Unit = {},
-    onNavigateToAppFont: () -> Unit = {}
+    onNavigateToAppFont: () -> Unit = {},
+    onNavigateToLiquidGlass: () -> Unit = {}
 ) {
     val currentAccent = remember(settings.accentColorHex) {
         try {
@@ -758,6 +766,68 @@ private fun AppearanceSettingsSection(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Google Sans, Outfit, Plus Jakarta & Custom TTF",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = Color.White.copy(alpha = 0.60f)
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.35f),
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+    SectionHeader("Liquid Glass (Beta)")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+            .clickable(onClick = onNavigateToLiquidGlass)
+            .padding(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFA855F7).copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = Color(0xFFA855F7),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Liquid Glass (Beta)",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        ),
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (settings.liquidGlassGlobalEnabled) "Enabled • AGSL shaders, lens refraction & blur" else "Disabled • Tap to configure",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                         color = Color.White.copy(alpha = 0.60f)
                     )

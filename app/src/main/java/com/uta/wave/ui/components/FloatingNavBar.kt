@@ -55,6 +55,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -67,6 +69,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.player.WavePlayerState
+import com.uta.wave.ui.components.GlassComponent
+import com.uta.wave.ui.components.LocalGlassEffectConfig
+import com.uta.wave.ui.components.liquidGlass
 import com.uta.wave.ui.recognizer.BlushRose
 import com.uta.wave.ui.recognizer.DarkBlushText
 import com.uta.wave.ui.theme.ElectricViolet
@@ -106,6 +111,21 @@ fun FloatingNavBar(
     onTogglePlayPause: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val glassConfig = LocalGlassEffectConfig.current
+    val useGlass = glassConfig.isEnabledFor(GlassComponent.NAV_BAR)
+
+    val adaptiveTextColor =
+        if (glassConfig.textColor.isSpecified) {
+            glassConfig.textColor
+        } else if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
+            Color.Black
+        } else {
+            Color.White
+        }
+
+    val selectedContentColor = if (useGlass) adaptiveTextColor else BlushRose
+    val unselectedContentColor = if (useGlass) adaptiveTextColor.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.7f)
+
     val tabs = listOf(
         NavTab(0, "Home", Icons.Filled.Home, Icons.Outlined.Home),
         NavTab(1, "Radio", Icons.Filled.Radio, Icons.Outlined.Radio),
@@ -141,13 +161,13 @@ fun FloatingNavBar(
             label = "BottomBarModeAnimation"
         ) { merged ->
             if (merged && currentTrack != null) {
-                // COLLAPSED MERGED MODE WITH GLASSMORPHISM: [Active Tab Circle] --- [Slim MiniPlayer Pill] --- [Search Circle]
+                // COLLAPSED MERGED MODE: [Active Tab Circle] --- [Slim MiniPlayer Pill] --- [Search Circle]
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // 1. Left Active Tab Circular FAB (Frosted Glass)
+                    // 1. Left Active Tab Circular FAB
                     val activeIcon = when (selectedTab) {
                         1 -> Icons.Filled.Radio
                         2 -> Icons.AutoMirrored.Filled.QueueMusic
@@ -155,27 +175,42 @@ fun FloatingNavBar(
                         else -> Icons.Filled.Home
                     }
 
-                    Box(
-                        modifier = Modifier
+                    val activeFabModifier = if (useGlass) {
+                        Modifier
+                            .size(50.dp)
+                            .liquidGlass(config = glassConfig, shape = CircleShape)
+                            .clickable(onClick = onExpandBar)
+                    } else {
+                        Modifier
                             .size(50.dp)
                             .shadow(14.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.5f))
                             .clip(CircleShape)
                             .background(GlassBackgroundBrush)
                             .border(1.dp, GlassBorderBrush, CircleShape)
-                            .clickable(onClick = onExpandBar),
+                            .clickable(onClick = onExpandBar)
+                    }
+
+                    Box(
+                        modifier = activeFabModifier,
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = activeIcon,
                             contentDescription = "Active Tab",
-                            tint = BlushRose,
+                            tint = selectedContentColor,
                             modifier = Modifier.size(24.dp)
                         )
                     }
 
-                    // 2. Center Slim MiniPlayer Capsule Pill (Frosted Glass)
-                    Box(
-                        modifier = Modifier
+                    // 2. Center Slim MiniPlayer Capsule Pill
+                    val collapsedMiniModifier = if (useGlass) {
+                        Modifier
+                            .weight(1f)
+                            .height(50.dp)
+                            .liquidGlass(config = glassConfig, shape = RoundedCornerShape(percent = 50))
+                            .clickable(onClick = onExpandPlayer)
+                    } else {
+                        Modifier
                             .weight(1f)
                             .height(50.dp)
                             .shadow(16.dp, RoundedCornerShape(25.dp), spotColor = Color.Black.copy(alpha = 0.6f))
@@ -187,6 +222,10 @@ fun FloatingNavBar(
                             )
                             .border(1.dp, GlassBorderBrush, RoundedCornerShape(25.dp))
                             .clickable(onClick = onExpandPlayer)
+                    }
+
+                    Box(
+                        modifier = collapsedMiniModifier
                     ) {
                         Column {
                             Row(
@@ -201,7 +240,7 @@ fun FloatingNavBar(
                                     modifier = Modifier
                                         .size(36.dp)
                                         .clip(CircleShape)
-                                        .border(1.dp, BlushRose.copy(alpha = 0.6f), CircleShape),
+                                        .border(1.dp, selectedContentColor.copy(alpha = 0.6f), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     AsyncImage(
@@ -218,7 +257,7 @@ fun FloatingNavBar(
                                             .size(6.dp)
                                             .clip(CircleShape)
                                             .background(Color(0xFF1B1522))
-                                            .border(0.5.dp, BlushRose, CircleShape)
+                                            .border(0.5.dp, selectedContentColor, CircleShape)
                                     )
                                 }
 
@@ -232,7 +271,7 @@ fun FloatingNavBar(
                                             fontWeight = FontWeight.SemiBold,
                                             fontSize = 13.sp
                                         ),
-                                        color = TextPrimary,
+                                        color = if (useGlass) adaptiveTextColor else TextPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -242,7 +281,7 @@ fun FloatingNavBar(
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Medium
                                         ),
-                                        color = SoftViolet,
+                                        color = if (useGlass) adaptiveTextColor.copy(alpha = 0.7f) else SoftViolet,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -255,7 +294,7 @@ fun FloatingNavBar(
                                     modifier = Modifier
                                         .size(34.dp)
                                         .clip(CircleShape)
-                                        .background(BlushRose.copy(alpha = 0.2f))
+                                        .background(selectedContentColor.copy(alpha = if (useGlass) 0.15f else 0.2f))
                                         .clickable(onClick = onTogglePlayPause),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -263,7 +302,7 @@ fun FloatingNavBar(
                                         playerState.isResolving || playerState.isBuffering -> {
                                             CircularProgressIndicator(
                                                 modifier = Modifier.size(16.dp),
-                                                color = BlushRose,
+                                                color = selectedContentColor,
                                                 strokeWidth = 2.dp
                                             )
                                         }
@@ -271,7 +310,7 @@ fun FloatingNavBar(
                                             Icon(
                                                 imageVector = Icons.Default.Pause,
                                                 contentDescription = "Pause",
-                                                tint = BlushRose,
+                                                tint = selectedContentColor,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -279,7 +318,7 @@ fun FloatingNavBar(
                                             Icon(
                                                 imageVector = Icons.Default.PlayArrow,
                                                 contentDescription = "Play",
-                                                tint = BlushRose,
+                                                tint = selectedContentColor,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -303,65 +342,92 @@ fun FloatingNavBar(
                                         .fillMaxWidth(fraction = progress)
                                         .height(2.dp)
                                         .background(
-                                            Brush.horizontalGradient(
-                                                listOf(BlushRose, ElectricViolet)
-                                            )
+                                            if (useGlass) {
+                                                Brush.horizontalGradient(
+                                                    listOf(adaptiveTextColor, adaptiveTextColor.copy(alpha = 0.35f))
+                                                )
+                                            } else {
+                                                Brush.horizontalGradient(
+                                                    listOf(BlushRose, ElectricViolet)
+                                                )
+                                            }
                                         )
                                 )
                             }
                         }
                     }
 
-                    // 3. Right Search Circular FAB (Frosted Glass)
-                    Box(
-                        modifier = Modifier
+                    // 3. Right Search Circular FAB
+                    val searchFabModifier = if (useGlass) {
+                        Modifier
+                            .size(50.dp)
+                            .liquidGlass(config = glassConfig, shape = CircleShape)
+                            .clickable { onTabSelected(3) }
+                    } else {
+                        Modifier
                             .size(50.dp)
                             .shadow(14.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.5f))
                             .clip(CircleShape)
                             .background(GlassBackgroundBrush)
                             .border(1.dp, GlassBorderBrush, CircleShape)
-                            .clickable { onTabSelected(3) },
+                            .clickable { onTabSelected(3) }
+                    }
+
+                    Box(
+                        modifier = searchFabModifier,
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (selectedTab == 3) Icons.Filled.Search else Icons.Outlined.Search,
                             contentDescription = "Search",
-                            tint = if (selectedTab == 3) BlushRose else TextPrimary,
+                            tint = if (selectedTab == 3) selectedContentColor else unselectedContentColor,
                             modifier = Modifier.size(24.dp)
                         )
                     }
                 }
             } else {
-                // EXPANDED MODE WITH GLASSMORPHISM: [Left Capsule Pill: Home, Radio, Library] + [Right Circle: Search]
+                // EXPANDED MODE: [Left Capsule Pill: Home, Radio, Library] + [Right Circle: Search]
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Left Capsule Pill (Frosted Glass)
-                    Row(
-                        modifier = Modifier
+                    // Left Capsule Pill
+                    val tabsCapsuleModifier = if (useGlass) {
+                        Modifier
+                            .height(54.dp)
+                            .liquidGlass(config = glassConfig, shape = RoundedCornerShape(percent = 50))
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    } else {
+                        Modifier
                             .height(54.dp)
                             .shadow(18.dp, RoundedCornerShape(28.dp), spotColor = Color.Black.copy(alpha = 0.6f))
                             .clip(RoundedCornerShape(28.dp))
                             .background(GlassBackgroundBrush)
                             .border(1.dp, GlassBorderBrush, RoundedCornerShape(28.dp))
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    }
+
+                    Row(
+                        modifier = tabsCapsuleModifier,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         tabs.forEach { tab ->
                             val isSelected = selectedTab == tab.index
                             val interactionSource = remember { MutableInteractionSource() }
 
-                            // Rose pill for active tab, matching Screenshot 1
                             val pillBackground by animateColorAsState(
-                                targetValue = if (isSelected) BlushRose else Color.Transparent,
+                                targetValue = if (isSelected) {
+                                    if (useGlass) adaptiveTextColor.copy(alpha = 0.22f) else BlushRose
+                                } else Color.Transparent,
                                 animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                                 label = "tabPillBackground"
                             )
 
                             val iconTint by animateColorAsState(
-                                targetValue = if (isSelected) DarkBlushText else Color.White.copy(alpha = 0.7f),
+                                targetValue = if (isSelected) {
+                                    if (useGlass) adaptiveTextColor else DarkBlushText
+                                } else unselectedContentColor,
                                 animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                                 label = "tabIconTint"
                             )
@@ -391,7 +457,7 @@ fun FloatingNavBar(
                                     if (isSelected) {
                                         Text(
                                             text = "  ${tab.title}",
-                                            color = DarkBlushText,
+                                            color = if (useGlass) adaptiveTextColor else DarkBlushText,
                                             style = MaterialTheme.typography.labelMedium.copy(
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 12.sp
@@ -403,23 +469,31 @@ fun FloatingNavBar(
                         }
                     }
 
-                    // Right Standalone Circular Search Button (Frosted Glass)
+                    // Right Standalone Circular Search Button
                     val isSearchSelected = selectedTab == 3
-
-                    Box(
-                        modifier = Modifier
+                    val expandedSearchModifier = if (useGlass) {
+                        Modifier
+                            .size(54.dp)
+                            .liquidGlass(config = glassConfig, shape = CircleShape)
+                            .clickable { onTabSelected(3) }
+                    } else {
+                        Modifier
                             .size(54.dp)
                             .shadow(18.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.6f))
                             .clip(CircleShape)
                             .background(GlassBackgroundBrush)
                             .border(1.dp, GlassBorderBrush, CircleShape)
-                            .clickable { onTabSelected(3) },
+                            .clickable { onTabSelected(3) }
+                    }
+
+                    Box(
+                        modifier = expandedSearchModifier,
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (isSearchSelected) Icons.Filled.Search else Icons.Outlined.Search,
                             contentDescription = "Search",
-                            tint = if (isSearchSelected) BlushRose else TextPrimary,
+                            tint = if (isSearchSelected) selectedContentColor else unselectedContentColor,
                             modifier = Modifier.size(24.dp)
                         )
                     }
