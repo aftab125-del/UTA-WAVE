@@ -18,6 +18,12 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
+enum class AudioQuality(val label: String, val badge: String, val description: String) {
+    LOSSLESS("Lossless / Master", "LOSSLESS", "256 kbps AAC / 160 kbps Opus • Studio Fidelity"),
+    HIGH("High Quality", "HIGH", "160 kbps • Crystal clear audio"),
+    STANDARD("Standard Quality", "STANDARD", "128 kbps M4A • Compact size")
+}
+
 class AudioDownloadManager private constructor(private val context: Context) {
 
     companion object {
@@ -63,7 +69,11 @@ class AudioDownloadManager private constructor(private val context: Context) {
         return if (file.exists() && file.length() > 0) file else null
     }
 
-    fun downloadTrack(track: TrackItem, onComplete: (Boolean) -> Unit = {}) {
+    fun downloadTrack(
+        track: TrackItem,
+        quality: AudioQuality = AudioQuality.LOSSLESS,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
         if (_downloadingIds.value.contains(track.id) || isDownloaded(track.id)) {
             onComplete(true)
             return
@@ -74,8 +84,8 @@ class AudioDownloadManager private constructor(private val context: Context) {
 
         scope.launch {
             try {
-                AppLogger.i("Starting download for: ${track.title}")
-                val streamUrl = innerTubeClient.resolveStreamUrl(track.videoId)
+                AppLogger.i("Starting download (${quality.badge}) for: ${track.title}")
+                val streamUrl = innerTubeClient.resolveStreamUrl(track.videoId, quality.badge)
                 if (streamUrl.isNullOrBlank()) {
                     AppLogger.e("Failed to resolve stream URL for download: ${track.title}")
                     _downloadingIds.update { it - track.id }
@@ -123,8 +133,8 @@ class AudioDownloadManager private constructor(private val context: Context) {
                     outputStream.close()
                     inputStream.close()
 
-                    localDatabase.insertDownload(track, outputFile.absolutePath, outputFile.length())
-                    AppLogger.i("Download complete for: ${track.title} (${outputFile.length() / 1024} KB)")
+                    localDatabase.insertDownload(track, outputFile.absolutePath, outputFile.length(), quality.badge)
+                    AppLogger.i("Download complete (${quality.badge}) for: ${track.title} (${outputFile.length() / 1024} KB)")
 
                     _downloadingIds.update { it - track.id }
                     _downloadProgress.update { it - track.id }

@@ -161,10 +161,16 @@ class LocalDatabase private constructor(context: Context) :
                     file_path TEXT NOT NULL,
                     downloaded_at INTEGER NOT NULL,
                     file_size_bytes INTEGER NOT NULL DEFAULT 0,
+                    quality TEXT NOT NULL DEFAULT 'LOSSLESS',
                     FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
                 )
                 """.trimIndent()
             )
+            try {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN quality TEXT NOT NULL DEFAULT 'LOSSLESS'")
+            } catch (e: Exception) {
+                // column already exists
+            }
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_downloads_time ON downloads (downloaded_at DESC)")
         } catch (e: Exception) {
             // ignore
@@ -183,7 +189,12 @@ class LocalDatabase private constructor(context: Context) :
         }
     }
 
-    suspend fun insertDownload(track: TrackItem, filePath: String, fileSizeBytes: Long) = withContext(Dispatchers.IO) {
+    suspend fun insertDownload(
+        track: TrackItem,
+        filePath: String,
+        fileSizeBytes: Long,
+        quality: String = "LOSSLESS"
+    ) = withContext(Dispatchers.IO) {
         insertTrack(track)
         val db = writableDatabase
         val values = ContentValues().apply {
@@ -191,6 +202,7 @@ class LocalDatabase private constructor(context: Context) :
             put("file_path", filePath)
             put("downloaded_at", System.currentTimeMillis())
             put("file_size_bytes", fileSizeBytes)
+            put("quality", quality)
         }
         db.insertWithOnConflict("downloads", null, values, SQLiteDatabase.CONFLICT_REPLACE)
         refreshAllFlows()

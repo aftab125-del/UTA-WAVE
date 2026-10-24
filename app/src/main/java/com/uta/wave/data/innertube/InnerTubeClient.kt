@@ -363,12 +363,12 @@ class InnerTubeClient(
         Pair("YouTube Playlist", searchFallback)
     }
 
-    suspend fun resolveStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-        AppLogger.i("🎯 Resolving audio stream for videoId: $videoId")
+    suspend fun resolveStreamUrl(videoId: String, qualityTag: String = "LOSSLESS"): String? = withContext(Dispatchers.IO) {
+        AppLogger.i("🎯 Resolving audio stream ($qualityTag) for videoId: $videoId")
         refreshVisitorDataIfNeeded()
 
         // 1. Primary: VISIONOS client (1.02, Client ID 101) - proven to serve whole unthrottled audio stream without 403
-        val visionResult = tryResolveVisionOS(videoId)
+        val visionResult = tryResolveVisionOS(videoId, qualityTag)
         if (!visionResult.isNullOrBlank()) {
             AppLogger.i("✅ Resolved stream via VISIONOS client for $videoId")
             return@withContext visionResult
@@ -376,7 +376,7 @@ class InnerTubeClient(
 
         // 2. Secondary: ANDROID_VR client (1.65.10) with visitorData
         AppLogger.w("VISIONOS returned no stream, falling back to ANDROID_VR...")
-        val vrResult = tryResolveVR(videoId)
+        val vrResult = tryResolveVR(videoId, qualityTag)
         if (!vrResult.isNullOrBlank()) {
             AppLogger.i("✅ Resolved stream via ANDROID_VR client for $videoId")
             return@withContext vrResult
@@ -384,7 +384,7 @@ class InnerTubeClient(
 
         // 3. Tertiary: IOS client (19.45.4, Client ID 5)
         AppLogger.w("ANDROID_VR returned no stream, falling back to IOS...")
-        val iosResult = tryResolveIOS(videoId)
+        val iosResult = tryResolveIOS(videoId, qualityTag)
         if (!iosResult.isNullOrBlank()) {
             AppLogger.i("✅ Resolved stream via IOS client for $videoId")
             return@withContext iosResult
@@ -394,7 +394,46 @@ class InnerTubeClient(
         null
     }
 
-    private fun tryResolveVisionOS(videoId: String): String? {
+    private data class StreamCandidate(
+        val url: String,
+        val mime: String,
+        val bitrate: Long,
+        val itag: Int
+    )
+
+    private fun extractBestStreamUrl(adaptive: JSONArray, qualityTag: String = "LOSSLESS"): String? {
+        val candidates = mutableListOf<StreamCandidate>()
+        for (i in 0 until adaptive.length()) {
+            val format = adaptive.optJSONObject(i) ?: continue
+            val mime = format.optString("mimeType", "")
+            val url = format.optString("url", "")
+            if (mime.contains("audio/") && url.isNotBlank()) {
+                val bitrate = format.optLong("bitrate", 128000L)
+                val itag = format.optInt("itag", 0)
+                candidates.add(StreamCandidate(url, mime, bitrate, itag))
+            }
+        }
+        if (candidates.isEmpty()) return null
+
+        return when (qualityTag.uppercase()) {
+            "LOSSLESS" -> {
+                // Highest bitrate format available (e.g. 256k AAC or 160k Opus)
+                candidates.maxByOrNull { it.bitrate }?.url
+            }
+            "HIGH" -> {
+                candidates.filter { it.bitrate in 140000L..200000L }.maxByOrNull { it.bitrate }?.url
+                    ?: candidates.maxByOrNull { it.bitrate }?.url
+            }
+            "STANDARD" -> {
+                candidates.find { it.mime.contains("audio/mp4") && it.bitrate in 100000L..150000L }?.url
+                    ?: candidates.find { it.mime.contains("audio/mp4") }?.url
+                    ?: candidates.firstOrNull()?.url
+            }
+            else -> candidates.maxByOrNull { it.bitrate }?.url
+        }
+    }
+
+    private fun tryResolveVisionOS(videoId: String, qualityTag: String = "LOSSLESS"): String? {
         try {
             val payload = JSONObject().apply {
                 val clientObj = JSONObject().apply {
@@ -436,26 +475,7 @@ class InnerTubeClient(
 
                 val streamData = json.optJSONObject("streamingData") ?: return null
                 val adaptive = streamData.optJSONArray("adaptiveFormats") ?: JSONArray()
-                
-                // Prefer audio/mp4 (m4a)
-                for (i in 0 until adaptive.length()) {
-                    val format = adaptive.optJSONObject(i) ?: continue
-                    val mime = format.optString("mimeType", "")
-                    val url = format.optString("url", "")
-                    if (mime.contains("audio/mp4") && url.isNotBlank()) {
-                        return url
-                    }
-                }
-
-                // Fallback to any audio url (webm/opus)
-                for (i in 0 until adaptive.length()) {
-                    val format = adaptive.optJSONObject(i) ?: continue
-                    val mime = format.optString("mimeType", "")
-                    val url = format.optString("url", "")
-                    if (mime.contains("audio/") && url.isNotBlank()) {
-                        return url
-                    }
-                }
+                return extractBestStreamUrl(adaptive, qualityTag)
             }
         } catch (e: Exception) {
             AppLogger.w("VISIONOS resolve failed: ${e.message}")
@@ -463,7 +483,7 @@ class InnerTubeClient(
         return null
     }
 
-    private fun tryResolveVR(videoId: String): String? {
+    private fun tryResolveVR(videoId: String, qualityTag: String = "LOSSLESS"): String? {
         try {
             val payload = JSONObject().apply {
                 val clientObj = JSONObject().apply {
@@ -499,24 +519,7 @@ class InnerTubeClient(
 
                 val streamData = json.optJSONObject("streamingData") ?: return null
                 val adaptive = streamData.optJSONArray("adaptiveFormats") ?: JSONArray()
-                
-                for (i in 0 until adaptive.length()) {
-                    val format = adaptive.optJSONObject(i) ?: continue
-                    val mime = format.optString("mimeType", "")
-                    val url = format.optString("url", "")
-                    if (mime.contains("audio/mp4") && url.isNotBlank()) {
-                        return url
-                    }
-                }
-
-                for (i in 0 until adaptive.length()) {
-                    val format = adaptive.optJSONObject(i) ?: continue
-                    val mime = format.optString("mimeType", "")
-                    val url = format.optString("url", "")
-                    if (mime.contains("audio/") && url.isNotBlank()) {
-                        return url
-                    }
-                }
+                return extractBestStreamUrl(adaptive, qualityTag)
             }
         } catch (e: Exception) {
             AppLogger.w("ANDROID_VR resolve failed: ${e.message}")
@@ -524,7 +527,7 @@ class InnerTubeClient(
         return null
     }
 
-    private fun tryResolveIOS(videoId: String): String? {
+    private fun tryResolveIOS(videoId: String, qualityTag: String = "LOSSLESS"): String? {
         try {
             val payload = JSONObject().apply {
                 val clientObj = JSONObject().apply {
@@ -559,14 +562,7 @@ class InnerTubeClient(
 
                 val streamData = json.optJSONObject("streamingData") ?: return null
                 val adaptive = streamData.optJSONArray("adaptiveFormats") ?: JSONArray()
-                for (i in 0 until adaptive.length()) {
-                    val format = adaptive.optJSONObject(i) ?: continue
-                    val mime = format.optString("mimeType", "")
-                    val url = format.optString("url", "")
-                    if (mime.contains("audio/") && url.isNotBlank()) {
-                        return url
-                    }
-                }
+                return extractBestStreamUrl(adaptive, qualityTag)
             }
         } catch (e: Exception) {
             AppLogger.w("IOS resolve failed: ${e.message}")
