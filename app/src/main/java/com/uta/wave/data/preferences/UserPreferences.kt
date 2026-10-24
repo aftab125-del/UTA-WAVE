@@ -87,7 +87,8 @@ data class AppSettings(
     val liquidGlassPlayerEnabled: Boolean = true,
     val liquidGlassMiniPlayerEnabled: Boolean = true,
     val liquidGlassNavBarEnabled: Boolean = true,
-    val useFloatingNavBar: Boolean = true
+    val useFloatingNavBar: Boolean = true,
+    val enableHighRefreshRate: Boolean = true
 )
 
 class UserPreferences private constructor(context: Context) {
@@ -184,7 +185,8 @@ class UserPreferences private constructor(context: Context) {
             liquidGlassPlayerEnabled = prefs.getBoolean("liquid_glass_player_enabled", true),
             liquidGlassMiniPlayerEnabled = prefs.getBoolean("liquid_glass_mini_player_enabled", true),
             liquidGlassNavBarEnabled = prefs.getBoolean("liquid_glass_nav_bar_enabled", true),
-            useFloatingNavBar = prefs.getBoolean("use_floating_nav_bar", true)
+            useFloatingNavBar = prefs.getBoolean("use_floating_nav_bar", true),
+            enableHighRefreshRate = prefs.getBoolean("enable_high_refresh_rate", true)
         )
     }
 
@@ -510,6 +512,11 @@ class UserPreferences private constructor(context: Context) {
     fun updateUseFloatingNavBar(enabled: Boolean) {
         prefs.edit().putBoolean("use_floating_nav_bar", enabled).apply()
         _settingsFlow.update { it.copy(useFloatingNavBar = enabled) }
+    }
+
+    fun updateEnableHighRefreshRate(enabled: Boolean) {
+        prefs.edit().putBoolean("enable_high_refresh_rate", enabled).apply()
+        _settingsFlow.update { it.copy(enableHighRefreshRate = enabled) }
     }
 
     fun resetLiquidGlassToDefaults() {
