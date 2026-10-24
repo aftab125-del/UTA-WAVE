@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.FontDownload
 import com.uta.wave.ui.settings.font.FontSelectionScreen
 import com.uta.wave.ui.settings.icon.AppIconSettingsScreen
 import com.uta.wave.ui.settings.theme.ThemeScreen
+import com.uta.wave.ui.theme.*
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
@@ -195,16 +196,18 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF140E18)
+                    containerColor = SurfaceDark,
+                    titleContentColor = TextPrimary,
+                    navigationIconContentColor = TextPrimary
                 )
             )
         },
-        containerColor = Color(0xFF100A14),
+        containerColor = ObsidianBackground,
         modifier = modifier.fillMaxSize()
     ) { paddingValues ->
         Box(
@@ -2039,8 +2042,8 @@ private fun SettingsGroupCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF1E1522))
-            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp)),
+            .background(SurfaceElevated)
+            .border(1.dp, CardBorder.copy(alpha = 0.5f), RoundedCornerShape(20.dp)),
         content = content
     )
 }
@@ -2050,7 +2053,7 @@ private fun SettingsGroupItem(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    accentColor: Color = Color(0xFFF2AEC7),
+    accentColor: Color = ElectricViolet,
     badgeText: String? = null,
     onClick: () -> Unit
 ) {
@@ -2065,7 +2068,7 @@ private fun SettingsGroupItem(
             modifier = Modifier
                 .size(38.dp)
                 .clip(CircleShape)
-                .background(accentColor.copy(alpha = 0.14f)),
+                .background(accentColor.copy(alpha = 0.16f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -2085,13 +2088,13 @@ private fun SettingsGroupItem(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp
                 ),
-                color = Color.White
+                color = TextPrimary
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                color = Color.White.copy(alpha = 0.58f)
+                color = TextSecondary
             )
         }
 
@@ -2099,7 +2102,7 @@ private fun SettingsGroupItem(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(Color(0xFFF2AEC7).copy(alpha = 0.2f))
+                    .background(accentColor.copy(alpha = 0.2f))
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
@@ -2108,7 +2111,7 @@ private fun SettingsGroupItem(
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp
                     ),
-                    color = Color(0xFFF2AEC7)
+                    color = accentColor
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -2117,7 +2120,7 @@ private fun SettingsGroupItem(
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
             contentDescription = null,
-            tint = Color.White.copy(alpha = 0.35f),
+            tint = TextSecondary.copy(alpha = 0.5f),
             modifier = Modifier.size(13.dp)
         )
     }
@@ -2138,18 +2141,18 @@ private fun SettingsToggleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+            Text(text = title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = TextPrimary)
             Spacer(modifier = Modifier.height(2.dp))
-            Text(text = subtitle, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = Color.White.copy(alpha = 0.6f))
+            Text(text = subtitle, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = TextSecondary)
         }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = Color(0xFFF2AEC7),
-                uncheckedThumbColor = Color(0xFF8E7D8A),
-                uncheckedTrackColor = Color(0xFF2C2230)
+                checkedTrackColor = ElectricViolet,
+                uncheckedThumbColor = TextMuted,
+                uncheckedTrackColor = SurfaceContainerHigh
             )
         )
     }
@@ -2163,7 +2166,7 @@ private fun SectionHeader(title: String) {
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp
         ),
-        color = Color(0xFFF2AEC7),
+        color = ElectricViolet,
         modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
     )
 }
@@ -2174,7 +2177,7 @@ private fun SettingsItemDivider() {
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(CardBorder.copy(alpha = 0.4f))
     )
 }
 

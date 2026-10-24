@@ -85,12 +85,15 @@ import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.ObsidianBackground
 import com.uta.wave.ui.theme.SoftViolet
 import com.uta.wave.ui.theme.SurfaceDark
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.uta.wave.ui.theme.TextMuted
 import com.uta.wave.ui.theme.TextPrimary
 import com.uta.wave.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
 
-val BlushRose = Color(0xFFE5A9B8)
+var BlushRose by mutableStateOf(Color(0xFFF2AEC7))
 val DarkBlushText = Color(0xFF221118)
 
 @OptIn(ExperimentalMaterial3Api::class)

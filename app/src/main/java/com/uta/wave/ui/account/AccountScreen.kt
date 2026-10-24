@@ -38,6 +38,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import com.uta.wave.ui.theme.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -174,7 +175,7 @@ fun AccountScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                     }
                 },
@@ -183,16 +184,18 @@ fun AccountScreen(
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = "Settings & Customization",
-                            tint = Color(0xFFF2AEC7)
+                            tint = ElectricViolet
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF140C16)
+                    containerColor = SurfaceDark,
+                    titleContentColor = TextPrimary,
+                    navigationIconContentColor = TextPrimary
                 )
             )
         },
-        containerColor = Color(0xFF100912),
+        containerColor = ObsidianBackground,
         modifier = modifier.fillMaxSize()
     ) { paddingValues ->
         Column(
@@ -215,8 +218,8 @@ fun AccountScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(20.dp))
-                        .background(Color(0xFF1E1522))
-                        .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+                        .background(SurfaceElevated)
+                        .border(1.dp, CardBorder.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
                 ) {
                     // Active Account Row
                     Row(
@@ -622,7 +625,7 @@ private fun AccountSectionHeader(title: String) {
             letterSpacing = 1.3.sp,
             fontSize = 11.5.sp
         ),
-        color = Color(0xFFC0AAB8),
+        color = ElectricViolet,
         modifier = Modifier.padding(horizontal = 4.dp)
     )
 }

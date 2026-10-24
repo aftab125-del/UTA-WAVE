@@ -62,6 +62,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.recognizer.BlushRose
@@ -71,13 +74,17 @@ import com.uta.wave.ui.theme.SoftViolet
 import com.uta.wave.ui.theme.TextMuted
 import com.uta.wave.ui.theme.TextPrimary
 
-// Glassmorphism Gradients & Highlights
-val GlassBackgroundBrush = Brush.verticalGradient(
-    listOf(Color(0xD922182B), Color(0xBF140D1C))
+// Glassmorphism Gradients & Highlights (Dynamic theme reactive)
+var GlassBackgroundBrush by mutableStateOf(
+    Brush.verticalGradient(
+        listOf(Color(0xD922182B), Color(0xBF140D1C))
+    )
 )
 
-val GlassBorderBrush = Brush.verticalGradient(
-    listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.05f))
+var GlassBorderBrush by mutableStateOf(
+    Brush.verticalGradient(
+        listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.05f))
+    )
 )
 
 data class NavTab(
