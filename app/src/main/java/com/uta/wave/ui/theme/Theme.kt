@@ -3,6 +3,7 @@ package com.uta.wave.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 
 val ObsidianBackground = Color(0xFF0F0B12)
@@ -33,9 +34,21 @@ private val WaveDarkColorScheme = darkColorScheme(
 )
 
 @Composable
-fun UtaWaveTheme(content: @Composable () -> Unit) {
+fun UtaWaveTheme(
+    selectedFont: String = "SYSTEM",
+    customFontPath: String? = null,
+    content: @Composable () -> Unit
+) {
+    val brandFont = remember(selectedFont, customFontPath) {
+        resolveFontFamily(selectedFont, customFontPath)
+    }
+    val typography = remember(brandFont) {
+        getTypography(brandFont = brandFont, plainFont = brandFont)
+    }
+
     MaterialTheme(
         colorScheme = WaveDarkColorScheme,
+        typography = typography,
         content = content
     )
 }
