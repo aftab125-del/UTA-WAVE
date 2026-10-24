@@ -114,7 +114,8 @@ fun FullscreenPlayerSheet(
     onViewAlbum: ((String) -> Unit)? = null,
     playlists: List<PlaylistRecord> = emptyList(),
     onCreatePlaylist: ((String) -> Unit)? = null,
-    onAddToPlaylist: ((String, TrackItem) -> Unit)? = null
+    onAddToPlaylist: ((String, TrackItem) -> Unit)? = null,
+    onLaunchAmbientMode: (() -> Unit)? = null
 ) {
     val track = playerState.currentTrack ?: return
     val context = LocalContext.current
@@ -605,7 +606,8 @@ fun FullscreenPlayerSheet(
                 Toast.makeText(context, "Ready to cast UTA-wave audio", Toast.LENGTH_SHORT).show()
             },
             onToggleAmbientMode = {
-                Toast.makeText(context, "Ambient mode enabled", Toast.LENGTH_SHORT).show()
+                showMoreOptions = false
+                onLaunchAmbientMode?.invoke()
             },
             onToggleLyrics = {
                 showLyrics = !showLyrics
