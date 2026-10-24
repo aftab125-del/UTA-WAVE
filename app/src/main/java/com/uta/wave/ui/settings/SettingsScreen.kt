@@ -38,7 +38,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CropOriginal
 import androidx.compose.material.icons.filled.Delete
+import com.uta.wave.ui.settings.icon.AppIconSettingsScreen
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
@@ -151,6 +153,11 @@ fun SettingsScreen(
         return
     }
 
+    if (activeSubSection == "App Icon") {
+        AppIconSettingsScreen(onBack = { activeSubSection = null })
+        return
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -245,6 +252,14 @@ fun SettingsScreen(
                             subtitle = "Themes, colors, and UI layout",
                             accentColor = Color(0xFFF2AEC7),
                             onClick = { activeSubSection = "Appearance" }
+                        )
+                        SettingsItemDivider()
+                        SettingsGroupItem(
+                            icon = Icons.Default.CropOriginal,
+                            title = "App Icon & Branding",
+                            subtitle = "Custom gallery image, shapes & presets",
+                            accentColor = Color(0xFFFB7185),
+                            onClick = { activeSubSection = "App Icon" }
                         )
                         SettingsItemDivider()
                         SettingsGroupItem(
@@ -344,7 +359,7 @@ fun SettingsScreen(
                 ) {
                     when (activeSubSection) {
                         "AI Hub" -> AIHubSettingsSection(userPrefs, settings)
-                        "Appearance" -> AppearanceSettingsSection(userPrefs, settings)
+                        "Appearance" -> AppearanceSettingsSection(userPrefs, settings, onNavigateToAppIcon = { activeSubSection = "App Icon" })
                         "Player and audio" -> PlayerAudioSettingsSection(userPrefs, settings)
                         "Listen Together" -> ListenTogetherSettingsSection(userPrefs, settings)
                         "Content" -> ContentSettingsSection(userPrefs, settings)
@@ -502,7 +517,73 @@ private fun AIHubSettingsSection(prefs: UserPreferences, settings: AppSettings) 
 // 2. APPEARANCE SETTINGS SECTION
 // -------------------------------------------------------------------------
 @Composable
-private fun AppearanceSettingsSection(prefs: UserPreferences, settings: AppSettings) {
+private fun AppearanceSettingsSection(
+    prefs: UserPreferences,
+    settings: AppSettings,
+    onNavigateToAppIcon: () -> Unit = {}
+) {
+    SectionHeader("App Launcher Icon")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+            .clickable(onClick = onNavigateToAppIcon)
+            .padding(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFF2AEC7).copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CropOriginal,
+                        contentDescription = null,
+                        tint = Color(0xFFF2AEC7),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Customize App Icon",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        ),
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Upload gallery photo, custom label & shapes",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = Color.White.copy(alpha = 0.60f)
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.35f),
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
     SectionHeader("Theme Mode")
 
     val themes = listOf(

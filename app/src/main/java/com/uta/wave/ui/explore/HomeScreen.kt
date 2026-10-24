@@ -108,6 +108,8 @@ fun HomeScreen(
     val innerTubeClient = remember { InnerTubeClient() }
     val accountManager = remember { com.uta.wave.data.account.AccountManager.getInstance(context) }
     val userProfile by accountManager.profileFlow.collectAsState()
+    val userPrefs = remember { com.uta.wave.data.preferences.UserPreferences.getInstance(context) }
+    val userSettings by userPrefs.settingsFlow.collectAsState()
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -185,15 +187,36 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "UTA-wave",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 26.sp,
-                        letterSpacing = (-0.6).sp
-                    ),
-                    color = TextPrimary
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val customIconFile = remember(userSettings.customIconPath) {
+                        userSettings.customIconPath?.let { java.io.File(it) }?.takeIf { it.exists() }
+                    }
+                    if (userSettings.useCustomIconInApp && customIconFile != null) {
+                        AsyncImage(
+                            model = customIconFile,
+                            contentDescription = "Custom Icon",
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                    }
+                    Text(
+                        text = if (userSettings.useCustomIconInApp && userSettings.customIconLabel.isNotBlank()) {
+                            userSettings.customIconLabel
+                        } else {
+                            "UTA-wave"
+                        },
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 26.sp,
+                            letterSpacing = (-0.6).sp
+                        ),
+                        color = TextPrimary
+                    )
+                }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
