@@ -1320,4 +1320,115 @@ class InnerTubeClient(
             artworkUrl = artUrl
         )
     }
+
+    /**
+     * Fetches authenticated YouTube Music account profile details (display name, email, avatar URL).
+     */
+    suspend fun fetchAccountProfile(cookie: String, sapisid: String?): UserAccountInfo? = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+            }
+
+            val reqBuilder = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/account/account_menu")
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .header("Origin", "https://music.youtube.com")
+                .header("Referer", "https://music.youtube.com/")
+                .header("X-YouTube-Client-Name", "67")
+                .header("X-YouTube-Client-Version", CLIENT_VERSION)
+                .header("Cookie", cookie)
+
+            val resolvedSapisid = sapisid ?: extractCookiePart(cookie, "SAPISID") ?: extractCookiePart(cookie, "__Secure-3PAPISID")
+            if (!resolvedSapisid.isNullOrBlank()) {
+                val timestamp = System.currentTimeMillis() / 1000
+                val input = "$timestamp $resolvedSapisid https://music.youtube.com"
+                val md = java.security.MessageDigest.getInstance("SHA-1")
+                val digest = md.digest(input.toByteArray(Charsets.UTF_8))
+                val sha1 = digest.joinToString("") { b -> "%02x".format(b) }
+                reqBuilder.header("Authorization", "SAPISIDHASH ${timestamp}_$sha1")
+            }
+
+            val request = reqBuilder
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    AppLogger.w("fetchAccountProfile HTTP failed: ${response.code}")
+                    return@withContext null
+                }
+                val body = response.body?.string() ?: return@withContext null
+                val root = JSONObject(body)
+                val header = findActiveAccountHeader(root)
+                if (header != null) {
+                    val name = header.optJSONObject("accountName")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: header.optJSONObject("accountName")?.optString("simpleText")
+                        ?: "YouTube User"
+
+                    val email = header.optJSONObject("email")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: header.optJSONObject("email")?.optString("simpleText")
+                        ?: ""
+
+                    val photoObj = header.optJSONObject("accountPhoto") ?: header.optJSONObject("avatar")
+                    val thumbs = photoObj?.optJSONArray("thumbnails")
+                    var avatarUrl = if (thumbs != null && thumbs.length() > 0) {
+                        thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+                    } else null
+                    if (avatarUrl != null && avatarUrl.startsWith("//")) {
+                        avatarUrl = "https:$avatarUrl"
+                    }
+
+                    val handle = header.optJSONObject("channelHandle")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+
+                    AppLogger.i("fetchAccountProfile success: name=$name, avatarUrl=$avatarUrl")
+                    return@withContext UserAccountInfo(
+                        name = name,
+                        email = if (email.isNotBlank()) email else (handle ?: "YouTube Connected"),
+                        avatarUrl = avatarUrl,
+                        handle = handle
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.e("fetchAccountProfile network error", e)
+        }
+        null
+    }
+
+    private fun findActiveAccountHeader(obj: JSONObject): JSONObject? {
+        if (obj.has("activeAccountHeaderRenderer")) {
+            return obj.optJSONObject("activeAccountHeaderRenderer")
+        }
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val child = obj.opt(key)
+            if (child is JSONObject) {
+                val res = findActiveAccountHeader(child)
+                if (res != null) return res
+            } else if (child is JSONArray) {
+                for (i in 0 until child.length()) {
+                    val item = child.optJSONObject(i)
+                    if (item != null) {
+                        val res = findActiveAccountHeader(item)
+                        if (res != null) return res
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun extractCookiePart(cookieHeader: String, key: String): String? {
+        val parts = cookieHeader.split(";")
+        for (part in parts) {
+            val trimmed = part.trim()
+            if (trimmed.startsWith("$key=")) {
+                return trimmed.substring(key.length + 1)
+            }
+        }
+        return null
+    }
 }

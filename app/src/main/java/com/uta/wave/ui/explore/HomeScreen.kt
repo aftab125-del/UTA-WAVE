@@ -53,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,10 +99,13 @@ fun HomeScreen(
     onOpenArtist: (String) -> Unit = {},
     onOpenAlbum: (String) -> Unit = {},
     onOpenAccount: () -> Unit = {},
+    onOpenListeningSummary: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val innerTubeClient = remember { InnerTubeClient() }
+    val accountManager = remember { com.uta.wave.data.account.AccountManager.getInstance(context) }
+    val userProfile by accountManager.profileFlow.collectAsState()
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -201,12 +205,10 @@ fun HomeScreen(
                             modifier = Modifier.size(22.dp)
                         )
                     }
-                    IconButton(onClick = {
-                        Toast.makeText(context, "History: ${recentHistory.size} tracks played", Toast.LENGTH_SHORT).show()
-                    }) {
+                    IconButton(onClick = onOpenListeningSummary) {
                         Icon(
                             imageVector = Icons.Outlined.History,
-                            contentDescription = "History",
+                            contentDescription = "Listening Summary & History",
                             tint = TextSecondary,
                             modifier = Modifier.size(22.dp)
                         )
@@ -229,13 +231,25 @@ fun HomeScreen(
                             modifier = Modifier.size(22.dp)
                         )
                     }
-                    IconButton(onClick = onOpenAccount) {
-                        Icon(
-                            imageVector = Icons.Outlined.AccountCircle,
+                    if (!userProfile.avatarUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = userProfile.avatarUrl,
                             contentDescription = "Profile & Settings",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, Color(0xFFF2AEC7).copy(alpha = 0.6f), CircleShape)
+                                .clickable(onClick = onOpenAccount)
                         )
+                    } else {
+                        IconButton(onClick = onOpenAccount) {
+                            Icon(
+                                imageVector = Icons.Outlined.AccountCircle,
+                                contentDescription = "Profile & Settings",
+                                tint = TextSecondary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
             }

@@ -74,3 +74,10 @@ data class LyricsResult(
     val plainText: String = "",
     val provider: String = "LrcLib"
 )
+
+data class UserAccountInfo(
+    val name: String,
+    val email: String,
+    val avatarUrl: String?,
+    val handle: String? = null
+)
