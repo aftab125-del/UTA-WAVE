@@ -40,6 +40,8 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CropOriginal
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FontDownload
+import com.uta.wave.ui.settings.font.FontSelectionScreen
 import com.uta.wave.ui.settings.icon.AppIconSettingsScreen
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Equalizer
@@ -158,6 +160,11 @@ fun SettingsScreen(
         return
     }
 
+    if (activeSubSection == "App Font") {
+        FontSelectionScreen(onBack = { activeSubSection = null })
+        return
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -252,6 +259,14 @@ fun SettingsScreen(
                             subtitle = "Themes, colors, and UI layout",
                             accentColor = Color(0xFFF2AEC7),
                             onClick = { activeSubSection = "Appearance" }
+                        )
+                        SettingsItemDivider()
+                        SettingsGroupItem(
+                            icon = Icons.Default.FontDownload,
+                            title = "App Font",
+                            subtitle = "Google Sans, Outfit, Plus Jakarta & Custom TTF",
+                            accentColor = Color(0xFFA855F7),
+                            onClick = { activeSubSection = "App Font" }
                         )
                         SettingsItemDivider()
                         SettingsGroupItem(
@@ -359,7 +374,12 @@ fun SettingsScreen(
                 ) {
                     when (activeSubSection) {
                         "AI Hub" -> AIHubSettingsSection(userPrefs, settings)
-                        "Appearance" -> AppearanceSettingsSection(userPrefs, settings, onNavigateToAppIcon = { activeSubSection = "App Icon" })
+                        "Appearance" -> AppearanceSettingsSection(
+                            userPrefs,
+                            settings,
+                            onNavigateToAppIcon = { activeSubSection = "App Icon" },
+                            onNavigateToAppFont = { activeSubSection = "App Font" }
+                        )
                         "Player and audio" -> PlayerAudioSettingsSection(userPrefs, settings)
                         "Listen Together" -> ListenTogetherSettingsSection(userPrefs, settings)
                         "Content" -> ContentSettingsSection(userPrefs, settings)
@@ -520,7 +540,8 @@ private fun AIHubSettingsSection(prefs: UserPreferences, settings: AppSettings) 
 private fun AppearanceSettingsSection(
     prefs: UserPreferences,
     settings: AppSettings,
-    onNavigateToAppIcon: () -> Unit = {}
+    onNavigateToAppIcon: () -> Unit = {},
+    onNavigateToAppFont: () -> Unit = {}
 ) {
     SectionHeader("App Launcher Icon")
 
@@ -569,6 +590,68 @@ private fun AppearanceSettingsSection(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "Upload gallery photo, custom label & shapes",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = Color.White.copy(alpha = 0.60f)
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.35f),
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+    SectionHeader("Typography")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+            .clickable(onClick = onNavigateToAppFont)
+            .padding(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFA855F7).copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FontDownload,
+                        contentDescription = null,
+                        tint = Color(0xFFA855F7),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "App Font",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        ),
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Google Sans, Outfit, Plus Jakarta & Custom TTF",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                         color = Color.White.copy(alpha = 0.60f)
                     )

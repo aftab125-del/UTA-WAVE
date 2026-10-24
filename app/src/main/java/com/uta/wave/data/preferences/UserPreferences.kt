@@ -63,7 +63,11 @@ data class AppSettings(
     val customIconLabel: String = "UTA-wave",
     val customIconShape: String = "SQUIRCLE",      // SQUIRCLE, CIRCLE, ROUNDED
     val selectedIconPreset: String = "DEFAULT",    // DEFAULT, ECHO_PINK, CYBER_GOLD, NEON_BLUE, CRIMSON, SAKURA
-    val useCustomIconInApp: Boolean = true
+    val useCustomIconInApp: Boolean = true,
+
+    // Typography & Font
+    val selectedFont: String = "GOOGLE_SANS",      // SYSTEM, GOOGLE_SANS, SANS_FLEX, OUTFIT, PLUS_JAKARTA_SANS, CUSTOM
+    val customFontPath: String? = null
 )
 
 class UserPreferences private constructor(context: Context) {
@@ -138,7 +142,10 @@ class UserPreferences private constructor(context: Context) {
             customIconLabel = prefs.getString("custom_icon_label", "UTA-wave") ?: "UTA-wave",
             customIconShape = prefs.getString("custom_icon_shape", "SQUIRCLE") ?: "SQUIRCLE",
             selectedIconPreset = prefs.getString("selected_icon_preset", "DEFAULT") ?: "DEFAULT",
-            useCustomIconInApp = prefs.getBoolean("use_custom_icon_in_app", true)
+            useCustomIconInApp = prefs.getBoolean("use_custom_icon_in_app", true),
+
+            selectedFont = prefs.getString("selected_font", "GOOGLE_SANS") ?: "GOOGLE_SANS",
+            customFontPath = prefs.getString("custom_font_path", null)
         )
     }
 
@@ -196,6 +203,17 @@ class UserPreferences private constructor(context: Context) {
     fun updateUseCustomIconInApp(enabled: Boolean) {
         prefs.edit().putBoolean("use_custom_icon_in_app", enabled).apply()
         _settingsFlow.update { it.copy(useCustomIconInApp = enabled) }
+    }
+
+    // Font & Typography Updates
+    fun updateSelectedFont(font: String) {
+        prefs.edit().putString("selected_font", font).apply()
+        _settingsFlow.update { it.copy(selectedFont = font) }
+    }
+
+    fun updateCustomFontPath(path: String?) {
+        prefs.edit().putString("custom_font_path", path).apply()
+        _settingsFlow.update { it.copy(customFontPath = path) }
     }
 
     // Audio & Playback Updates
