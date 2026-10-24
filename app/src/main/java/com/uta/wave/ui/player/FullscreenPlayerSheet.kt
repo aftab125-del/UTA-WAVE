@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.uta.wave.data.downloads.AudioDownloadManager
+import com.uta.wave.data.downloads.AudioQuality
 import com.uta.wave.data.innertube.LyricLine
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.PlaylistRecord
@@ -73,10 +74,12 @@ import com.uta.wave.data.lyrics.LyricsClient
 import com.uta.wave.player.RepeatMode as PlayerRepeatMode
 import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.components.AmbientCanvas
+import com.uta.wave.ui.components.DownloadQualityBottomSheet
 import com.uta.wave.ui.components.PlaylistSelectionSheet
 import com.uta.wave.ui.components.ScallopedFlowerShape
 import com.uta.wave.ui.components.SongDetailsDialog
 import com.uta.wave.ui.components.SquigglySlider
+import com.uta.wave.ui.components.TrimRingtoneBottomSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -128,6 +131,8 @@ fun FullscreenPlayerSheet(
     var showSongDetails by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
     var showPlaylistPicker by remember { mutableStateOf(false) }
+    var showTrimRingtone by remember { mutableStateOf(false) }
+    var showDownloadQuality by remember { mutableStateOf(false) }
 
     // Sleep Timer Job
     var sleepTimerJob by remember { mutableStateOf<Job?>(null) }
@@ -345,15 +350,7 @@ fun FullscreenPlayerSheet(
                                     isDownloaded = false
                                     Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
                                 } else if (!isDownloading) {
-                                    Toast.makeText(context, "Downloading \"${track.title}\"...", Toast.LENGTH_SHORT).show()
-                                    downloadManager.downloadTrack(track) { success ->
-                                        if (success) {
-                                            isDownloaded = true
-                                            Toast.makeText(context, "Downloaded \"${track.title}\"", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "Download failed", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
+                                    showDownloadQuality = true
                                 }
                             },
                         contentAlignment = Alignment.Center
@@ -622,19 +619,11 @@ fun FullscreenPlayerSheet(
                     isDownloaded = false
                     Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "Downloading \"${track.title}\"...", Toast.LENGTH_SHORT).show()
-                    downloadManager.downloadTrack(track) { success ->
-                        if (success) {
-                            isDownloaded = true
-                            Toast.makeText(context, "Downloaded \"${track.title}\"", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Download failed", Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                    showDownloadQuality = true
                 }
             },
             onSetRingtone = {
-                Toast.makeText(context, "Ringtone feature coming soon", Toast.LENGTH_SHORT).show()
+                showTrimRingtone = true
             },
             onListenTogether = {
                 Toast.makeText(context, "Listen Together room created: #UTA-WAVE-SYNC", Toast.LENGTH_SHORT).show()
@@ -709,6 +698,34 @@ fun FullscreenPlayerSheet(
                 onCreatePlaylist?.invoke(playlistName)
             },
             onDismiss = { showPlaylistPicker = false }
+        )
+    }
+
+    // Modal Bottom Sheet: Trim Ringtone
+    if (showTrimRingtone) {
+        TrimRingtoneBottomSheet(
+            track = track,
+            durationSeconds = (playerState.durationMs / 1000).toInt(),
+            onDismiss = { showTrimRingtone = false }
+        )
+    }
+
+    // Modal Bottom Sheet: Download Quality Selection
+    if (showDownloadQuality) {
+        DownloadQualityBottomSheet(
+            track = track,
+            onSelectQuality = { quality ->
+                Toast.makeText(context, "Downloading \"${track.title}\" (${quality.badge})...", Toast.LENGTH_SHORT).show()
+                downloadManager.downloadTrack(track, quality) { success ->
+                    if (success) {
+                        isDownloaded = true
+                        Toast.makeText(context, "Downloaded \"${track.title}\" (${quality.badge})", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Download failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onDismiss = { showDownloadQuality = false }
         )
     }
 }
