@@ -91,44 +91,95 @@ fun AmbientCanvas(
     Canvas(modifier = modifier.fillMaxSize()) {
         val width = size.width
         val height = size.height
-
-        // Solid obsidian base
-        drawRect(ObsidianBackground)
-
+        val isLandscape = width > height
         val currentScale = if (isPlaying) pulseScale else 1.0f
 
-        // Top primary ambient radial glow
-        val topCenter = Offset(width * 0.5f, height * 0.35f)
-        val topRadius = (width * 0.85f) * currentScale
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    animatedDominant.copy(alpha = 0.40f),
-                    animatedDominant.copy(alpha = 0.15f),
-                    Color.Transparent
-                ),
-                center = topCenter,
-                radius = topRadius
-            ),
-            radius = topRadius,
-            center = topCenter
-        )
+        if (isLandscape) {
+            // Landscape mode: Rich diffused double-bloom atmospheric canvas
+            // Solid dark obsidian foundation
+            drawRect(Color(0xFF0A060E))
 
-        // Bottom secondary ambient radial glow
-        val bottomCenter = Offset(width * 0.5f, height * 0.70f)
-        val bottomRadius = (width * 0.75f) * currentScale
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    animatedSecondary.copy(alpha = 0.30f),
-                    animatedSecondary.copy(alpha = 0.10f),
-                    Color.Transparent
+            // 1. Overall soft radial tint
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        animatedDominant.copy(alpha = 0.38f),
+                        animatedSecondary.copy(alpha = 0.20f),
+                        Color(0xFF0A060E)
+                    ),
+                    center = Offset(width * 0.35f, height * 0.5f),
+                    radius = width * 0.85f * currentScale
+                )
+            )
+
+            // 2. Focused artwork ambient bloom on the left
+            val artCenter = Offset(width * 0.25f, height * 0.5f)
+            val artRadius = height * 0.72f * currentScale
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        animatedDominant.copy(alpha = 0.45f),
+                        animatedDominant.copy(alpha = 0.15f),
+                        Color.Transparent
+                    ),
+                    center = artCenter,
+                    radius = artRadius
                 ),
-                center = bottomCenter,
-                radius = bottomRadius
-            ),
-            radius = bottomRadius,
-            center = bottomCenter
-        )
+                radius = artRadius,
+                center = artCenter
+            )
+
+            // 3. Diffused lyrics ambient bloom on the right
+            val lyricsCenter = Offset(width * 0.75f, height * 0.5f)
+            val lyricsRadius = height * 0.75f * currentScale
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        animatedSecondary.copy(alpha = 0.30f),
+                        animatedSecondary.copy(alpha = 0.08f),
+                        Color.Transparent
+                    ),
+                    center = lyricsCenter,
+                    radius = lyricsRadius
+                ),
+                radius = lyricsRadius,
+                center = lyricsCenter
+            )
+        } else {
+            // Portrait mode: Dual vertical radial glows for Fullscreen Player
+            drawRect(ObsidianBackground)
+
+            val topCenter = Offset(width * 0.5f, height * 0.35f)
+            val topRadius = (width * 0.85f) * currentScale
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        animatedDominant.copy(alpha = 0.40f),
+                        animatedDominant.copy(alpha = 0.15f),
+                        Color.Transparent
+                    ),
+                    center = topCenter,
+                    radius = topRadius
+                ),
+                radius = topRadius,
+                center = topCenter
+            )
+
+            val bottomCenter = Offset(width * 0.5f, height * 0.70f)
+            val bottomRadius = (width * 0.75f) * currentScale
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        animatedSecondary.copy(alpha = 0.30f),
+                        animatedSecondary.copy(alpha = 0.10f),
+                        Color.Transparent
+                    ),
+                    center = bottomCenter,
+                    radius = bottomRadius
+                ),
+                radius = bottomRadius,
+                center = bottomCenter
+            )
+        }
     }
 }
