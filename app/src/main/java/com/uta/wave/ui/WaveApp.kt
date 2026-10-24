@@ -219,7 +219,31 @@ fun WaveApp() {
             onSeekTo = { positionMs -> playbackManager.seekTo(positionMs) },
             onToggleShuffle = { playbackManager.toggleShuffle() },
             onToggleRepeat = { playbackManager.toggleRepeat() },
-            onCollapse = { isPlayerExpanded = false }
+            onCollapse = { isPlayerExpanded = false },
+            queueTitle = if (playerState.queue.size > 1) "Now Playing (${playerState.queue.size})" else "Trending - Global",
+            onSelectQueueTrack = { selectedTrack ->
+                playbackManager.playTrack(selectedTrack, playerState.queue)
+            },
+            onClearQueue = {
+                currentTrack?.let { current ->
+                    playbackManager.playTrack(current, listOf(current))
+                }
+            },
+            onViewArtist = { artistName ->
+                selectedTab = 3
+                isPlayerExpanded = false
+            },
+            onViewAlbum = { albumName ->
+                selectedTab = 3
+                isPlayerExpanded = false
+            },
+            playlists = playlists,
+            onCreatePlaylist = { name ->
+                scope.launch { localDatabase.createPlaylist(name) }
+            },
+            onAddToPlaylist = { playlistId, track ->
+                scope.launch { localDatabase.addTrackToPlaylist(playlistId, track) }
+            }
         )
     }
 
