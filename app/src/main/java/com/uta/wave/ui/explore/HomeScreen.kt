@@ -260,7 +260,7 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Outlined.Settings,
                             contentDescription = "Settings & Customization",
-                            tint = Color(0xFFF2AEC7),
+                            tint = ElectricViolet,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -271,7 +271,7 @@ fun HomeScreen(
                             modifier = Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .border(1.5.dp, Color(0xFFF2AEC7).copy(alpha = 0.6f), CircleShape)
+                                .border(1.5.dp, ElectricViolet.copy(alpha = 0.6f), CircleShape)
                                 .clickable(onClick = onOpenSettings)
                         )
                     } else {

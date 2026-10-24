@@ -380,7 +380,7 @@ fun LibraryScreen(
                             Icon(Icons.Outlined.Cast, contentDescription = "Cast", tint = TextSecondary, modifier = Modifier.size(22.dp))
                         }
                         IconButton(onClick = onOpenSettings) {
-                            Icon(Icons.Outlined.Settings, contentDescription = "Settings & Customization", tint = Color(0xFFF2AEC7), modifier = Modifier.size(22.dp))
+                            Icon(Icons.Outlined.Settings, contentDescription = "Settings & Customization", tint = ElectricViolet, modifier = Modifier.size(22.dp))
                         }
                         if (!userProfile.avatarUrl.isNullOrBlank()) {
                             AsyncImage(
@@ -389,7 +389,7 @@ fun LibraryScreen(
                                 modifier = Modifier
                                     .size(28.dp)
                                     .clip(CircleShape)
-                                    .border(1.5.dp, Color(0xFFF2AEC7).copy(alpha = 0.6f), CircleShape)
+                                    .border(1.5.dp, ElectricViolet.copy(alpha = 0.6f), CircleShape)
                                     .clickable(onClick = onOpenSettings)
                             )
                         } else {

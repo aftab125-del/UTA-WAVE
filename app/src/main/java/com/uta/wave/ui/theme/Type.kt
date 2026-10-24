@@ -33,13 +33,32 @@ val GoogleSansFontFamily = FontFamily(
     ),
     Font(
         resId = R.font.google_sans_flex,
+        weight = FontWeight.SemiBold,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(600),
+            FontVariation.width(100f),
+            FontVariation.Setting("ROND", 100f)
+        )
+    ),
+    Font(
+        resId = R.font.google_sans_flex,
         weight = FontWeight.Bold,
         variationSettings = FontVariation.Settings(
             FontVariation.weight(700),
             FontVariation.width(100f),
             FontVariation.Setting("ROND", 100f)
         )
-    )
+    ),
+    Font(
+        resId = R.font.google_sans_flex,
+        weight = FontWeight.ExtraBold,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(800),
+            FontVariation.width(100f),
+            FontVariation.Setting("ROND", 100f)
+        )
+    ),
+    Font(resId = R.font.google_sans_flex, weight = FontWeight.Normal)
 )
 
 @OptIn(ExperimentalTextApi::class)
@@ -64,51 +83,50 @@ val SansFlexFontFamily = FontFamily(
     ),
     Font(
         resId = R.font.sans_flex,
+        weight = FontWeight.SemiBold,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(600),
+            FontVariation.width(100f),
+            FontVariation.Setting("ROND", 100f)
+        )
+    ),
+    Font(
+        resId = R.font.sans_flex,
         weight = FontWeight.Bold,
         variationSettings = FontVariation.Settings(
             FontVariation.weight(700),
             FontVariation.width(100f),
             FontVariation.Setting("ROND", 100f)
         )
-    )
+    ),
+    Font(
+        resId = R.font.sans_flex,
+        weight = FontWeight.ExtraBold,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(800),
+            FontVariation.width(100f),
+            FontVariation.Setting("ROND", 100f)
+        )
+    ),
+    Font(resId = R.font.sans_flex, weight = FontWeight.Normal)
 )
 
-@OptIn(ExperimentalTextApi::class)
 val OutfitFontFamily = FontFamily(
-    Font(
-        resId = R.font.outfit,
-        weight = FontWeight.Normal,
-        variationSettings = FontVariation.Settings(FontVariation.weight(400))
-    ),
-    Font(
-        resId = R.font.outfit,
-        weight = FontWeight.Medium,
-        variationSettings = FontVariation.Settings(FontVariation.weight(500))
-    ),
-    Font(
-        resId = R.font.outfit,
-        weight = FontWeight.Bold,
-        variationSettings = FontVariation.Settings(FontVariation.weight(700))
-    )
+    Font(resId = R.font.outfit, weight = FontWeight.Light),
+    Font(resId = R.font.outfit, weight = FontWeight.Normal),
+    Font(resId = R.font.outfit, weight = FontWeight.Medium),
+    Font(resId = R.font.outfit, weight = FontWeight.SemiBold),
+    Font(resId = R.font.outfit, weight = FontWeight.Bold),
+    Font(resId = R.font.outfit, weight = FontWeight.ExtraBold)
 )
 
-@OptIn(ExperimentalTextApi::class)
 val PlusJakartaSansFontFamily = FontFamily(
-    Font(
-        resId = R.font.plus_jakarta_sans,
-        weight = FontWeight.Normal,
-        variationSettings = FontVariation.Settings(FontVariation.weight(400))
-    ),
-    Font(
-        resId = R.font.plus_jakarta_sans,
-        weight = FontWeight.Medium,
-        variationSettings = FontVariation.Settings(FontVariation.weight(500))
-    ),
-    Font(
-        resId = R.font.plus_jakarta_sans,
-        weight = FontWeight.Bold,
-        variationSettings = FontVariation.Settings(FontVariation.weight(700))
-    )
+    Font(resId = R.font.plus_jakarta_sans, weight = FontWeight.Light),
+    Font(resId = R.font.plus_jakarta_sans, weight = FontWeight.Normal),
+    Font(resId = R.font.plus_jakarta_sans, weight = FontWeight.Medium),
+    Font(resId = R.font.plus_jakarta_sans, weight = FontWeight.SemiBold),
+    Font(resId = R.font.plus_jakarta_sans, weight = FontWeight.Bold),
+    Font(resId = R.font.plus_jakarta_sans, weight = FontWeight.ExtraBold)
 )
 
 enum class AppFont(val value: String, val displayName: String, val description: String) {
@@ -212,42 +230,42 @@ fun getTypography(brandFont: FontFamily, plainFont: FontFamily = FontFamily.Defa
             letterSpacing = 0.1.sp
         ),
         bodyLarge = TextStyle(
-            fontFamily = plainFont,
+            fontFamily = brandFont,
             fontWeight = FontWeight.Normal,
             fontSize = 16.sp,
             lineHeight = 24.sp,
             letterSpacing = 0.5.sp
         ),
         bodyMedium = TextStyle(
-            fontFamily = plainFont,
+            fontFamily = brandFont,
             fontWeight = FontWeight.Normal,
             fontSize = 14.sp,
             lineHeight = 20.sp,
             letterSpacing = 0.25.sp
         ),
         bodySmall = TextStyle(
-            fontFamily = plainFont,
+            fontFamily = brandFont,
             fontWeight = FontWeight.Normal,
             fontSize = 12.sp,
             lineHeight = 16.sp,
             letterSpacing = 0.4.sp
         ),
         labelLarge = TextStyle(
-            fontFamily = plainFont,
+            fontFamily = brandFont,
             fontWeight = FontWeight.Medium,
             fontSize = 14.sp,
             lineHeight = 20.sp,
             letterSpacing = 0.1.sp
         ),
         labelMedium = TextStyle(
-            fontFamily = plainFont,
+            fontFamily = brandFont,
             fontWeight = FontWeight.Medium,
             fontSize = 12.sp,
             lineHeight = 16.sp,
             letterSpacing = 0.5.sp
         ),
         labelSmall = TextStyle(
-            fontFamily = plainFont,
+            fontFamily = brandFont,
             fontWeight = FontWeight.Medium,
             fontSize = 11.sp,
             lineHeight = 16.sp,
