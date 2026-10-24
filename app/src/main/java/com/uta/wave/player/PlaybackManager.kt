@@ -140,7 +140,7 @@ class PlaybackManager private constructor(private val context: Context) {
                         )
                     }
                 }
-                delay(400)
+                delay(100)
             }
         }
     }

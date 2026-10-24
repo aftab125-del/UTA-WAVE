@@ -20,6 +20,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,6 +70,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,6 +99,7 @@ import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.components.AmbientCanvas
 import com.uta.wave.ui.theme.TextMuted
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -106,17 +109,17 @@ import kotlin.math.abs
  * Specifications & Behavioral Blueprint:
  * 1. True Immersive Fullscreen:
  *    - Status bar and navigation bar completely hidden via WindowInsetsControllerCompat.
- *    - Transient gesture reveal without disrupting the immersive canvas.
  *    - Short edge display cutout mode enabled.
  * 2. Left Column (Album Artwork):
- *    - Clean, vertically centered rounded square (~28dp corner radius) floating with soft ambient shadow.
+ *    - Vertically centered rounded square (~28dp corner radius) floating with soft ambient shadow.
  *    - Zero text clutter (no song title or artist name underneath).
  * 3. Top-Left Three Dots Button (⋮):
  *    - Plain icon floating directly on canvas without a circular background container.
- * 4. Right Column (Word-by-Word Flow Lyrics & Re-sync):
- *    - Dynamic word-by-word flow highlighting on the active line (sung words bright white + glow, unsung words dimmed).
+ * 4. Right Column (Smooth Alphabet-by-Alphabet Flow Lyrics):
+ *    - 60fps/120fps continuous frame-accurate position interpolation.
+ *    - Smooth alphabet-by-alphabet progression: letters bloom continuously into solid bright white with ambient glow.
  *    - Non-active lines rendered in soft readable translucent mauve (~0.55f alpha).
- *    - Floating [🔄 Re-sync] capsule button at the bottom to snap back into sync.
+ *    - Floating [🔄 Re-sync] capsule button appears ONLY when lyrics become unsynced (e.g. user scrolled away).
  * 5. Background:
  *    - Diffused double-bloom ambient gradient adapting to the song's palette.
  * 6. Pure Gesture Controls:
@@ -197,27 +200,76 @@ fun AmbientModeScreen(
     var isLyricsLoading by remember { mutableStateOf(true) }
 
     val lyricsListState = rememberLazyListState()
+    val isListDragged by lyricsListState.interactionSource.collectIsDraggedAsState()
+    var isUserScrolledAway by remember { mutableStateOf(false) }
+
+    // High-resolution position tracker for 60/120fps alphabet flow
+    var smoothedPositionMs by remember { mutableFloatStateOf(playerState.positionMs.toFloat()) }
+
+    // Keep smoothed position synchronized with player state
+    LaunchedEffect(playerState.positionMs) {
+        val diff = abs(playerState.positionMs - smoothedPositionMs)
+        if (diff > 400f || !playerState.isPlaying) {
+            smoothedPositionMs = playerState.positionMs.toFloat()
+        }
+    }
+
+    // Continuous vsync frame clock advancing smoothly while playing
+    LaunchedEffect(playerState.isPlaying) {
+        if (playerState.isPlaying) {
+            var lastFrameNanos = 0L
+            while (isActive) {
+                withFrameNanos { frameTimeNanos ->
+                    if (lastFrameNanos != 0L) {
+                        val deltaMs = (frameTimeNanos - lastFrameNanos) / 1_000_000f
+                        smoothedPositionMs += deltaMs.coerceIn(0f, 50f)
+                    }
+                    lastFrameNanos = frameTimeNanos
+                }
+            }
+        }
+    }
 
     LaunchedEffect(track.id) {
         isLyricsLoading = true
+        isUserScrolledAway = false
         val result = lyricsClient.getLyrics(track.title, track.artist, track.durationSeconds)
         lyricLines = result.lines
         isLyricsSynced = result.isSynced
         isLyricsLoading = false
     }
 
-    // Active lyric index based on player position
-    val activeIndex = remember(lyricLines, playerState.positionMs, isLyricsSynced) {
+    // Active lyric index based on high-resolution player position
+    val activeIndex = remember(lyricLines, smoothedPositionMs, isLyricsSynced) {
         if (!isLyricsSynced || lyricLines.isEmpty()) -1
         else {
-            val idx = lyricLines.indexOfLast { it.timestampMs <= playerState.positionMs }
+            val curPos = smoothedPositionMs.toLong()
+            val idx = lyricLines.indexOfLast { it.timestampMs <= curPos }
             if (idx >= 0) idx else 0
         }
     }
 
-    // Flow Lyrics auto-centering scroll
-    LaunchedEffect(activeIndex) {
-        if (activeIndex >= 0 && isLyricsSynced) {
+    // Detect manual dragging vs return to sync
+    LaunchedEffect(isListDragged) {
+        if (isListDragged) {
+            isUserScrolledAway = true
+        } else if (isUserScrolledAway) {
+            // When user releases finger, check if activeIndex is positioned near the center
+            val visibleItems = lyricsListState.layoutInfo.visibleItemsInfo
+            val activeItem = visibleItems.find { it.index == activeIndex }
+            if (activeItem != null) {
+                val viewportCenter = lyricsListState.layoutInfo.viewportEndOffset / 2
+                val itemCenter = activeItem.offset + (activeItem.size / 2)
+                if (abs(viewportCenter - itemCenter) < 160) {
+                    isUserScrolledAway = false
+                }
+            }
+        }
+    }
+
+    // Auto-scroll ONLY when lyrics are in sync (not manually scrolled away)
+    LaunchedEffect(activeIndex, isLyricsSynced, isUserScrolledAway) {
+        if (!isUserScrolledAway && activeIndex >= 0 && isLyricsSynced) {
             lyricsListState.animateScrollToItem(
                 index = activeIndex,
                 scrollOffset = -220
@@ -369,7 +421,7 @@ fun AmbientModeScreen(
                 }
             }
 
-            // Right Column: Flow Lyrics (Word-by-word flow highlighting + [🔄 Re-sync])
+            // Right Column: Smooth Alphabet-by-Alphabet Flow Lyrics
             Box(
                 modifier = Modifier
                     .weight(if (isArtworkVisible) 0.58f else 1f)
@@ -381,9 +433,22 @@ fun AmbientModeScreen(
                     activeIndex = activeIndex,
                     isSynced = isLyricsSynced,
                     isLoading = isLyricsLoading,
-                    positionMs = playerState.positionMs,
+                    smoothedPositionMs = smoothedPositionMs,
+                    isUserScrolledAway = isUserScrolledAway,
                     listState = lyricsListState,
-                    onSeekTo = onSeekTo,
+                    onSeekTo = { posMs ->
+                        isUserScrolledAway = false
+                        onSeekTo(posMs)
+                    },
+                    onReSync = {
+                        isUserScrolledAway = false
+                        scope.launch {
+                            lyricsListState.animateScrollToItem(
+                                index = activeIndex.coerceAtLeast(0),
+                                scrollOffset = -220
+                            )
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(if (!isArtworkVisible) 0.70f else 1f)
                 )
             }
@@ -585,10 +650,10 @@ fun AmbientModeScreen(
 }
 
 /**
- * Word-by-Word Flow Lyrics Component matching Echo Music.
- * - Active line: sung words illuminated bright solid white with ambient text glow; unsung words dimmed.
+ * Word/Alphabet-by-Alphabet Smooth Flow Lyrics Component matching Echo Music.
+ * - Active line: white glow smoothly sweeps alphabet by alphabet with ambient text bloom; unsung characters dimmed.
  * - Non-active lines: soft readable translucent mauve text.
- * - [🔄 Re-sync] floating capsule button snaps back to currently sung lyric.
+ * - [🔄 Re-sync] floating capsule button appears ONLY when lyrics get unsynced (e.g. user scrolled away).
  */
 @Composable
 private fun FlowLyricsView(
@@ -596,13 +661,13 @@ private fun FlowLyricsView(
     activeIndex: Int,
     isSynced: Boolean,
     isLoading: Boolean,
-    positionMs: Long,
+    smoothedPositionMs: Float,
+    isUserScrolledAway: Boolean,
     listState: LazyListState,
     onSeekTo: (Long) -> Unit,
+    onReSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val coroutineScope = rememberCoroutineScope()
-
     Box(modifier = modifier.fillMaxSize()) {
         when {
             isLoading -> {
@@ -644,47 +709,76 @@ private fun FlowLyricsView(
                         )
 
                         if (isActive && isSynced) {
-                            // Active line: Calculate word-by-word flow progression
-                            val nextTimestamp = if (index + 1 < lyricLines.size) {
-                                lyricLines[index + 1].timestampMs
+                            // Calculate continuous alphabet-by-alphabet progression
+                            val lineStart = line.timestampMs.toFloat()
+                            val nextStart = if (index + 1 < lyricLines.size) {
+                                lyricLines[index + 1].timestampMs.toFloat()
                             } else {
-                                line.timestampMs + 4000L
+                                lineStart + 4200f
                             }
-                            val lineDuration = (nextTimestamp - line.timestampMs).coerceIn(1000L, 8500L)
-                            val elapsed = (positionMs - line.timestampMs).coerceAtLeast(0L)
-                            val lineProgress = (elapsed.toFloat() / lineDuration.toFloat()).coerceIn(0f, 1f)
+                            val lineDuration = (nextStart - lineStart).coerceIn(1200f, 9000f)
+                            val elapsed = (smoothedPositionMs - lineStart).coerceAtLeast(0f)
+                            val lineProgress = (elapsed / lineDuration).coerceIn(0f, 1f)
 
-                            val words = remember(line.text) {
-                                line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }
-                            }
+                            val totalLength = line.text.length
+                            val charProgress = (lineProgress * totalLength).coerceIn(0f, totalLength.toFloat())
+                            val activeCharIndex = charProgress.toInt().coerceIn(0, (totalLength - 1).coerceAtLeast(0))
+                            val charFraction = (charProgress - activeCharIndex).coerceIn(0f, 1f)
 
-                            val completedWordCount = if (words.isNotEmpty()) {
-                                (lineProgress * words.size).toInt()
-                            } else 0
+                            val annotatedLyrics = buildAnnotatedString {
+                                if (totalLength == 0) return@buildAnnotatedString
 
-                            val annotatedLyrics = remember(words, completedWordCount) {
-                                buildAnnotatedString {
-                                    words.forEachIndexed { wordIdx, word ->
-                                        val isSung = wordIdx <= completedWordCount
-                                        val wordAlpha = if (isSung) 1.0f else 0.42f
-                                        val wordWeight = if (isSung) FontWeight.Bold else FontWeight.SemiBold
-
-                                        withStyle(
-                                            style = SpanStyle(
-                                                color = Color.White.copy(alpha = wordAlpha),
-                                                fontWeight = wordWeight,
-                                                fontSize = 24.sp,
-                                                shadow = if (isSung) Shadow(
-                                                    color = Color.White.copy(alpha = 0.60f),
-                                                    blurRadius = 16f
-                                                ) else null
+                                // 1. Already fully sung segment (bright solid white + glowing ambient shadow)
+                                if (activeCharIndex > 0) {
+                                    val completedText = line.text.substring(0, activeCharIndex.coerceAtMost(totalLength))
+                                    withStyle(
+                                        SpanStyle(
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 24.sp,
+                                            shadow = Shadow(
+                                                color = Color.White.copy(alpha = 0.85f),
+                                                blurRadius = 18f
                                             )
-                                        ) {
-                                            append(word)
-                                        }
-                                        if (wordIdx < words.size - 1) {
-                                            append(" ")
-                                        }
+                                        )
+                                    ) {
+                                        append(completedText)
+                                    }
+                                }
+
+                                // 2. Currently blooming alphabet
+                                if (activeCharIndex < totalLength) {
+                                    val currentChar = line.text[activeCharIndex]
+                                    val isSpace = currentChar.isWhitespace()
+                                    val curAlpha = 0.38f + (1.0f - 0.38f) * charFraction
+                                    withStyle(
+                                        SpanStyle(
+                                            color = Color.White.copy(alpha = curAlpha),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 24.sp,
+                                            shadow = if (!isSpace && charFraction > 0.05f) {
+                                                Shadow(
+                                                    color = Color.White.copy(alpha = 0.85f * charFraction),
+                                                    blurRadius = 18f * charFraction
+                                                )
+                                            } else null
+                                        )
+                                    ) {
+                                        append(currentChar)
+                                    }
+                                }
+
+                                // 3. Upcoming unsung segment (soft dimmed white)
+                                if (activeCharIndex + 1 < totalLength) {
+                                    val remainingText = line.text.substring(activeCharIndex + 1)
+                                    withStyle(
+                                        SpanStyle(
+                                            color = Color.White.copy(alpha = 0.38f),
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 24.sp
+                                        )
+                                    ) {
+                                        append(remainingText)
                                     }
                                 }
                             }
@@ -730,47 +824,43 @@ private fun FlowLyricsView(
                     }
                 }
 
-                // Floating [🔄 Re-sync] button at bottom center of lyrics section
-                if (isSynced && lyricLines.isNotEmpty()) {
-                    Box(
+                // Floating [🔄 Re-sync] button: ONLY visible when lyrics get unsynced (user has scrolled away)
+                AnimatedVisibility(
+                    visible = isSynced && lyricLines.isNotEmpty() && isUserScrolledAway,
+                    enter = fadeIn(tween(250)) + scaleIn(tween(250)),
+                    exit = fadeOut(tween(200)) + scaleOut(tween(200)),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 16.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.White.copy(alpha = 0.14f))
+                            .border(
+                                width = 1.dp,
+                                color = Color.White.copy(alpha = 0.22f),
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                            .clickable {
+                                onReSync()
+                            }
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color.White.copy(alpha = 0.12f))
-                                .border(
-                                    width = 1.dp,
-                                    color = Color.White.copy(alpha = 0.20f),
-                                    shape = RoundedCornerShape(20.dp)
-                                )
-                                .clickable {
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(
-                                            index = activeIndex.coerceAtLeast(0),
-                                            scrollOffset = -220
-                                        )
-                                    }
-                                }
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Sync,
-                                contentDescription = "Re-sync",
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Re-sync",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = "Re-sync",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Re-sync",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
