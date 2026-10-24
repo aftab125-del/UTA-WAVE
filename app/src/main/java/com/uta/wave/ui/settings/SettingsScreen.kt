@@ -596,6 +596,280 @@ private fun AppearanceSettingsSection(
 
     var showMiniPlayerBackgroundDialog by remember { mutableStateOf(false) }
     var showSliderStyleDialog by remember { mutableStateOf(false) }
+    var showLyricsPositionDialog by remember { mutableStateOf(false) }
+    var showLyricsAnimationStyleDialog by remember { mutableStateOf(false) }
+    var showLyricsTextSizeDialog by remember { mutableStateOf(false) }
+    var showLyricsLineSpacingDialog by remember { mutableStateOf(false) }
+
+    if (showLyricsPositionDialog) {
+        val positions = listOf(
+            "LEFT" to "Left",
+            "CENTER" to "Center",
+            "RIGHT" to "Right"
+        )
+        AlertDialog(
+            onDismissRequest = { showLyricsPositionDialog = false },
+            title = {
+                Text(
+                    text = "Lyrics text position",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    positions.forEach { (pos, label) ->
+                        val isSelected = settings.lyricsPosition.equals(pos, ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    prefs.updateLyricsPosition(pos)
+                                    showLyricsPositionDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    prefs.updateLyricsPosition(pos)
+                                    showLyricsPositionDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = currentAccent,
+                                    unselectedColor = Color.White.copy(alpha = 0.5f)
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = label,
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLyricsPositionDialog = false }) {
+                    Text("Cancel", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (showLyricsAnimationStyleDialog) {
+        val styles = listOf(
+            "ECHOMUSIC_1" to "Echo Music 1 (Spring Pop & Sweep)",
+            "APPLE_V2" to "Apple Music v2 (Letter Fluid Wave)",
+            "APPLE" to "Apple Music (Word-by-word Cubic)",
+            "LYRICS_V2" to "Lyrics v2 (Floating Word Wave)",
+            "METRO_LYRICS" to "Metro Lyrics (Kinetic Bold)",
+            "KARAOKE" to "Karaoke (Brush Wipe & Corona)",
+            "SLIDE" to "Slide (Breathing Horizontal Wipe)",
+            "GLOW" to "Glow (Neon Bloom Pulse)",
+            "FADE" to "Fade (Smooth Cubic Alpha)",
+            "NONE" to "None (Standard Clean Text)"
+        )
+        AlertDialog(
+            onDismissRequest = { showLyricsAnimationStyleDialog = false },
+            title = {
+                Text(
+                    text = "Lyrics animation style",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    styles.forEach { (style, label) ->
+                        val isSelected = settings.lyricsAnimationStyle.equals(style, ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    prefs.updateLyricsAnimationStyle(style)
+                                    showLyricsAnimationStyleDialog = false
+                                }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    prefs.updateLyricsAnimationStyle(style)
+                                    showLyricsAnimationStyleDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = currentAccent,
+                                    unselectedColor = Color.White.copy(alpha = 0.5f)
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = label,
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 14.sp
+                                )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLyricsAnimationStyleDialog = false }) {
+                    Text("Cancel", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (showLyricsTextSizeDialog) {
+        var tempSize by remember { mutableFloatStateOf(settings.lyricsTextSize) }
+        AlertDialog(
+            onDismissRequest = { showLyricsTextSizeDialog = false },
+            title = {
+                Text(
+                    text = "Lyrics text size",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "${tempSize.toInt()} sp",
+                        color = currentAccent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Slider(
+                        value = tempSize,
+                        onValueChange = { tempSize = it },
+                        valueRange = 16f..36f,
+                        steps = 19,
+                        colors = SliderDefaults.colors(
+                            thumbColor = currentAccent,
+                            activeTrackColor = currentAccent,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("16 sp", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("Default: 24 sp", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("36 sp", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    tempSize = 24f
+                    prefs.updateLyricsTextSize(24f)
+                }) {
+                    Text("Reset", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.updateLyricsTextSize(tempSize)
+                    showLyricsTextSizeDialog = false
+                }) {
+                    Text("Done", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (showLyricsLineSpacingDialog) {
+        var tempSpacing by remember { mutableFloatStateOf(settings.lyricsLineSpacing) }
+        AlertDialog(
+            onDismissRequest = { showLyricsLineSpacingDialog = false },
+            title = {
+                Text(
+                    text = "Lyrics line spacing",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "${String.format(java.util.Locale.ROOT, "%.1f", tempSpacing)}x",
+                        color = currentAccent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Slider(
+                        value = tempSpacing,
+                        onValueChange = { tempSpacing = it },
+                        valueRange = 1.0f..4.0f,
+                        steps = 29,
+                        colors = SliderDefaults.colors(
+                            thumbColor = currentAccent,
+                            activeTrackColor = currentAccent,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("1.0x", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("Default: 1.8x", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("4.0x", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    tempSpacing = 1.8f
+                    prefs.updateLyricsLineSpacing(1.8f)
+                }) {
+                    Text("Reset", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.updateLyricsLineSpacing(tempSpacing)
+                    showLyricsLineSpacingDialog = false
+                }) {
+                    Text("Done", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
 
     if (showSliderStyleDialog) {
         PlayerSliderStyleDialog(
@@ -1618,6 +1892,477 @@ private fun AppearanceSettingsSection(
             Switch(
                 checked = settings.canvasThumbnailAnimation,
                 onCheckedChange = { prefs.updateCanvasThumbnailAnimation(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+    SectionHeader("Lyrics Appearance")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+            .padding(16.dp)
+    ) {
+        // 1. Lyrics text position
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showLyricsPositionDialog = true }
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Lyrics text position",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = when (settings.lyricsPosition.uppercase()) {
+                        "CENTER" -> "Center"
+                        "RIGHT" -> "Right"
+                        else -> "Left"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = currentAccent
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.4f),
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 2. Lyrics animation style
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showLyricsAnimationStyleDialog = true }
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Lyrics animation style",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = when (settings.lyricsAnimationStyle.uppercase()) {
+                        "ECHOMUSIC_1" -> "Echo Music 1 (Spring Pop & Sweep)"
+                        "APPLE_V2" -> "Apple Music v2 (Letter Fluid Wave)"
+                        "APPLE" -> "Apple Music (Word-by-word Cubic)"
+                        "LYRICS_V2" -> "Lyrics v2 (Floating Word Wave)"
+                        "METRO_LYRICS" -> "Metro Lyrics (Kinetic Bold)"
+                        "KARAOKE" -> "Karaoke (Brush Wipe & Corona)"
+                        "SLIDE" -> "Slide (Breathing Horizontal Wipe)"
+                        "GLOW" -> "Glow (Neon Bloom Pulse)"
+                        "FADE" -> "Fade (Smooth Cubic Alpha)"
+                        else -> "None (Standard Clean Text)"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = currentAccent
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.4f),
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 3. Apple Music lyrics blur
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Apple Music lyrics blur",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Progressive depth-of-field blur on inactive lines (farther lines blur up to 7dp)",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.appleMusicLyricsBlur,
+                onCheckedChange = { prefs.updateAppleMusicLyricsBlur(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 4. Standard lyrics blur
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Lyrics standard blur",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Uniform soft blur across all inactive lyric lines",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.lyricsStandardBlur,
+                onCheckedChange = { prefs.updateLyricsStandardBlur(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 5. Lyrics text size
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showLyricsTextSizeDialog = true }
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Lyrics text size",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "${settings.lyricsTextSize.toInt()} sp",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = currentAccent
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.4f),
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 6. Lyrics line spacing
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showLyricsLineSpacingDialog = true }
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Lyrics line spacing",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "${String.format(java.util.Locale.ROOT, "%.1f", settings.lyricsLineSpacing)}x",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = currentAccent
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.4f),
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 7. Lyrics click / tap to seek
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Tap to seek",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Jump playback directly to timestamp when tapping a lyric line",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.lyricsClick,
+                onCheckedChange = { prefs.updateLyricsClick(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 8. Auto scroll
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Auto scroll",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Keep currently active lyric smoothly centered in view",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.lyricsScroll,
+                onCheckedChange = { prefs.updateLyricsScroll(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 9. Swipe lyrics to change song
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Swipe lyrics to change song",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Swipe horizontally across the lyrics screen to skip tracks",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.swipeLyrics,
+                onCheckedChange = { prefs.updateSwipeLyrics(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 10. Enable lyrics thumbnail play/pause button
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Thumbnail play/pause button",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Show play/pause toggle button over album thumbnail in lyrics header",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.enableLyricsThumbnailPlayPause,
+                onCheckedChange = { prefs.updateEnableLyricsThumbnailPlayPause(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 11. Hide status bar on fullscreen
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Hide status bar on lyrics",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Immersive fullscreen lyrics view hiding the system status bar",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.hideStatusBarOnFullscreen,
+                onCheckedChange = { prefs.updateHideStatusBarOnFullscreen(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 12. Lyrics glow effect
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Lyrics glow effect",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Vibrant neon backlight glow on the active lyric line",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.lyricsGlowEffect,
+                onCheckedChange = { prefs.updateLyricsGlowEffect(it) },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = currentAccent,

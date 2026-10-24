@@ -30,6 +30,18 @@ data class AppSettings(
     val rotatingThumbnail: Boolean = false,        // Rotating turntable vinyl animation on player artwork
     val canvasThumbnailAnimation: Boolean = true,  // Animated looping video canvases for songs
     val lyricsAnimation: String = "ALPHABET_V2",   // ALPHABET_V2 (Smooth Letter flow), WORD_BY_WORD
+    val lyricsPosition: String = "LEFT",           // LEFT, CENTER, RIGHT
+    val lyricsAnimationStyle: String = "ECHOMUSIC_1", // NONE, FADE, GLOW, SLIDE, KARAOKE, APPLE, APPLE_V2, ECHOMUSIC_1, LYRICS_V2, METRO_LYRICS
+    val appleMusicLyricsBlur: Boolean = false,     // Apple Music depth-of-field progressive blur on inactive lines
+    val lyricsStandardBlur: Boolean = false,       // Standard uniform blur on inactive lines
+    val lyricsTextSize: Float = 24.0f,             // 16f .. 36f sp
+    val lyricsLineSpacing: Float = 1.3f,           // 1.0f .. 4.0f
+    val lyricsClick: Boolean = true,               // Tap line to seek
+    val lyricsScroll: Boolean = true,              // Auto-scroll active line to optical center
+    val swipeLyrics: Boolean = true,               // Swipe left/right on lyrics header to change track
+    val enableLyricsThumbnailPlayPause: Boolean = true, // Play/pause overlay on mini thumbnail in lyrics header
+    val hideStatusBarOnFullscreen: Boolean = false,// Hide status bar in full-screen lyrics
+    val lyricsGlowEffect: Boolean = false,         // Neon ambient glow bloom around active lyric line
     val ambientCanvasEnabled: Boolean = true,
 
     // Audio & Playback
@@ -146,6 +158,18 @@ class UserPreferences private constructor(context: Context) {
             rotatingThumbnail = prefs.getBoolean("rotating_thumbnail", false),
             canvasThumbnailAnimation = prefs.getBoolean("canvas_thumbnail_animation", true),
             lyricsAnimation = prefs.getString("lyrics_animation", "ALPHABET_V2") ?: "ALPHABET_V2",
+            lyricsPosition = prefs.getString("lyrics_position", "LEFT") ?: "LEFT",
+            lyricsAnimationStyle = prefs.getString("lyrics_animation_style", "ECHOMUSIC_1") ?: "ECHOMUSIC_1",
+            appleMusicLyricsBlur = prefs.getBoolean("apple_music_lyrics_blur", false),
+            lyricsStandardBlur = prefs.getBoolean("lyrics_standard_blur", false),
+            lyricsTextSize = prefs.getFloat("lyrics_text_size", 24.0f),
+            lyricsLineSpacing = prefs.getFloat("lyrics_line_spacing", 1.3f),
+            lyricsClick = prefs.getBoolean("lyrics_click", true),
+            lyricsScroll = prefs.getBoolean("lyrics_scroll", true),
+            swipeLyrics = prefs.getBoolean("swipe_lyrics", true),
+            enableLyricsThumbnailPlayPause = prefs.getBoolean("enable_lyrics_thumbnail_play_pause", true),
+            hideStatusBarOnFullscreen = prefs.getBoolean("hide_status_bar_on_fullscreen", false),
+            lyricsGlowEffect = prefs.getBoolean("lyrics_glow_effect", false),
             ambientCanvasEnabled = prefs.getBoolean("ambient_canvas_enabled", true),
 
             wifiQuality = prefs.getString("wifi_quality", "LOSSLESS") ?: "LOSSLESS",
@@ -327,6 +351,66 @@ class UserPreferences private constructor(context: Context) {
     fun updateLyricsAnimation(style: String) {
         prefs.edit().putString("lyrics_animation", style).apply()
         _settingsFlow.update { it.copy(lyricsAnimation = style) }
+    }
+
+    fun updateLyricsPosition(position: String) {
+        prefs.edit().putString("lyrics_position", position).apply()
+        _settingsFlow.update { it.copy(lyricsPosition = position) }
+    }
+
+    fun updateLyricsAnimationStyle(style: String) {
+        prefs.edit().putString("lyrics_animation_style", style).apply()
+        _settingsFlow.update { it.copy(lyricsAnimationStyle = style) }
+    }
+
+    fun updateAppleMusicLyricsBlur(enabled: Boolean) {
+        prefs.edit().putBoolean("apple_music_lyrics_blur", enabled).apply()
+        _settingsFlow.update { it.copy(appleMusicLyricsBlur = enabled) }
+    }
+
+    fun updateLyricsStandardBlur(enabled: Boolean) {
+        prefs.edit().putBoolean("lyrics_standard_blur", enabled).apply()
+        _settingsFlow.update { it.copy(lyricsStandardBlur = enabled) }
+    }
+
+    fun updateLyricsTextSize(size: Float) {
+        prefs.edit().putFloat("lyrics_text_size", size).apply()
+        _settingsFlow.update { it.copy(lyricsTextSize = size) }
+    }
+
+    fun updateLyricsLineSpacing(spacing: Float) {
+        prefs.edit().putFloat("lyrics_line_spacing", spacing).apply()
+        _settingsFlow.update { it.copy(lyricsLineSpacing = spacing) }
+    }
+
+    fun updateLyricsClick(enabled: Boolean) {
+        prefs.edit().putBoolean("lyrics_click", enabled).apply()
+        _settingsFlow.update { it.copy(lyricsClick = enabled) }
+    }
+
+    fun updateLyricsScroll(enabled: Boolean) {
+        prefs.edit().putBoolean("lyrics_scroll", enabled).apply()
+        _settingsFlow.update { it.copy(lyricsScroll = enabled) }
+    }
+
+    fun updateSwipeLyrics(enabled: Boolean) {
+        prefs.edit().putBoolean("swipe_lyrics", enabled).apply()
+        _settingsFlow.update { it.copy(swipeLyrics = enabled) }
+    }
+
+    fun updateEnableLyricsThumbnailPlayPause(enabled: Boolean) {
+        prefs.edit().putBoolean("enable_lyrics_thumbnail_play_pause", enabled).apply()
+        _settingsFlow.update { it.copy(enableLyricsThumbnailPlayPause = enabled) }
+    }
+
+    fun updateHideStatusBarOnFullscreen(enabled: Boolean) {
+        prefs.edit().putBoolean("hide_status_bar_on_fullscreen", enabled).apply()
+        _settingsFlow.update { it.copy(hideStatusBarOnFullscreen = enabled) }
+    }
+
+    fun updateLyricsGlowEffect(enabled: Boolean) {
+        prefs.edit().putBoolean("lyrics_glow_effect", enabled).apply()
+        _settingsFlow.update { it.copy(lyricsGlowEffect = enabled) }
     }
 
     fun updateAmbientCanvas(enabled: Boolean) {
