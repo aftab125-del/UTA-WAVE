@@ -12,6 +12,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,6 +110,7 @@ import com.uta.wave.ui.components.liquidGlass
 import com.uta.wave.ui.components.SquigglySlider
 import com.uta.wave.ui.components.PlayerSeeker
 import com.uta.wave.ui.components.WavyShape
+import com.uta.wave.ui.components.swipeToChangeSong
 import com.uta.wave.ui.components.TrimRingtoneBottomSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -236,6 +239,14 @@ fun FullscreenPlayerSheet(
         CircleShape
     }
 
+    val playPauseInteractionSource = remember { MutableInteractionSource() }
+    val isPlayPausePressed by playPauseInteractionSource.collectIsPressedAsState()
+    val playPauseScale by animateFloatAsState(
+        targetValue = if (isPlayPausePressed) 0.90f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 500f),
+        label = "playPauseScale"
+    )
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -278,6 +289,11 @@ fun FullscreenPlayerSheet(
                             blendMode = BlendMode.DstIn
                         )
                     }
+                    .swipeToChangeSong(
+                        enabled = settings.enableSwipeToChangeSong,
+                        onPrevious = onPrevious,
+                        onNext = onNext
+                    )
             ) {
                 AsyncImage(
                     model = track.artworkUrl,
@@ -801,6 +817,11 @@ fun FullscreenPlayerSheet(
                             .shadow(elevation = 28.dp, shape = RoundedCornerShape(26.dp))
                             .clip(RoundedCornerShape(26.dp))
                             .background(Color(0xFF1E1724))
+                            .swipeToChangeSong(
+                                enabled = settings.enableSwipeToChangeSong,
+                                onPrevious = onPrevious,
+                                onNext = onNext
+                            )
                     ) {
                         AsyncImage(
                             model = track.artworkUrl,
@@ -986,9 +1007,17 @@ fun FullscreenPlayerSheet(
                     Box(
                         modifier = Modifier
                             .size(78.dp)
+                            .graphicsLayer {
+                                scaleX = playPauseScale
+                                scaleY = playPauseScale
+                            }
                             .clip(defaultPlayPauseShape)
                             .background(Color(0xFFF3D7EC))
-                            .clickable(onClick = onTogglePlayPause),
+                            .clickable(
+                                interactionSource = playPauseInteractionSource,
+                                indication = null,
+                                onClick = onTogglePlayPause
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         if (playerState.isBuffering || playerState.isResolving) {
