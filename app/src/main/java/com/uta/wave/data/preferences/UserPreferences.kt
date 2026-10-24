@@ -20,7 +20,9 @@ data class AppSettings(
     val fontScale: Float = 1.0f,                   // 0.9f, 1.0f, 1.15f
     val miniplayerStyle: String = "FLOATING",      // FLOATING, BOTTOM_ATTACHED
     val miniplayerBackgroundStyle: String = "DEFAULT", // DEFAULT (Follow theme), BLUR, GLOW_ANIMATED, LIVE_MESH, LIQUID_GLASS
-    val playerStyle: String = "WAVE",              // WAVE (Squiggly), CLASSIC
+    val playerStyle: String = "APPLE_MUSIC",       // APPLE_MUSIC, WAVE (Squiggly), CLASSIC
+    val appleMusicPlayerEnabled: Boolean = true,   // Apple Music inspired fullscreen player layout
+    val hideVolumeSlider: Boolean = false,         // Hide volume slider on Apple Music player
     val lyricsAnimation: String = "ALPHABET_V2",   // ALPHABET_V2 (Smooth Letter flow), WORD_BY_WORD
     val ambientCanvasEnabled: Boolean = true,
 
@@ -128,7 +130,9 @@ class UserPreferences private constructor(context: Context) {
             fontScale = prefs.getFloat("font_scale", 1.0f),
             miniplayerStyle = prefs.getString("miniplayer_style", "FLOATING") ?: "FLOATING",
             miniplayerBackgroundStyle = prefs.getString("miniplayer_background_style", "DEFAULT") ?: "DEFAULT",
-            playerStyle = prefs.getString("player_style", "WAVE") ?: "WAVE",
+            playerStyle = prefs.getString("player_style", "APPLE_MUSIC") ?: "APPLE_MUSIC",
+            appleMusicPlayerEnabled = prefs.getBoolean("apple_music_player_enabled", true),
+            hideVolumeSlider = prefs.getBoolean("hide_volume_slider", false),
             lyricsAnimation = prefs.getString("lyrics_animation", "ALPHABET_V2") ?: "ALPHABET_V2",
             ambientCanvasEnabled = prefs.getBoolean("ambient_canvas_enabled", true),
 
@@ -266,6 +270,16 @@ class UserPreferences private constructor(context: Context) {
     fun updatePlayerStyle(style: String) {
         prefs.edit().putString("player_style", style).apply()
         _settingsFlow.update { it.copy(playerStyle = style) }
+    }
+
+    fun updateAppleMusicPlayer(enabled: Boolean) {
+        prefs.edit().putBoolean("apple_music_player_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(appleMusicPlayerEnabled = enabled, playerStyle = if (enabled) "APPLE_MUSIC" else "WAVE") }
+    }
+
+    fun updateHideVolumeSlider(hidden: Boolean) {
+        prefs.edit().putBoolean("hide_volume_slider", hidden).apply()
+        _settingsFlow.update { it.copy(hideVolumeSlider = hidden) }
     }
 
     fun updateLyricsAnimation(style: String) {
