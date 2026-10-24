@@ -185,7 +185,7 @@ fun TrimRingtoneBottomSheet(
                                 try {
                                     if (mediaPlayer == null) {
                                         val streamUrl = withContext(Dispatchers.IO) {
-                                            InnerTubeClient().resolveStreamUrl(track.videoId)
+                                            InnerTubeClient().resolveStreamUrl(track.videoId, qualityTag = "AAC")
                                         }
                                         if (streamUrl.isNullOrBlank()) {
                                             Toast.makeText(context, "Could not load preview", Toast.LENGTH_SHORT).show()

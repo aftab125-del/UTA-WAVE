@@ -437,6 +437,14 @@ class InnerTubeClient(
         if (candidates.isEmpty()) return null
 
         return when (qualityTag.uppercase()) {
+            "AAC", "RINGTONE" -> {
+                // ITAG 140 is 128kbps AAC (audio/mp4; codecs="mp4a.40.2"), 141 is 256kbps AAC
+                // Prioritize mp4/aac audio format for ringtone/media remuxing
+                candidates.filter { it.mime.contains("audio/mp4") || it.mime.contains("mp4a") }
+                    .maxByOrNull { it.bitrate }?.url
+                    ?: candidates.find { it.itag == 140 }?.url
+                    ?: candidates.maxByOrNull { it.bitrate }?.url
+            }
             "LOSSLESS" -> {
                 // Highest bitrate format available (e.g. 256k AAC or 160k Opus)
                 candidates.maxByOrNull { it.bitrate }?.url
