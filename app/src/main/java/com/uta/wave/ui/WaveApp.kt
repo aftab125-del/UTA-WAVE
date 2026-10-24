@@ -3,6 +3,7 @@ package com.uta.wave.ui
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -45,6 +46,7 @@ import com.uta.wave.ui.components.MiniPlayer
 import com.uta.wave.ui.explore.ChartsScreen
 import com.uta.wave.ui.explore.HomeScreen
 import com.uta.wave.ui.library.LibraryScreen
+import com.uta.wave.ui.player.AmbientModeScreen
 import com.uta.wave.ui.player.FullscreenPlayerSheet
 import com.uta.wave.ui.recognizer.RecognizeMusicScreen
 import com.uta.wave.ui.search.SearchScreen
@@ -73,6 +75,7 @@ fun WaveApp() {
     var viewingArtistId by remember { mutableStateOf<String?>(null) }
     var viewingAlbumId by remember { mutableStateOf<String?>(null) }
     var viewingAlbumArtistHint by remember { mutableStateOf<String?>(null) }
+    var isAmbientModeActive by remember { mutableStateOf(false) }
 
     val currentTrack = playerState.currentTrack
     val isCurrentTrackFavorite = currentTrack != null && favoritesList.any { it.id == currentTrack.id }
@@ -98,6 +101,9 @@ fun WaveApp() {
     }
 
     // Hardware / Gesture Back Navigation Handlers
+    BackHandler(enabled = isAmbientModeActive) {
+        isAmbientModeActive = false
+    }
     BackHandler(enabled = isPlayerExpanded) {
         isPlayerExpanded = false
     }
@@ -271,8 +277,31 @@ fun WaveApp() {
             },
             onAddToPlaylist = { playlistId, track ->
                 scope.launch { localDatabase.addTrackToPlaylist(playlistId, track) }
+            },
+            onLaunchAmbientMode = {
+                isPlayerExpanded = false
+                isAmbientModeActive = true
             }
         )
+    }
+
+    // Ambient Mode Cinematic Screen Layer
+    AnimatedVisibility(
+        visible = isAmbientModeActive && currentTrack != null,
+        enter = fadeIn(tween(350)),
+        exit = fadeOut(tween(350))
+    ) {
+        currentTrack?.let { track ->
+            AmbientModeScreen(
+                track = track,
+                playerState = playerState,
+                onTogglePlayPause = { playbackManager.togglePlayPause() },
+                onNext = { playbackManager.next() },
+                onPrevious = { playbackManager.previous() },
+                onSeekTo = { posMs -> playbackManager.seekTo(posMs) },
+                onExit = { isAmbientModeActive = false }
+            )
+        }
     }
 
     // Artist Profile Screen Layer
