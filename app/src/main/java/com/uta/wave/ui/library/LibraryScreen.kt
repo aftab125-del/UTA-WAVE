@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -133,6 +134,7 @@ fun LibraryScreen(
     onOpenDiagnostics: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
     onOpenListeningSummary: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -377,6 +379,9 @@ fun LibraryScreen(
                         IconButton(onClick = {}) {
                             Icon(Icons.Outlined.Cast, contentDescription = "Cast", tint = TextSecondary, modifier = Modifier.size(22.dp))
                         }
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Outlined.Settings, contentDescription = "Settings & Customization", tint = Color(0xFFF2AEC7), modifier = Modifier.size(22.dp))
+                        }
                         if (!userProfile.avatarUrl.isNullOrBlank()) {
                             AsyncImage(
                                 model = userProfile.avatarUrl,
@@ -385,10 +390,10 @@ fun LibraryScreen(
                                     .size(28.dp)
                                     .clip(CircleShape)
                                     .border(1.5.dp, Color(0xFFF2AEC7).copy(alpha = 0.6f), CircleShape)
-                                    .clickable(onClick = onOpenAccount)
+                                    .clickable(onClick = onOpenSettings)
                             )
                         } else {
-                            IconButton(onClick = onOpenAccount) {
+                            IconButton(onClick = onOpenSettings) {
                                 Icon(Icons.Outlined.AccountCircle, contentDescription = "Profile & Settings", tint = TextSecondary, modifier = Modifier.size(24.dp))
                             }
                         }
