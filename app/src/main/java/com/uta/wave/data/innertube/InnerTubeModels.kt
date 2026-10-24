@@ -8,7 +8,46 @@ data class TrackItem(
     val album: String? = null,
     val artworkUrl: String,
     val durationSeconds: Int = 0,
-    val isSynced: Boolean = false
+    val isSynced: Boolean = false,
+    val artistId: String? = null,        // e.g. "UCDxKh1gFWeYsqePvgVzmPoQ"
+    val albumId: String? = null         // e.g. "MPREb_n4bQGzZvAyb"
+)
+
+data class ArtistCard(
+    val id: String,                     // browseId, e.g. "UC..."
+    val name: String,
+    val subscriberCount: String? = null,
+    val artworkUrl: String? = null
+)
+
+data class AlbumCard(
+    val id: String,                     // browseId, e.g. "MPREb_..."
+    val title: String,
+    val subtitle: String? = null,       // e.g. "2026" or "Single"
+    val artworkUrl: String? = null,
+    val year: String? = null
+)
+
+data class ArtistPage(
+    val id: String,                     // browseId, e.g. "UCDxKh1gFWeY..."
+    val name: String,
+    val heroArtworkUrl: String? = null,
+    val subscriberCount: String? = null,
+    val bio: String? = null,
+    val topSongs: List<TrackItem> = emptyList(),
+    val albums: List<AlbumCard> = emptyList(),
+    val singles: List<AlbumCard> = emptyList(),
+    val similarArtists: List<ArtistCard> = emptyList()
+)
+
+data class AlbumPage(
+    val id: String,                     // browseId, e.g. "MPREb_..."
+    val title: String,
+    val artist: String,
+    val artistId: String? = null,
+    val year: String? = null,
+    val artworkUrl: String? = null,
+    val tracks: List<TrackItem> = emptyList()
 )
 
 data class SearchResult(

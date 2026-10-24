@@ -95,6 +95,8 @@ fun HomeScreen(
     onNavigateToCharts: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
+    onOpenArtist: (String) -> Unit = {},
+    onOpenAlbum: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -900,6 +902,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { onOpenArtist(artist1Tracks.firstOrNull()?.artistId ?: artist1Name) }
                             .padding(horizontal = 20.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -985,6 +988,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable { onOpenArtist(artist2Tracks.firstOrNull()?.artistId ?: artist2Name) }
                             .padding(horizontal = 20.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
