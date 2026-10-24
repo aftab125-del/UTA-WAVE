@@ -46,6 +46,7 @@ import com.uta.wave.ui.settings.glass.GlassEffectSettingsScreen
 import com.uta.wave.ui.settings.icon.AppIconSettingsScreen
 import com.uta.wave.ui.settings.theme.ThemeScreen
 import com.uta.wave.ui.theme.*
+import com.uta.wave.ui.components.PlayerSliderStyleDialog
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
@@ -594,6 +595,15 @@ private fun AppearanceSettingsSection(
     }
 
     var showMiniPlayerBackgroundDialog by remember { mutableStateOf(false) }
+    var showSliderStyleDialog by remember { mutableStateOf(false) }
+
+    if (showSliderStyleDialog) {
+        PlayerSliderStyleDialog(
+            currentStyle = settings.sliderStyle,
+            onSelectStyle = { prefs.updateSliderStyle(it) },
+            onDismiss = { showSliderStyleDialog = false }
+        )
+    }
 
     if (showMiniPlayerBackgroundDialog) {
         AlertDialog(
@@ -1384,6 +1394,123 @@ private fun AppearanceSettingsSection(
                     )
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Player slider style (Bar, Wavy, Slim, Squiggly)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showSliderStyleDialog = true }
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Player slider style",
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = when (settings.sliderStyle.uppercase()) {
+                        "BAR" -> "Bar"
+                        "WAVY" -> "Wavy"
+                        "SLIM" -> "Slim"
+                        else -> "Squiggly"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = currentAccent
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.4f),
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Wavy play/pause button switch
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Wavy play/pause",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Morphs play/pause button into an expressive wavy cookie shape while playing",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.wavyPlayPause,
+                onCheckedChange = { prefs.updateWavyPlayPause(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Seeker haptic feedback switch
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Seeker haptic ticks",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Subtle tactile haptic ticks when scrubbing through the progress bar",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.enableSliderHaptics,
+                onCheckedChange = { prefs.updateEnableSliderHaptics(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
         }
     }
 }

@@ -5,8 +5,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -107,6 +106,8 @@ import com.uta.wave.ui.components.ScallopedFlowerShape
 import com.uta.wave.ui.components.SongDetailsDialog
 import com.uta.wave.ui.components.liquidGlass
 import com.uta.wave.ui.components.SquigglySlider
+import com.uta.wave.ui.components.PlayerSeeker
+import com.uta.wave.ui.components.WavyShape
 import com.uta.wave.ui.components.TrimRingtoneBottomSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -208,6 +209,32 @@ fun FullscreenPlayerSheet(
         animationSpec = tween(500),
         label = "clearArtworkAlpha"
     )
+
+    // Wavy cookie play/pause morph & rotation
+    val cookieIndent by animateFloatAsState(
+        targetValue = if (settings.wavyPlayPause && playerState.isPlaying) 0.14f else 0f,
+        animationSpec = tween(400),
+        label = "cookieIndent"
+    )
+    val infiniteTransition = rememberInfiniteTransition(label = "cookieRotationTransition")
+    val cookieRotation by if (settings.wavyPlayPause && playerState.isPlaying) {
+        infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(12000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "cookieRotation"
+        )
+    } else {
+        remember { mutableFloatStateOf(0f) }
+    }
+    val defaultPlayPauseShape = if (settings.wavyPlayPause && cookieIndent > 0.001f) {
+        WavyShape(sides = 9, indent = cookieIndent, rotationDegrees = cookieRotation)
+    } else {
+        CircleShape
+    }
 
     Box(
         modifier = modifier
@@ -485,9 +512,10 @@ fun FullscreenPlayerSheet(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 3. Squiggly Progress Seeker & Timestamps
+                // 3. Player Seeker & Timestamps
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
-                    SquigglySlider(
+                    PlayerSeeker(
+                        sliderStyle = settings.sliderStyle,
                         progress = currentRatio,
                         isPlaying = playerState.isPlaying,
                         onSeek = { ratio ->
@@ -497,7 +525,8 @@ fun FullscreenPlayerSheet(
                         modifier = Modifier.fillMaxWidth(),
                         activeColor = Color.White.copy(alpha = 0.9f),
                         inactiveColor = Color.White.copy(alpha = 0.22f),
-                        thumbColor = Color.White
+                        thumbColor = Color.White,
+                        enableHaptics = settings.enableSliderHaptics
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Row(
@@ -896,7 +925,8 @@ fun FullscreenPlayerSheet(
 
                 // Seeker
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    SquigglySlider(
+                    PlayerSeeker(
+                        sliderStyle = settings.sliderStyle,
                         progress = currentRatio,
                         isPlaying = playerState.isPlaying,
                         onSeek = { ratio ->
@@ -906,7 +936,8 @@ fun FullscreenPlayerSheet(
                         modifier = Modifier.fillMaxWidth(),
                         activeColor = Color(0xFFF3D7EC),
                         inactiveColor = Color.White.copy(alpha = 0.22f),
-                        thumbColor = Color(0xFFF3D7EC)
+                        thumbColor = Color(0xFFF3D7EC),
+                        enableHaptics = settings.enableSliderHaptics
                     )
 
                     Spacer(modifier = Modifier.height(2.dp))
@@ -955,7 +986,7 @@ fun FullscreenPlayerSheet(
                     Box(
                         modifier = Modifier
                             .size(78.dp)
-                            .clip(ScallopedFlowerShape(lobes = 12, scallopDepthRatio = 0.12f))
+                            .clip(defaultPlayPauseShape)
                             .background(Color(0xFFF3D7EC))
                             .clickable(onClick = onTogglePlayPause),
                         contentAlignment = Alignment.Center
