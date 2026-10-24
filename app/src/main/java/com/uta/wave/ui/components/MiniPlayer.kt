@@ -1,5 +1,7 @@
 package com.uta.wave.ui.components
 
+import android.graphics.drawable.BitmapDrawable
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -37,20 +40,28 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.uta.wave.data.preferences.UserPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
@@ -59,16 +70,228 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.palette.graphics.Palette
 import coil.compose.AsyncImage
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.components.GlassComponent
 import com.uta.wave.ui.components.LocalGlassEffectConfig
+import com.uta.wave.ui.components.isGlassSupported
 import com.uta.wave.ui.components.liquidGlass
 import com.uta.wave.ui.recognizer.BlushRose
 import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.SoftViolet
 import com.uta.wave.ui.theme.TextPrimary
 import com.uta.wave.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+/**
+ * Asynchronously extracts vibrant and muted palette colors from the track artwork.
+ */
+@Composable
+fun rememberMiniPlayerPalette(thumbnailUrl: String?): List<Color> {
+    val context = LocalContext.current
+    var colors by remember(thumbnailUrl) { mutableStateOf<List<Color>>(emptyList()) }
+
+    LaunchedEffect(thumbnailUrl) {
+        if (thumbnailUrl.isNullOrBlank()) {
+            colors = emptyList()
+            return@LaunchedEffect
+        }
+        withContext(Dispatchers.IO) {
+            try {
+                val imageLoader = context.imageLoader
+                val request = ImageRequest.Builder(context)
+                    .data(thumbnailUrl)
+                    .size(100, 100)
+                    .allowHardware(false)
+                    .build()
+                val result = (imageLoader.execute(request) as? SuccessResult)?.drawable
+                val bitmap = (result as? BitmapDrawable)?.bitmap
+                if (bitmap != null) {
+                    val palette = Palette.from(bitmap)
+                        .maximumColorCount(8)
+                        .resizeBitmapArea(100 * 100)
+                        .generate()
+                    val extracted = listOfNotNull(
+                        palette.vibrantSwatch?.rgb?.let { Color(it) },
+                        palette.lightVibrantSwatch?.rgb?.let { Color(it) },
+                        palette.darkVibrantSwatch?.rgb?.let { Color(it) },
+                        palette.mutedSwatch?.rgb?.let { Color(it) },
+                        palette.lightMutedSwatch?.rgb?.let { Color(it) },
+                        palette.darkMutedSwatch?.rgb?.let { Color(it) }
+                    )
+                    withContext(Dispatchers.Main) {
+                        colors = if (extracted.isNotEmpty()) extracted else listOf(Color(0xFF6B21A8), Color(0xFFF2AEC7))
+                    }
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    colors = listOf(Color(0xFF6B21A8), Color(0xFFF2AEC7))
+                }
+            }
+        }
+    }
+    return colors
+}
+
+/**
+ * Renders the chosen dynamic background behind the miniplayer controls.
+ * Supported styles:
+ * - BLUR: Gaussian blurred album art with 0.45f dimming scrim (Android 12+)
+ * - GLOW_ANIMATED: 20s sinusoidal swirling radial gradient blobs from extracted palette
+ * - LIVE_MESH: 60s rotating 360deg artwork, 1.6x saturated, 1.5x scaled, 40dp blur
+ */
+@Composable
+fun MiniPlayerBackgroundLayer(
+    style: String,
+    artworkUrl: String?,
+    modifier: Modifier = Modifier,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(28.dp)
+) {
+    val context = LocalContext.current
+    val paletteColors = rememberMiniPlayerPalette(artworkUrl)
+
+    Box(
+        modifier = modifier.clip(shape)
+    ) {
+        when (style) {
+            "BLUR" -> {
+                val blurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    Modifier.blur(30.dp)
+                } else {
+                    Modifier
+                }
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(artworkUrl)
+                        .size(128, 128)
+                        .allowHardware(false)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(blurModifier)
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f))
+                )
+            }
+
+            "GLOW_ANIMATED" -> {
+                val infiniteTransition = rememberInfiniteTransition(label = "MiniPlayerGlow")
+                val progress by infiniteTransition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 20000, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart
+                    ),
+                    label = "GlowProgress"
+                )
+
+                val colors = if (paletteColors.isNotEmpty()) {
+                    paletteColors
+                } else {
+                    listOf(Color(0xFF8B5CF6), Color(0xFFF2AEC7), Color(0xFF38BDF8))
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .drawBehind {
+                            val p = progress
+                            val width = size.width
+                            val height = size.height
+
+                            fun oscillate(min: Float, max: Float, phase: Float): Float {
+                                val v = kotlin.math.sin(2f * kotlin.math.PI.toFloat() * (p + phase))
+                                return min + (max - min) * ((v + 1f) * 0.5f)
+                            }
+
+                            val c1 = colors[0 % colors.size]
+                            val c2 = colors[1 % colors.size]
+
+                            val o1x = oscillate(0.0f, 1.0f, 0.0f)
+                            val o1y = oscillate(0.0f, 0.5f, 0.1f)
+                            val o2x = oscillate(1.0f, 0.0f, 0.2f)
+                            val o2y = oscillate(0.5f, 1.0f, 0.3f)
+
+                            val b1 = Brush.radialGradient(
+                                colors = listOf(c1.copy(alpha = 0.8f), Color.Transparent),
+                                center = Offset(width * o1x, height * o1y),
+                                radius = width * 1.2f
+                            )
+                            val b2 = Brush.radialGradient(
+                                colors = listOf(c2.copy(alpha = 0.7f), Color.Transparent),
+                                center = Offset(width * o2x, height * o2y),
+                                radius = width * 1.0f
+                            )
+
+                            drawRect(Color(0xFF0A070E))
+                            drawRect(b1)
+                            drawRect(b2)
+                            drawRect(Color.Black.copy(alpha = 0.25f))
+                        }
+                )
+            }
+
+            "LIVE_MESH" -> {
+                val infiniteTransition = rememberInfiniteTransition(label = "MiniPlayerLiveMesh")
+                val rotation by infiniteTransition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 360f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 60000, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart
+                    ),
+                    label = "LiveMeshRotation"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = 1.5f
+                            scaleY = 1.5f
+                        }
+                ) {
+                    val matrix = remember { ColorMatrix().apply { setToSaturation(1.6f) } }
+                    val blurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        Modifier.blur(40.dp)
+                    } else {
+                        Modifier
+                    }
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(artworkUrl)
+                            .size(128, 128)
+                            .allowHardware(false)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        colorFilter = ColorFilter.colorMatrix(matrix),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(blurModifier)
+                            .graphicsLayer { rotationZ = rotation }
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.35f))
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun MiniPlayer(
@@ -87,7 +310,10 @@ fun MiniPlayer(
     val isPureBlack = settings.pureBlackMiniPlayer || settings.pureBlack
 
     val glassConfig = LocalGlassEffectConfig.current
-    val useGlass = glassConfig.isEnabledFor(GlassComponent.MINI_PLAYER) && !isPureBlack
+    val miniPlayerBackground = settings.miniplayerBackgroundStyle
+    val isGlassSelected = miniPlayerBackground == "LIQUID_GLASS" || glassConfig.isEnabledFor(GlassComponent.MINI_PLAYER)
+    val useGlass = isGlassSelected && isGlassSupported() && !isPureBlack
+    val isDynamicBackground = !useGlass && miniPlayerBackground in listOf("BLUR", "GLOW_ANIMATED", "LIVE_MESH")
 
     val adaptiveTextColor =
         if (glassConfig.textColor.isSpecified) {
@@ -98,7 +324,29 @@ fun MiniPlayer(
             Color.White
         }
 
-    val contentAccentColor = if (useGlass) adaptiveTextColor else BlushRose
+    val contentAccentColor = when {
+        useGlass -> adaptiveTextColor
+        isDynamicBackground -> Color.White
+        else -> BlushRose
+    }
+
+    val primaryTextColor = when {
+        useGlass -> adaptiveTextColor
+        isDynamicBackground -> Color.White
+        else -> TextPrimary
+    }
+
+    val secondaryTextColor = when {
+        useGlass -> adaptiveTextColor.copy(alpha = 0.7f)
+        isDynamicBackground -> Color.White.copy(alpha = 0.75f)
+        else -> SoftViolet
+    }
+
+    val skipIconTint = when {
+        useGlass -> adaptiveTextColor.copy(alpha = 0.8f)
+        isDynamicBackground -> Color.White.copy(alpha = 0.85f)
+        else -> TextSecondary
+    }
 
     // Infinite rotation for the vinyl disk when playing
     val infiniteTransition = rememberInfiniteTransition(label = "VinylSpin")
@@ -152,10 +400,10 @@ fun MiniPlayer(
                 )
                 .clip(RoundedCornerShape(28.dp))
                 .background(
-                    if (isPureBlack) {
-                        Brush.linearGradient(listOf(Color.Black, Color.Black))
-                    } else {
-                        Brush.verticalGradient(
+                    when {
+                        isPureBlack -> Brush.linearGradient(listOf(Color.Black, Color.Black))
+                        isDynamicBackground -> Brush.linearGradient(listOf(Color(0xFF0C0911), Color(0xFF0C0911)))
+                        else -> Brush.verticalGradient(
                             colors = listOf(
                                 Color(0xD9281C30),
                                 Color(0xBF181120)
@@ -165,15 +413,20 @@ fun MiniPlayer(
                 )
                 .border(
                     1.dp,
-                    if (isPureBlack) {
-                        Brush.linearGradient(
+                    when {
+                        isPureBlack -> Brush.linearGradient(
                             listOf(
                                 Color.White.copy(alpha = 0.15f),
                                 Color.White.copy(alpha = 0.05f)
                             )
                         )
-                    } else {
-                        Brush.verticalGradient(
+                        isDynamicBackground -> Brush.verticalGradient(
+                            listOf(
+                                Color.White.copy(alpha = 0.32f),
+                                Color.White.copy(alpha = 0.10f)
+                            )
+                        )
+                        else -> Brush.verticalGradient(
                             listOf(
                                 Color.White.copy(alpha = 0.22f),
                                 Color.White.copy(alpha = 0.06f)
@@ -203,6 +456,15 @@ fun MiniPlayer(
         Box(
             modifier = containerModifier
         ) {
+            if (isDynamicBackground) {
+                MiniPlayerBackgroundLayer(
+                    style = miniPlayerBackground,
+                    artworkUrl = track.artworkUrl,
+                    modifier = Modifier.matchParentSize(),
+                    shape = RoundedCornerShape(28.dp)
+                )
+            }
+
             Column {
                 if (playerState.error != null) {
                     Box(
@@ -233,7 +495,7 @@ fun MiniPlayer(
                             .size(46.dp)
                             .shadow(6.dp, CircleShape)
                             .clip(CircleShape)
-                            .border(1.5.dp, BlushRose.copy(alpha = 0.5f), CircleShape),
+                            .border(1.5.dp, contentAccentColor.copy(alpha = 0.5f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         AsyncImage(
@@ -251,7 +513,7 @@ fun MiniPlayer(
                                 .size(8.dp)
                                 .clip(CircleShape)
                                 .background(Color(0xFF1B1522))
-                                .border(1.dp, BlushRose, CircleShape)
+                                .border(1.dp, contentAccentColor, CircleShape)
                         )
                     }
 
@@ -267,7 +529,7 @@ fun MiniPlayer(
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp
                             ),
-                            color = if (useGlass) adaptiveTextColor else TextPrimary,
+                            color = primaryTextColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -278,7 +540,7 @@ fun MiniPlayer(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium
                             ),
-                            color = if (useGlass) adaptiveTextColor.copy(alpha = 0.7f) else SoftViolet,
+                            color = secondaryTextColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -289,7 +551,7 @@ fun MiniPlayer(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(contentAccentColor.copy(alpha = if (useGlass) 0.15f else 0.2f))
+                            .background(contentAccentColor.copy(alpha = if (useGlass || isDynamicBackground) 0.16f else 0.2f))
                             .clickable(onClick = onTogglePlayPause),
                         contentAlignment = Alignment.Center
                     ) {
@@ -330,7 +592,7 @@ fun MiniPlayer(
                         Icon(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = "Next",
-                            tint = if (useGlass) adaptiveTextColor.copy(alpha = 0.8f) else TextSecondary,
+                            tint = skipIconTint,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -352,12 +614,14 @@ fun MiniPlayer(
                             .fillMaxWidth(fraction = progress)
                             .height(2.dp)
                             .background(
-                                if (useGlass) {
-                                    Brush.horizontalGradient(
+                                when {
+                                    useGlass -> Brush.horizontalGradient(
                                         colors = listOf(adaptiveTextColor, adaptiveTextColor.copy(alpha = 0.35f))
                                     )
-                                } else {
-                                    Brush.horizontalGradient(
+                                    isDynamicBackground -> Brush.horizontalGradient(
+                                        colors = listOf(Color.White, Color.White.copy(alpha = 0.45f))
+                                    )
+                                    else -> Brush.horizontalGradient(
                                         colors = listOf(BlushRose, ElectricViolet)
                                     )
                                 }

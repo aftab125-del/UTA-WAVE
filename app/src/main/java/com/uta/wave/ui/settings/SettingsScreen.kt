@@ -591,6 +591,74 @@ private fun AppearanceSettingsSection(
         }
     }
 
+    var showMiniPlayerBackgroundDialog by remember { mutableStateOf(false) }
+
+    if (showMiniPlayerBackgroundDialog) {
+        AlertDialog(
+            onDismissRequest = { showMiniPlayerBackgroundDialog = false },
+            title = {
+                Text(
+                    text = "Miniplayer background style",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    val styles = listOf(
+                        "DEFAULT" to "Follow theme",
+                        "BLUR" to "Blur",
+                        "GLOW_ANIMATED" to "Glow animated",
+                        "LIVE_MESH" to "Live mesh",
+                        "LIQUID_GLASS" to "Liquid glass"
+                    )
+                    styles.forEach { (id, label) ->
+                        val isSelected = settings.miniplayerBackgroundStyle == id
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    prefs.updateMiniplayerBackgroundStyle(id)
+                                    showMiniPlayerBackgroundDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    prefs.updateMiniplayerBackgroundStyle(id)
+                                    showMiniPlayerBackgroundDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = currentAccent,
+                                    unselectedColor = Color.White.copy(alpha = 0.5f)
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = label,
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMiniPlayerBackgroundDialog = false }) {
+                    Text("Cancel", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
     SectionHeader("Theme & Dynamic Colors")
 
     Column(
@@ -1098,6 +1166,74 @@ private fun AppearanceSettingsSection(
                 }
             }
             if (idx < fontScales.size - 1) SettingsItemDivider()
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+    SectionHeader("Mini Player")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+            .clickable { showMiniPlayerBackgroundDialog = true }
+            .padding(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(currentAccent.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = currentAccent,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Miniplayer background style",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        ),
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = when (settings.miniplayerBackgroundStyle) {
+                            "BLUR" -> "Blur"
+                            "GLOW_ANIMATED" -> "Glow animated"
+                            "LIVE_MESH" -> "Live mesh"
+                            "LIQUID_GLASS" -> "Liquid glass"
+                            else -> "Follow theme"
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = Color.White.copy(alpha = 0.60f)
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.35f),
+                modifier = Modifier.size(14.dp)
+            )
         }
     }
 
