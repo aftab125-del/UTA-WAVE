@@ -23,6 +23,9 @@ data class AppSettings(
     val playerStyle: String = "APPLE_MUSIC",       // APPLE_MUSIC, WAVE (Squiggly), CLASSIC
     val appleMusicPlayerEnabled: Boolean = true,   // Apple Music inspired fullscreen player layout
     val hideVolumeSlider: Boolean = false,         // Hide volume slider on Apple Music player
+    val sliderStyle: String = "SQUIGGLY",          // BAR, WAVY, SLIM, SQUIGGLY
+    val wavyPlayPause: Boolean = true,             // 9-sided rotating wavy cookie play/pause button
+    val enableSliderHaptics: Boolean = true,       // Haptic ticks on seek scrub
     val lyricsAnimation: String = "ALPHABET_V2",   // ALPHABET_V2 (Smooth Letter flow), WORD_BY_WORD
     val ambientCanvasEnabled: Boolean = true,
 
@@ -133,6 +136,9 @@ class UserPreferences private constructor(context: Context) {
             playerStyle = prefs.getString("player_style", "APPLE_MUSIC") ?: "APPLE_MUSIC",
             appleMusicPlayerEnabled = prefs.getBoolean("apple_music_player_enabled", true),
             hideVolumeSlider = prefs.getBoolean("hide_volume_slider", false),
+            sliderStyle = prefs.getString("slider_style", "SQUIGGLY") ?: "SQUIGGLY",
+            wavyPlayPause = prefs.getBoolean("wavy_play_pause", true),
+            enableSliderHaptics = prefs.getBoolean("enable_slider_haptics", true),
             lyricsAnimation = prefs.getString("lyrics_animation", "ALPHABET_V2") ?: "ALPHABET_V2",
             ambientCanvasEnabled = prefs.getBoolean("ambient_canvas_enabled", true),
 
@@ -280,6 +286,21 @@ class UserPreferences private constructor(context: Context) {
     fun updateHideVolumeSlider(hidden: Boolean) {
         prefs.edit().putBoolean("hide_volume_slider", hidden).apply()
         _settingsFlow.update { it.copy(hideVolumeSlider = hidden) }
+    }
+
+    fun updateSliderStyle(style: String) {
+        prefs.edit().putString("slider_style", style).apply()
+        _settingsFlow.update { it.copy(sliderStyle = style) }
+    }
+
+    fun updateWavyPlayPause(enabled: Boolean) {
+        prefs.edit().putBoolean("wavy_play_pause", enabled).apply()
+        _settingsFlow.update { it.copy(wavyPlayPause = enabled) }
+    }
+
+    fun updateEnableSliderHaptics(enabled: Boolean) {
+        prefs.edit().putBoolean("enable_slider_haptics", enabled).apply()
+        _settingsFlow.update { it.copy(enableSliderHaptics = enabled) }
     }
 
     fun updateLyricsAnimation(style: String) {
