@@ -56,7 +56,14 @@ data class AppSettings(
     val anonymousDiagnostics: Boolean = true,
 
     // Backup & Restore
-    val autoBackupSchedule: String = "OFF"         // OFF, WEEKLY, MONTHLY
+    val autoBackupSchedule: String = "OFF",        // OFF, WEEKLY, MONTHLY
+
+    // App Icon & Customization
+    val customIconPath: String? = null,
+    val customIconLabel: String = "UTA-wave",
+    val customIconShape: String = "SQUIRCLE",      // SQUIRCLE, CIRCLE, ROUNDED
+    val selectedIconPreset: String = "DEFAULT",    // DEFAULT, ECHO_PINK, CYBER_GOLD, NEON_BLUE, CRIMSON, SAKURA
+    val useCustomIconInApp: Boolean = true
 )
 
 class UserPreferences private constructor(context: Context) {
@@ -125,7 +132,13 @@ class UserPreferences private constructor(context: Context) {
             pauseSearchHistory = prefs.getBoolean("pause_search_history", false),
             anonymousDiagnostics = prefs.getBoolean("anonymous_diagnostics", true),
 
-            autoBackupSchedule = prefs.getString("auto_backup_schedule", "OFF") ?: "OFF"
+            autoBackupSchedule = prefs.getString("auto_backup_schedule", "OFF") ?: "OFF",
+
+            customIconPath = prefs.getString("custom_icon_path", null),
+            customIconLabel = prefs.getString("custom_icon_label", "UTA-wave") ?: "UTA-wave",
+            customIconShape = prefs.getString("custom_icon_shape", "SQUIRCLE") ?: "SQUIRCLE",
+            selectedIconPreset = prefs.getString("selected_icon_preset", "DEFAULT") ?: "DEFAULT",
+            useCustomIconInApp = prefs.getBoolean("use_custom_icon_in_app", true)
         )
     }
 
@@ -163,6 +176,26 @@ class UserPreferences private constructor(context: Context) {
     fun updateAmbientCanvas(enabled: Boolean) {
         prefs.edit().putBoolean("ambient_canvas_enabled", enabled).apply()
         _settingsFlow.update { it.copy(ambientCanvasEnabled = enabled) }
+    }
+
+    // App Icon & Branding Updates
+    fun updateCustomAppIcon(path: String?, label: String, shape: String) {
+        prefs.edit()
+            .putString("custom_icon_path", path)
+            .putString("custom_icon_label", label)
+            .putString("custom_icon_shape", shape)
+            .apply()
+        _settingsFlow.update { it.copy(customIconPath = path, customIconLabel = label, customIconShape = shape) }
+    }
+
+    fun updateSelectedIconPreset(preset: String) {
+        prefs.edit().putString("selected_icon_preset", preset).apply()
+        _settingsFlow.update { it.copy(selectedIconPreset = preset) }
+    }
+
+    fun updateUseCustomIconInApp(enabled: Boolean) {
+        prefs.edit().putBoolean("use_custom_icon_in_app", enabled).apply()
+        _settingsFlow.update { it.copy(useCustomIconInApp = enabled) }
     }
 
     // Audio & Playback Updates
