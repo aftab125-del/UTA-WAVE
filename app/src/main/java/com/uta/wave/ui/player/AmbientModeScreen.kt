@@ -1,16 +1,25 @@
 package com.uta.wave.ui.player
 
+import android.app.Activity
+import android.content.Context
+import android.content.pm.ActivityInfo
+import android.media.AudioManager
+import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,25 +37,37 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material.icons.filled.VolumeMute
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +79,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,22 +91,28 @@ import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.lyrics.LyricsClient
 import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.components.AmbientCanvas
-import com.uta.wave.ui.components.ScallopedFlowerShape
-import com.uta.wave.ui.components.SquigglySlider
 import com.uta.wave.ui.theme.TextMuted
 import com.uta.wave.ui.theme.TextPrimary
 import com.uta.wave.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /**
- * 100% visual and functional replica of Echo Music's Ambient Mode.
- * Features:
- * - Edge-to-edge cinematic dynamic mesh glow (AmbientCanvas)
- * - Auto-scrolling synchronized kinetic typography lyrics
- * - Vertical Ambient Mode (Portrait) & Split-Screen Ambient Mode (Landscape / Wide)
- * - Auto-hiding floating translucent playback controls (fades after 4s inactivity)
- * - Toggle to show/hide album artwork (when hidden, lyrics center in a 65% width block)
- * - Tap anywhere to toggle controls / Back button overlay to exit
+ * Landscape-only Ambient Mode matching Echo Music's signature screensaver experience.
+ *
+ * Specifications:
+ * 1. Landscape-Only: Automatically locks to landscape orientation on entry and restores on exit.
+ * 2. Zero Static Buttons: No playback controls or sliders cluttering the view.
+ * 3. Pure Gesture Controls:
+ *    - Horizontal Swipe: Left for Next song, Right for Previous song (with visual pill indicator).
+ *    - Vertical Swipe: Controls volume up/down (with vertical translucent HUD indicator).
+ *    - Tap: Toggles Play/Pause with a subtle glowing ripple icon.
+ * 4. Single Top-Left 3-Dots Button (⋮):
+ *    - Menu with "Exit Ambient Mode" and "Toggle Album Art".
+ * 5. Flow Lyrics:
+ *    - Kinetic typography where the active line glows and scales smoothly (1.18x), with
+ *      upcoming and past lines dynamically dimmed and auto-centered.
  */
 @Composable
 fun AmbientModeScreen(
@@ -97,17 +125,35 @@ fun AmbientModeScreen(
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showControls by remember { mutableStateOf(true) }
-    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var isArtworkVisible by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val scope = rememberCoroutineScope()
 
-    // Auto-hide controls after 4 seconds of inactivity if playing
-    LaunchedEffect(showControls, lastInteractionTime, playerState.isPlaying) {
-        if (showControls && playerState.isPlaying) {
-            delay(4000)
-            showControls = false
+    // 1. Force Landscape & Keep Screen On for the duration of Ambient Mode
+    DisposableEffect(Unit) {
+        val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        onDispose {
+            activity?.requestedOrientation = originalOrientation
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
+
+    // Audio Manager for Gesture Volume Control
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
+    var currentVolume by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
+    var showVolumeIndicator by remember { mutableStateOf(false) }
+
+    // Gesture Action Feedback States
+    var gestureFeedbackText by remember { mutableStateOf<String?>(null) }
+    var showPlayPauseFeedback by remember { mutableStateOf(false) }
+
+    // UI Configuration States
+    var showMenu by remember { mutableStateOf(false) }
+    var isArtworkVisible by remember { mutableStateOf(true) }
 
     // Lyrics resolution
     val lyricsClient = remember { LyricsClient() }
@@ -134,15 +180,21 @@ fun AmbientModeScreen(
         }
     }
 
-    // Auto-scroll lyrics to keep active line centered
+    // Flow Lyrics auto-centering scroll
     LaunchedEffect(activeIndex) {
         if (activeIndex >= 0 && isLyricsSynced) {
             lyricsListState.animateScrollToItem(
                 index = activeIndex,
-                scrollOffset = -220
+                scrollOffset = -200
             )
         }
     }
+
+    // Gesture Drag Accumulators
+    var dragAccumulatorX by remember { mutableFloatStateOf(0f) }
+    var dragAccumulatorY by remember { mutableFloatStateOf(0f) }
+    var isHorizontalSwipe by remember { mutableStateOf(false) }
+    var isVerticalSwipe by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -151,330 +203,385 @@ fun AmbientModeScreen(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
-                        showControls = !showControls
-                        lastInteractionTime = System.currentTimeMillis()
+                        onTogglePlayPause()
+                        showPlayPauseFeedback = true
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = {
+                        dragAccumulatorX = 0f
+                        dragAccumulatorY = 0f
+                        isHorizontalSwipe = false
+                        isVerticalSwipe = false
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragAccumulatorX += dragAmount.x
+                        dragAccumulatorY += dragAmount.y
+
+                        val absX = abs(dragAccumulatorX)
+                        val absY = abs(dragAccumulatorY)
+
+                        // Determine gesture mode once threshold is met
+                        if (!isHorizontalSwipe && !isVerticalSwipe) {
+                            if (absX > 30f && absX > absY) {
+                                isHorizontalSwipe = true
+                            } else if (absY > 30f && absY > absX) {
+                                isVerticalSwipe = true
+                            }
+                        }
+
+                        // Handle Vertical Volume Gesture
+                        if (isVerticalSwipe) {
+                            showVolumeIndicator = true
+                            // Every 35px of vertical drag shifts 1 volume step
+                            if (dragAccumulatorY < -35f) {
+                                val newVol = (currentVolume + 1).coerceAtMost(maxVolume)
+                                if (newVol != currentVolume) {
+                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
+                                    currentVolume = newVol
+                                }
+                                dragAccumulatorY = 0f
+                            } else if (dragAccumulatorY > 35f) {
+                                val newVol = (currentVolume - 1).coerceAtLeast(0)
+                                if (newVol != currentVolume) {
+                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
+                                    currentVolume = newVol
+                                }
+                                dragAccumulatorY = 0f
+                            }
+                        }
+                    },
+                    onDragEnd = {
+                        // Handle Horizontal Song Skip Gesture
+                        if (isHorizontalSwipe) {
+                            if (dragAccumulatorX < -90f) {
+                                // Swiped Left -> Next Song
+                                onNext()
+                                gestureFeedbackText = "Next Song"
+                            } else if (dragAccumulatorX > 90f) {
+                                // Swiped Right -> Previous Song
+                                onPrevious()
+                                gestureFeedbackText = "Previous Song"
+                            }
+                        }
+
+                        // Auto-hide volume indicator after brief pause
+                        scope.launch {
+                            delay(1200)
+                            showVolumeIndicator = false
+                            gestureFeedbackText = null
+                        }
+
+                        dragAccumulatorX = 0f
+                        dragAccumulatorY = 0f
+                        isHorizontalSwipe = false
+                        isVerticalSwipe = false
+                    },
+                    onDragCancel = {
+                        showVolumeIndicator = false
+                        gestureFeedbackText = null
+                        dragAccumulatorX = 0f
+                        dragAccumulatorY = 0f
+                        isHorizontalSwipe = false
+                        isVerticalSwipe = false
                     }
                 )
             }
     ) {
-        // 1. Cinematic Ambient Dynamic Mesh Glow
+        // 1. Dynamic Ambient Canvas Glow
         AmbientCanvas(
             artworkUrl = track.artworkUrl,
             isPlaying = playerState.isPlaying
         )
 
-        // 2. Main Content (Adapts to orientation)
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val isLandscape = maxWidth > maxHeight
-
-            if (isLandscape) {
-                // Split-Screen Ambient Mode (Landscape / Wide)
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 32.dp, vertical = 24.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Left Column: Artwork + Title + Artist
-                    if (isArtworkVisible) {
-                        Column(
-                            modifier = Modifier
-                                .weight(0.42f)
-                                .fillMaxHeight(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(240.dp)
-                                    .shadow(28.dp, RoundedCornerShape(26.dp))
-                                    .clip(RoundedCornerShape(26.dp))
-                                    .background(Color(0xFF1E1724))
-                            ) {
-                                AsyncImage(
-                                    model = track.artworkUrl,
-                                    contentDescription = track.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(18.dp))
-
-                            Text(
-                                text = track.title,
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 22.sp
-                                ),
-                                color = Color.White,
-                                textAlign = TextAlign.Center,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            Text(
-                                text = track.artist,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
-                                color = Color.White.copy(alpha = 0.65f),
-                                textAlign = TextAlign.Center,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    // Right Column: Synchronized Kinetic Lyrics
-                    Box(
-                        modifier = Modifier
-                            .weight(if (isArtworkVisible) 0.58f else 1f)
-                            .fillMaxHeight(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        AmbientLyricsColumn(
-                            lyricLines = lyricLines,
-                            activeIndex = activeIndex,
-                            isSynced = isLyricsSynced,
-                            isLoading = isLyricsLoading,
-                            listState = lyricsListState,
-                            onSeekTo = onSeekTo,
-                            modifier = Modifier.fillMaxWidth(if (!isArtworkVisible) 0.65f else 1f)
-                        )
-                    }
-                }
-            } else {
-                // Vertical Ambient Mode (Portrait)
+        // 2. Landscape Split Layout: Left Album Art + Right Flow Lyrics
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 36.dp, vertical = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left Column: Floating Artwork & Track Info (if enabled)
+            if (isArtworkVisible) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 24.dp, vertical = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .weight(0.40f)
+                        .fillMaxHeight(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    // Floating Artwork (if enabled)
-                    if (isArtworkVisible) {
-                        Spacer(modifier = Modifier.height(28.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(210.dp)
-                                .shadow(24.dp, RoundedCornerShape(24.dp))
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(Color(0xFF1E1724))
-                        ) {
-                            AsyncImage(
-                                model = track.artworkUrl,
-                                contentDescription = track.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Text(
-                            text = track.title,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
-                            ),
-                            color = Color.White,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Text(
-                            text = track.artist,
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                            color = Color.White.copy(alpha = 0.65f),
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                    } else {
-                        Spacer(modifier = Modifier.height(50.dp))
-                    }
-
-                    // Auto-scrolling Kinetic Lyrics Column
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(if (!isArtworkVisible) 0.70f else 1f),
-                        contentAlignment = Alignment.Center
+                            .size(240.dp)
+                            .shadow(32.dp, RoundedCornerShape(28.dp))
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(Color(0xFF1E1724))
                     ) {
-                        AmbientLyricsColumn(
-                            lyricLines = lyricLines,
-                            activeIndex = activeIndex,
-                            isSynced = isLyricsSynced,
-                            isLoading = isLyricsLoading,
-                            listState = lyricsListState,
-                            onSeekTo = onSeekTo,
+                        AsyncImage(
+                            model = track.artworkUrl,
+                            contentDescription = track.title,
+                            contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp
+                        ),
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = track.artist,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 15.sp
+                        ),
+                        color = Color.White.copy(alpha = 0.65f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
-        }
 
-        // 3. Top Action Bar Overlay: Back Button & Artwork Toggle
-        AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn(tween(250)),
-            exit = fadeOut(tween(250)),
-            modifier = Modifier.align(Alignment.TopCenter)
-        ) {
-            Row(
+            // Right Column: Flow Lyrics (Expanded when artwork is hidden)
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .weight(if (isArtworkVisible) 0.60f else 1f)
+                    .fillMaxHeight(),
+                contentAlignment = Alignment.Center
             ) {
-                // Exit / Back Button
-                IconButton(
-                    onClick = onExit,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Exit Ambient Mode",
-                        tint = Color.White
-                    )
-                }
+                FlowLyricsView(
+                    lyricLines = lyricLines,
+                    activeIndex = activeIndex,
+                    isSynced = isLyricsSynced,
+                    isLoading = isLyricsLoading,
+                    listState = lyricsListState,
+                    onSeekTo = onSeekTo,
+                    modifier = Modifier.fillMaxWidth(if (!isArtworkVisible) 0.65f else 1f)
+                )
+            }
+        }
 
-                // Toggle Artwork Visibility Button
-                IconButton(
-                    onClick = {
-                        isArtworkVisible = !isArtworkVisible
-                        lastInteractionTime = System.currentTimeMillis()
+        // 3. Top-Left Single 3-Dots Button (⋮)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp)
+        ) {
+            IconButton(
+                onClick = { showMenu = true },
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.45f))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Options",
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF1E1724))
+            ) {
+                // Exit Ambient Mode
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "Exit Ambient Mode",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     },
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                ) {
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+                            contentDescription = null,
+                            tint = Color(0xFFF3D7EC)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        onExit()
+                    }
+                )
+
+                // Toggle Album Art
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = if (isArtworkVisible) "Hide Album Art" else "Show Album Art",
+                            color = Color.White
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isArtworkVisible) Icons.Outlined.Image else Icons.Default.Image,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.8f)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        isArtworkVisible = !isArtworkVisible
+                    }
+                )
+            }
+        }
+
+        // 4. Gesture Feedback HUD Overlays
+
+        // Horizontal Skip Feedback Pill
+        AnimatedVisibility(
+            visible = gestureFeedbackText != null,
+            enter = fadeIn(tween(150)) + scaleIn(tween(150)),
+            exit = fadeOut(tween(200)) + scaleOut(tween(200)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.Black.copy(alpha = 0.75f))
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = if (isArtworkVisible) Icons.Default.Image else Icons.Outlined.Image,
-                        contentDescription = "Toggle Artwork",
-                        tint = if (isArtworkVisible) Color(0xFFF3D7EC) else Color.White.copy(alpha = 0.6f)
+                        imageVector = if (gestureFeedbackText?.contains("Next") == true) Icons.Default.SkipNext else Icons.Default.SkipPrevious,
+                        contentDescription = null,
+                        tint = Color(0xFFF3D7EC),
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = gestureFeedbackText ?: "",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
                     )
                 }
             }
         }
 
-        // 4. Floating Glass Controls Bar Overlay at the Bottom
+        // Tap Play/Pause Feedback Splash
+        LaunchedEffect(showPlayPauseFeedback) {
+            if (showPlayPauseFeedback) {
+                delay(600)
+                showPlayPauseFeedback = false
+            }
+        }
+
         AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn(tween(250)),
+            visible = showPlayPauseFeedback,
+            enter = fadeIn(tween(100)) + scaleIn(tween(100)),
+            exit = fadeOut(tween(250)) + scaleOut(tween(250)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.65f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (playerState.isPlaying) Icons.Default.PlayArrow else Icons.Default.Pause,
+                    contentDescription = null,
+                    tint = Color(0xFFF3D7EC),
+                    modifier = Modifier.size(44.dp)
+                )
+            }
+        }
+
+        // Vertical Swipe Volume Indicator (Right Edge)
+        AnimatedVisibility(
+            visible = showVolumeIndicator,
+            enter = fadeIn(tween(150)),
             exit = fadeOut(tween(250)),
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 20.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 28.dp),
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.Black.copy(alpha = 0.70f))
+                    .padding(vertical = 14.dp, horizontal = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Seeker Bar
-                val currentRatio = if (playerState.durationMs > 0) {
-                    (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
-                } else 0f
+                val volRatio = currentVolume.toFloat() / maxVolume.toFloat()
 
-                SquigglySlider(
-                    progress = currentRatio,
-                    isPlaying = playerState.isPlaying,
-                    onSeek = { ratio ->
-                        val targetMs = (ratio * playerState.durationMs).toLong()
-                        onSeekTo(targetMs)
-                        lastInteractionTime = System.currentTimeMillis()
+                Icon(
+                    imageVector = when {
+                        currentVolume == 0 -> Icons.AutoMirrored.Filled.VolumeMute
+                        volRatio < 0.5f -> Icons.AutoMirrored.Filled.VolumeDown
+                        else -> Icons.AutoMirrored.Filled.VolumeUp
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    activeColor = Color(0xFFF3D7EC),
-                    inactiveColor = Color.White.copy(alpha = 0.22f),
-                    thumbColor = Color(0xFFF3D7EC)
+                    contentDescription = null,
+                    tint = Color(0xFFF3D7EC),
+                    modifier = Modifier.size(20.dp)
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Translucent Floating Pill with Playback Controls
-                Row(
+                // Vertical Volume Bar
+                Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(32.dp))
-                        .background(Color.Black.copy(alpha = 0.65f))
-                        .padding(horizontal = 24.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .width(6.dp)
+                        .height(100.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.White.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.BottomCenter
                 ) {
-                    // Previous Track
-                    IconButton(
-                        onClick = {
-                            onPrevious()
-                            lastInteractionTime = System.currentTimeMillis()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.SkipPrevious,
-                            contentDescription = "Previous",
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
-                    // Scalloped Play/Pause Button in Pastel Lavender (#F3D7EC)
                     Box(
                         modifier = Modifier
-                            .size(62.dp)
-                            .clip(ScallopedFlowerShape(lobes = 12, scallopDepthRatio = 0.12f))
+                            .fillMaxWidth()
+                            .height((100 * volRatio).dp)
+                            .clip(RoundedCornerShape(3.dp))
                             .background(Color(0xFFF3D7EC))
-                            .clickable {
-                                onTogglePlayPause()
-                                lastInteractionTime = System.currentTimeMillis()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (playerState.isBuffering || playerState.isResolving) {
-                            CircularProgressIndicator(
-                                color = Color(0xFF3B1E38),
-                                modifier = Modifier.size(26.dp),
-                                strokeWidth = 2.5.dp
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (playerState.isPlaying) "Pause" else "Play",
-                                tint = Color(0xFF3B1E38),
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                    }
-
-                    // Next Track
-                    IconButton(
-                        onClick = {
-                            onNext()
-                            lastInteractionTime = System.currentTimeMillis()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.SkipNext,
-                            contentDescription = "Next",
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
+                    )
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "${(volRatio * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = Color.White
+                )
             }
         }
     }
 }
 
+/**
+ * Kinetic Flow Lyrics Component.
+ * The active lyric line is centered, dynamically scaled, and highlighted with glowing text shadow.
+ * Past and upcoming lines smoothly flow and fade.
+ */
 @Composable
-private fun AmbientLyricsColumn(
+private fun FlowLyricsView(
     lyricLines: List<LyricLine>,
     activeIndex: Int,
     isSynced: Boolean,
@@ -486,7 +593,10 @@ private fun AmbientLyricsColumn(
     when {
         isLoading -> {
             Box(modifier = modifier, contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color(0xFFF3D7EC), strokeWidth = 2.5.dp)
+                CircularProgressIndicator(
+                    color = Color(0xFFF3D7EC),
+                    strokeWidth = 2.5.dp
+                )
             }
         }
 
@@ -504,35 +614,44 @@ private fun AmbientLyricsColumn(
             LazyColumn(
                 state = listState,
                 modifier = modifier,
-                contentPadding = PaddingValues(vertical = 140.dp),
+                contentPadding = PaddingValues(vertical = 120.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 itemsIndexed(lyricLines) { index, line ->
                     val isActive = index == activeIndex
+                    val distance = abs(index - activeIndex)
 
                     val animatedScale by animateFloatAsState(
-                        targetValue = if (isActive) 1.15f else 1.0f,
-                        animationSpec = tween(300),
-                        label = "ambientLyricScale"
+                        targetValue = if (isActive) 1.18f else 0.95f,
+                        animationSpec = spring(
+                            dampingRatio = 0.75f,
+                            stiffness = Spring.StiffnessLow
+                        ),
+                        label = "flowLyricScale"
                     )
 
-                    val alpha = if (isSynced) {
-                        if (isActive) 1.0f else 0.28f
-                    } else 0.85f
+                    val alpha = when {
+                        !isSynced -> 0.85f
+                        isActive -> 1.0f
+                        distance == 1 -> 0.40f
+                        distance == 2 -> 0.22f
+                        else -> 0.12f
+                    }
 
                     val textShadow = if (isActive) {
                         Shadow(
-                            color = Color.White.copy(alpha = 0.55f),
-                            blurRadius = 18f
+                            color = Color.White.copy(alpha = 0.75f),
+                            blurRadius = 24f
                         )
                     } else null
 
                     Text(
                         text = line.text,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Medium,
-                            fontSize = if (isActive) 22.sp else 17.sp,
-                            shadow = textShadow
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.SemiBold,
+                            fontSize = if (isActive) 24.sp else 18.sp,
+                            shadow = textShadow,
+                            letterSpacing = if (isActive) 0.5.sp else 0.sp
                         ),
                         color = Color.White.copy(alpha = alpha),
                         textAlign = TextAlign.Center,
@@ -544,7 +663,7 @@ private fun AmbientLyricsColumn(
                                     onSeekTo(line.timestampMs)
                                 }
                             }
-                            .padding(vertical = 12.dp, horizontal = 16.dp)
+                            .padding(vertical = 14.dp, horizontal = 18.dp)
                     )
                 }
             }
