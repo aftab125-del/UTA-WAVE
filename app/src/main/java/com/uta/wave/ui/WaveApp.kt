@@ -421,6 +421,9 @@ fun WaveApp() {
             },
             onNavigateToListeningSummary = {
                 isListeningSummaryOpen = true
+            },
+            onPlayTrack = { track, queue ->
+                playbackManager.playTrack(track, queue)
             }
         )
     }

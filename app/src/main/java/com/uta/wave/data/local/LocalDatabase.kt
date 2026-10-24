@@ -26,6 +26,8 @@ data class PlaylistRecord(
 class LocalDatabase private constructor(context: Context) :
     SQLiteOpenHelper(context.applicationContext, DATABASE_NAME, null, DATABASE_VERSION) {
 
+    private val appContext: Context = context.applicationContext
+
     companion object {
         private const val DATABASE_NAME = "utaverse_wave.db"
         private const val DATABASE_VERSION = 1
@@ -558,6 +560,11 @@ class LocalDatabase private constructor(context: Context) :
     }
 
     suspend fun recordHistory(track: TrackItem) = withContext(Dispatchers.IO) {
+        val prefs = com.uta.wave.data.preferences.UserPreferences.getInstance(appContext)
+        if (prefs.currentSettings.pauseHistory) {
+            return@withContext
+        }
+
         insertTrack(track)
         val db = writableDatabase
         val existingCount = db.rawQuery("SELECT play_count FROM history WHERE track_id = ?", arrayOf(track.id)).use {
@@ -708,6 +715,91 @@ class LocalDatabase private constructor(context: Context) :
         root.put("playlists", playlistsArr)
 
         root.toString(2)
+    }
+
+    suspend fun clearListeningHistory() = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.delete("history", null, null)
+        db.delete("listening_logs", null, null)
+        _historyFlow.value = emptyList()
+        _weeklySummaryFlow.value = queryWeeklyListeningSummarySync()
+    }
+
+    suspend fun restoreBackupJson(jsonString: String, overwrite: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val root = JSONObject(jsonString)
+            val db = writableDatabase
+            if (overwrite) {
+                db.delete("favorites", null, null)
+                db.delete("playlist_tracks", null, null)
+                db.delete("playlists", null, null)
+            }
+
+            val favs = root.optJSONArray("favorites")
+            if (favs != null) {
+                for (i in 0 until favs.length()) {
+                    val tObj = favs.optJSONObject(i) ?: continue
+                    val track = TrackItem(
+                        id = tObj.optString("id"),
+                        videoId = tObj.optString("videoId"),
+                        title = tObj.optString("title"),
+                        artist = tObj.optString("artist"),
+                        artworkUrl = tObj.optString("artworkUrl"),
+                        durationSeconds = tObj.optInt("durationSeconds", 180)
+                    )
+                    insertTrack(track)
+                    val values = ContentValues().apply {
+                        put("track_id", track.id)
+                        put("liked_at", System.currentTimeMillis())
+                    }
+                    db.insertWithOnConflict("favorites", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+                }
+            }
+
+            val playlists = root.optJSONArray("playlists")
+            if (playlists != null) {
+                for (i in 0 until playlists.length()) {
+                    val pObj = playlists.optJSONObject(i) ?: continue
+                    val pId = pObj.optString("id", UUID.randomUUID().toString())
+                    val pName = pObj.optString("name", "Restored Playlist")
+                    val pDesc = pObj.optString("description", "")
+                    val pValues = ContentValues().apply {
+                        put("id", pId)
+                        put("name", pName)
+                        put("description", pDesc)
+                        put("created_at", pObj.optLong("createdAt", System.currentTimeMillis()))
+                    }
+                    db.insertWithOnConflict("playlists", null, pValues, SQLiteDatabase.CONFLICT_REPLACE)
+
+                    val pTracks = pObj.optJSONArray("tracks")
+                    if (pTracks != null) {
+                        for (j in 0 until pTracks.length()) {
+                            val trackObj = pTracks.optJSONObject(j) ?: continue
+                            val track = TrackItem(
+                                id = trackObj.optString("id"),
+                                videoId = trackObj.optString("videoId"),
+                                title = trackObj.optString("title"),
+                                artist = trackObj.optString("artist"),
+                                artworkUrl = trackObj.optString("artworkUrl"),
+                                durationSeconds = trackObj.optInt("durationSeconds", 180)
+                            )
+                            insertTrack(track)
+                            val ptValues = ContentValues().apply {
+                                put("playlist_id", pId)
+                                put("track_id", track.id)
+                                put("added_at", System.currentTimeMillis())
+                            }
+                            db.insertWithOnConflict("playlist_tracks", null, ptValues, SQLiteDatabase.CONFLICT_IGNORE)
+                        }
+                    }
+                }
+            }
+
+            refreshAllFlows()
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun queryWeeklyListeningSummarySync(): WeeklyListeningSummary {
