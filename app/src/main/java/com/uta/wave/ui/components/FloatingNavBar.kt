@@ -46,9 +46,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import com.uta.wave.data.preferences.UserPreferences
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -111,8 +114,16 @@ fun FloatingNavBar(
     onTogglePlayPause: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val userPrefs = remember { UserPreferences.getInstance(context) }
+    val settings by userPrefs.settingsFlow.collectAsState()
+    val isPureBlack = settings.pureBlackMiniPlayer || settings.pureBlack
+
     val glassConfig = LocalGlassEffectConfig.current
     val useGlass = glassConfig.isEnabledFor(GlassComponent.NAV_BAR)
+    val miniPlayerBackground = settings.miniplayerBackgroundStyle
+    val isGlassMini = (miniPlayerBackground == "LIQUID_GLASS" || glassConfig.isEnabledFor(GlassComponent.MINI_PLAYER)) && isGlassSupported() && !isPureBlack
+    val isDynamicMini = !isGlassMini && miniPlayerBackground in listOf("BLUR", "GLOW_ANIMATED", "LIVE_MESH")
 
     val adaptiveTextColor =
         if (glassConfig.textColor.isSpecified) {
@@ -203,7 +214,7 @@ fun FloatingNavBar(
                     }
 
                     // 2. Center Slim MiniPlayer Capsule Pill
-                    val collapsedMiniModifier = if (useGlass) {
+                    val collapsedMiniModifier = if (useGlass || isGlassMini) {
                         Modifier
                             .weight(1f)
                             .height(50.dp)
@@ -216,17 +227,52 @@ fun FloatingNavBar(
                             .shadow(16.dp, RoundedCornerShape(25.dp), spotColor = Color.Black.copy(alpha = 0.6f))
                             .clip(RoundedCornerShape(25.dp))
                             .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xD9281C30), Color(0xBF181120))
-                                )
+                                if (isDynamicMini) {
+                                    Brush.linearGradient(listOf(Color(0xFF0C0911), Color(0xFF0C0911)))
+                                } else {
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xD9281C30), Color(0xBF181120))
+                                    )
+                                }
                             )
-                            .border(1.dp, GlassBorderBrush, RoundedCornerShape(25.dp))
+                            .border(
+                                1.dp,
+                                if (isDynamicMini) Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.30f), Color.White.copy(alpha = 0.10f))) else GlassBorderBrush,
+                                RoundedCornerShape(25.dp)
+                            )
                             .clickable(onClick = onExpandPlayer)
+                    }
+
+                    val miniTitleColor = when {
+                        useGlass || isGlassMini -> adaptiveTextColor
+                        isDynamicMini -> Color.White
+                        else -> TextPrimary
+                    }
+
+                    val miniSubtitleColor = when {
+                        useGlass || isGlassMini -> adaptiveTextColor.copy(alpha = 0.7f)
+                        isDynamicMini -> Color.White.copy(alpha = 0.75f)
+                        else -> SoftViolet
+                    }
+
+                    val miniAccentColor = when {
+                        useGlass || isGlassMini -> adaptiveTextColor
+                        isDynamicMini -> Color.White
+                        else -> selectedContentColor
                     }
 
                     Box(
                         modifier = collapsedMiniModifier
                     ) {
+                        if (isDynamicMini) {
+                            MiniPlayerBackgroundLayer(
+                                style = miniPlayerBackground,
+                                artworkUrl = currentTrack.artworkUrl,
+                                modifier = Modifier.matchParentSize(),
+                                shape = RoundedCornerShape(25.dp)
+                            )
+                        }
+
                         Column {
                             Row(
                                 modifier = Modifier
@@ -240,7 +286,7 @@ fun FloatingNavBar(
                                     modifier = Modifier
                                         .size(36.dp)
                                         .clip(CircleShape)
-                                        .border(1.dp, selectedContentColor.copy(alpha = 0.6f), CircleShape),
+                                        .border(1.dp, miniAccentColor.copy(alpha = 0.6f), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     AsyncImage(
@@ -257,7 +303,7 @@ fun FloatingNavBar(
                                             .size(6.dp)
                                             .clip(CircleShape)
                                             .background(Color(0xFF1B1522))
-                                            .border(0.5.dp, selectedContentColor, CircleShape)
+                                            .border(0.5.dp, miniAccentColor, CircleShape)
                                     )
                                 }
 
@@ -271,7 +317,7 @@ fun FloatingNavBar(
                                             fontWeight = FontWeight.SemiBold,
                                             fontSize = 13.sp
                                         ),
-                                        color = if (useGlass) adaptiveTextColor else TextPrimary,
+                                        color = miniTitleColor,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -281,7 +327,7 @@ fun FloatingNavBar(
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Medium
                                         ),
-                                        color = if (useGlass) adaptiveTextColor.copy(alpha = 0.7f) else SoftViolet,
+                                        color = miniSubtitleColor,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -294,7 +340,7 @@ fun FloatingNavBar(
                                     modifier = Modifier
                                         .size(34.dp)
                                         .clip(CircleShape)
-                                        .background(selectedContentColor.copy(alpha = if (useGlass) 0.15f else 0.2f))
+                                        .background(miniAccentColor.copy(alpha = if (useGlass || isGlassMini || isDynamicMini) 0.15f else 0.2f))
                                         .clickable(onClick = onTogglePlayPause),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -302,7 +348,7 @@ fun FloatingNavBar(
                                         playerState.isResolving || playerState.isBuffering -> {
                                             CircularProgressIndicator(
                                                 modifier = Modifier.size(16.dp),
-                                                color = selectedContentColor,
+                                                color = miniAccentColor,
                                                 strokeWidth = 2.dp
                                             )
                                         }
@@ -310,7 +356,7 @@ fun FloatingNavBar(
                                             Icon(
                                                 imageVector = Icons.Default.Pause,
                                                 contentDescription = "Pause",
-                                                tint = selectedContentColor,
+                                                tint = miniAccentColor,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -318,7 +364,7 @@ fun FloatingNavBar(
                                             Icon(
                                                 imageVector = Icons.Default.PlayArrow,
                                                 contentDescription = "Play",
-                                                tint = selectedContentColor,
+                                                tint = miniAccentColor,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -342,9 +388,13 @@ fun FloatingNavBar(
                                         .fillMaxWidth(fraction = progress)
                                         .height(2.dp)
                                         .background(
-                                            if (useGlass) {
+                                            if (useGlass || isGlassMini) {
                                                 Brush.horizontalGradient(
                                                     listOf(adaptiveTextColor, adaptiveTextColor.copy(alpha = 0.35f))
+                                                )
+                                            } else if (isDynamicMini) {
+                                                Brush.horizontalGradient(
+                                                    listOf(Color.White, Color.White.copy(alpha = 0.45f))
                                                 )
                                             } else {
                                                 Brush.horizontalGradient(

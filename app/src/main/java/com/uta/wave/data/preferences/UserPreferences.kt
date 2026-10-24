@@ -19,6 +19,7 @@ data class AppSettings(
     val accentColorHex: String = "#F2AEC7",        // Blush Pink (#F2AEC7), Violet (#A855F7), Sky Blue (#38BDF8), Emerald (#10B981), Amber (#F59E0B)
     val fontScale: Float = 1.0f,                   // 0.9f, 1.0f, 1.15f
     val miniplayerStyle: String = "FLOATING",      // FLOATING, BOTTOM_ATTACHED
+    val miniplayerBackgroundStyle: String = "DEFAULT", // DEFAULT (Follow theme), BLUR, GLOW_ANIMATED, LIVE_MESH, LIQUID_GLASS
     val playerStyle: String = "WAVE",              // WAVE (Squiggly), CLASSIC
     val lyricsAnimation: String = "ALPHABET_V2",   // ALPHABET_V2 (Smooth Letter flow), WORD_BY_WORD
     val ambientCanvasEnabled: Boolean = true,
@@ -126,6 +127,7 @@ class UserPreferences private constructor(context: Context) {
             accentColorHex = prefs.getString("accent_color_hex", "#F2AEC7") ?: "#F2AEC7",
             fontScale = prefs.getFloat("font_scale", 1.0f),
             miniplayerStyle = prefs.getString("miniplayer_style", "FLOATING") ?: "FLOATING",
+            miniplayerBackgroundStyle = prefs.getString("miniplayer_background_style", "DEFAULT") ?: "DEFAULT",
             playerStyle = prefs.getString("player_style", "WAVE") ?: "WAVE",
             lyricsAnimation = prefs.getString("lyrics_animation", "ALPHABET_V2") ?: "ALPHABET_V2",
             ambientCanvasEnabled = prefs.getBoolean("ambient_canvas_enabled", true),
@@ -254,6 +256,11 @@ class UserPreferences private constructor(context: Context) {
     fun updateMiniplayerStyle(style: String) {
         prefs.edit().putString("miniplayer_style", style).apply()
         _settingsFlow.update { it.copy(miniplayerStyle = style) }
+    }
+
+    fun updateMiniplayerBackgroundStyle(style: String) {
+        prefs.edit().putString("miniplayer_background_style", style).apply()
+        _settingsFlow.update { it.copy(miniplayerBackgroundStyle = style) }
     }
 
     fun updatePlayerStyle(style: String) {
