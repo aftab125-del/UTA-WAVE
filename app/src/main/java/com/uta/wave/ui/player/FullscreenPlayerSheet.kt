@@ -470,50 +470,19 @@ fun FullscreenPlayerSheet(
         }
 
         if (showLyrics) {
-            Column(
+            LyricsSheet(
+                track = track,
+                currentPositionMs = playerState.positionMs,
+                onSeekTo = onSeekTo,
+                isPlaying = playerState.isPlaying,
+                onTogglePlayPause = onTogglePlayPause,
+                onPrevious = onPrevious,
+                onNext = onNext,
+                onClose = { showLyrics = false },
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 20.dp, vertical = 24.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { showLyrics = false }) {
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Close Lyrics",
-                            tint = Color.White,
-                            modifier = Modifier.size(30.dp)
-                        )
-                    }
-                    Text(
-                        text = "LYRICS",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 2.sp,
-                            fontSize = 11.sp
-                        ),
-                        color = Color.White.copy(alpha = 0.8f)
-                    )
-                    IconButton(onClick = onCollapse) {
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Collapse",
-                            tint = Color.Transparent,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                LyricsSheet(
-                    track = track,
-                    currentPositionMs = playerState.positionMs,
-                    onSeekTo = onSeekTo,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+                    .padding(horizontal = 16.dp, vertical = 20.dp)
+            )
         } else if (isAppleMusic) {
             // -------------------------------------------------------------
             // APPLE MUSIC INSPIRED FULLSCREEN PLAYER LAYOUT
