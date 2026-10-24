@@ -62,6 +62,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Translate
@@ -838,6 +839,72 @@ private fun AppearanceSettingsSection(
                 contentDescription = null,
                 tint = Color.White.copy(alpha = 0.35f),
                 modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+    SectionHeader("Display Refresh Rate")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+            .clickable { prefs.updateEnableHighRefreshRate(!settings.enableHighRefreshRate) }
+            .padding(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF10B981).copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Speed,
+                        contentDescription = null,
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Enable high refresh rate",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        ),
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Force the display to run at the highest supported refresh rate (e.g. 120Hz)",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = Color.White.copy(alpha = 0.60f)
+                    )
+                }
+            }
+            Switch(
+                checked = settings.enableHighRefreshRate,
+                onCheckedChange = { prefs.updateEnableHighRefreshRate(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color(0xFF10B981),
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
             )
         }
     }
