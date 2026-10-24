@@ -139,7 +139,10 @@ fun SettingsScreen(
     var activeSubSection by remember { mutableStateOf<String?>(null) }
 
     if (activeSubSection == "Account") {
-        AccountScreen(onBack = { activeSubSection = null })
+        AccountScreen(
+            onBack = { activeSubSection = null },
+            onOpenSettings = { activeSubSection = null }
+        )
         return
     }
 

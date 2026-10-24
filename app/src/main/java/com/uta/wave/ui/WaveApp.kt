@@ -177,7 +177,8 @@ fun WaveApp() {
                     },
                     onOpenDiagnostics = { showDiagnostics = true },
                     onOpenAccount = { isAccountScreenOpen = true },
-                    onOpenListeningSummary = { isListeningSummaryOpen = true }
+                    onOpenListeningSummary = { isListeningSummaryOpen = true },
+                    onOpenSettings = { isSettingsOpen = true }
                 )
                 1 -> RecognizeMusicScreen(
                     currentTrackId = currentTrack?.id,
@@ -212,7 +213,8 @@ fun WaveApp() {
                     },
                     onOpenDiagnostics = { showDiagnostics = true },
                     onOpenAccount = { isAccountScreenOpen = true },
-                    onOpenListeningSummary = { isListeningSummaryOpen = true }
+                    onOpenListeningSummary = { isListeningSummaryOpen = true },
+                    onOpenSettings = { isSettingsOpen = true }
                 )
                 3 -> SearchScreen(
                     currentTrackId = currentTrack?.id,
@@ -435,7 +437,11 @@ fun WaveApp() {
         exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
     ) {
         AccountScreen(
-            onBack = { isAccountScreenOpen = false }
+            onBack = { isAccountScreenOpen = false },
+            onOpenSettings = {
+                isAccountScreenOpen = false
+                isSettingsOpen = true
+            }
         )
     }
 
