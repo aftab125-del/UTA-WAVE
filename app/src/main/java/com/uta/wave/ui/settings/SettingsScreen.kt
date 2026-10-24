@@ -1550,6 +1550,82 @@ private fun AppearanceSettingsSection(
                 )
             )
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Rotating turntable vinyl animation
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Rotating thumbnail",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Turn album art into a 20s spinning vinyl turntable with double-tap seek",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.rotatingThumbnail,
+                onCheckedChange = { prefs.updateRotatingThumbnail(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Canvas artwork video animation
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Canvas artwork video",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Play looping motion video canvases from streaming catalogs on supported songs",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
+            Switch(
+                checked = settings.canvasThumbnailAnimation,
+                onCheckedChange = { prefs.updateCanvasThumbnailAnimation(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = currentAccent,
+                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
+                )
+            )
+        }
     }
 }
 

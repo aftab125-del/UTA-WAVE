@@ -5,6 +5,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -12,6 +13,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +37,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FileDownload
@@ -79,16 +83,21 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.uta.wave.R
+import com.uta.wave.data.canvas.CanvasArtwork
+import com.uta.wave.data.canvas.CanvasArtworkProvider
 import com.uta.wave.data.downloads.AudioDownloadManager
 import com.uta.wave.data.downloads.AudioQuality
 import com.uta.wave.data.innertube.LyricLine
@@ -99,6 +108,8 @@ import com.uta.wave.data.preferences.UserPreferences
 import com.uta.wave.player.RepeatMode as PlayerRepeatMode
 import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.components.AmbientCanvas
+import com.uta.wave.ui.components.ArtworkThumbnailView
+import com.uta.wave.ui.components.CanvasArtworkPlayer
 import com.uta.wave.ui.components.DownloadQualityBottomSheet
 import com.uta.wave.ui.components.GlassComponent
 import com.uta.wave.ui.components.LocalGlassEffectConfig
@@ -213,6 +224,31 @@ fun FullscreenPlayerSheet(
         label = "clearArtworkAlpha"
     )
 
+    // Canvas artwork video state (precedence: rotating thumbnail disables canvas)
+    var canvasArtwork by remember(track.id) { mutableStateOf<CanvasArtwork?>(null) }
+    LaunchedEffect(track.id, settings.canvasThumbnailAnimation, settings.rotatingThumbnail) {
+        if (settings.canvasThumbnailAnimation && !settings.rotatingThumbnail) {
+            canvasArtwork = CanvasArtworkProvider.getCanvas(
+                context = context,
+                mediaId = track.id,
+                title = track.title,
+                artist = track.artist,
+                album = null
+            )
+        } else {
+            canvasArtwork = null
+        }
+    }
+
+    // Double-tap seek feedback overlay
+    var seekFeedbackDirection by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(seekFeedbackDirection) {
+        if (seekFeedbackDirection != null) {
+            delay(850)
+            seekFeedbackDirection = null
+        }
+    }
+
     // Wavy cookie play/pause morph & rotation
     val cookieIndent by animateFloatAsState(
         targetValue = if (settings.wavyPlayPause && playerState.isPlaying) 0.14f else 0f,
@@ -268,39 +304,148 @@ fun FullscreenPlayerSheet(
                     .then(blurModifier)
             )
 
-            // LAYER 2: Top 58% clear artwork with vertical gradient dissolve mask (Apple Music signature)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.58f)
-                    .alpha(clearArtworkAlpha)
-                    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-                    .drawWithContent {
-                        drawContent()
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                colorStops = arrayOf(
-                                    0.00f to Color.Black,
-                                    0.68f to Color.Black,
-                                    0.88f to Color.Black.copy(alpha = 0.4f),
-                                    1.00f to Color.Transparent
-                                )
-                            ),
-                            blendMode = BlendMode.DstIn
+            // LAYER 2: Apple-Music Top Artwork (or 20s spinning vinyl turntable if rotating thumbnail enabled)
+            if (settings.rotatingThumbnail) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.58f)
+                        .alpha(clearArtworkAlpha)
+                        .padding(top = 40.dp, bottom = 12.dp)
+                        .swipeToChangeSong(
+                            enabled = settings.enableSwipeToChangeSong,
+                            onPrevious = onPrevious,
+                            onNext = onNext
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ArtworkThumbnailView(
+                        artworkUrl = track.artworkUrl,
+                        songId = track.id,
+                        title = track.title,
+                        artist = track.artist,
+                        album = null,
+                        isPlaying = playerState.isPlaying,
+                        isRotatingEnabled = true,
+                        isCanvasEnabled = false,
+                        onSeekDelta = { deltaMs ->
+                            val target = (playerState.positionMs + deltaMs).coerceIn(0L, playerState.durationMs)
+                            onSeekTo(target)
+                        },
+                        onTogglePlayPause = onTogglePlayPause,
+                        modifier = Modifier
+                            .size(260.dp)
+                            .shadow(elevation = 28.dp, shape = CircleShape)
+                    )
+                }
+            } else {
+                val layoutDirection = LocalLayoutDirection.current
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.58f)
+                        .alpha(clearArtworkAlpha)
+                        .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colorStops = arrayOf(
+                                        0.00f to Color.Black,
+                                        0.68f to Color.Black,
+                                        0.88f to Color.Black.copy(alpha = 0.4f),
+                                        1.00f to Color.Transparent
+                                    )
+                                ),
+                                blendMode = BlendMode.DstIn
+                            )
+                        }
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onDoubleTap = { offset ->
+                                    val leftBound = size.width * 0.33f
+                                    val rightBound = size.width * 0.67f
+                                    val isLeft = (layoutDirection == LayoutDirection.Ltr && offset.x < leftBound) ||
+                                            (layoutDirection == LayoutDirection.Rtl && offset.x > rightBound)
+                                    val isRight = (layoutDirection == LayoutDirection.Ltr && offset.x > rightBound) ||
+                                            (layoutDirection == LayoutDirection.Rtl && offset.x < leftBound)
+
+                                    if (isLeft) {
+                                        val target = (playerState.positionMs - 10000L).coerceAtLeast(0L)
+                                        onSeekTo(target)
+                                        seekFeedbackDirection = "-10s"
+                                    } else if (isRight) {
+                                        val target = (playerState.positionMs + 10000L).coerceAtMost(playerState.durationMs)
+                                        onSeekTo(target)
+                                        seekFeedbackDirection = "+10s"
+                                    } else {
+                                        onTogglePlayPause()
+                                    }
+                                }
+                            )
+                        }
+                        .swipeToChangeSong(
+                            enabled = settings.enableSwipeToChangeSong,
+                            onPrevious = onPrevious,
+                            onNext = onNext
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = track.artworkUrl,
+                        contentDescription = track.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Canvas Looping Video overlay
+                    if (settings.canvasThumbnailAnimation && canvasArtwork?.preferredAnimationUrl != null) {
+                        CanvasArtworkPlayer(
+                            primaryUrl = canvasArtwork?.preferredAnimationUrl,
+                            fallbackUrl = canvasArtwork?.videoUrl,
+                            isPlaying = playerState.isPlaying,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
-                    .swipeToChangeSong(
-                        enabled = settings.enableSwipeToChangeSong,
-                        onPrevious = onPrevious,
-                        onNext = onNext
-                    )
-            ) {
-                AsyncImage(
-                    model = track.artworkUrl,
-                    contentDescription = track.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+
+                    // Seek Feedback Overlay (-10s / +10s)
+                    AnimatedVisibility(
+                        visible = seekFeedbackDirection != null,
+                        enter = fadeIn(tween(150)),
+                        exit = fadeOut(tween(250)),
+                        modifier = Modifier.align(Alignment.Center)
+                    ) {
+                        val direction = seekFeedbackDirection
+                        if (direction != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(Color.Black.copy(alpha = 0.75f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (direction.startsWith("-")) Icons.Default.FastRewind else Icons.Default.FastForward,
+                                        contentDescription = direction,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = direction,
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp
+                                        ),
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // LAYER 3: Dark contrast scrim
@@ -811,25 +956,32 @@ fun FullscreenPlayerSheet(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Box(
+                    ArtworkThumbnailView(
+                        artworkUrl = track.artworkUrl,
+                        songId = track.id,
+                        title = track.title,
+                        artist = track.artist,
+                        album = null,
+                        isPlaying = playerState.isPlaying,
+                        isRotatingEnabled = settings.rotatingThumbnail,
+                        isCanvasEnabled = settings.canvasThumbnailAnimation,
+                        onSeekDelta = { deltaMs ->
+                            val target = (playerState.positionMs + deltaMs).coerceIn(0L, playerState.durationMs)
+                            onSeekTo(target)
+                        },
+                        onTogglePlayPause = onTogglePlayPause,
                         modifier = Modifier
                             .size(300.dp)
-                            .shadow(elevation = 28.dp, shape = RoundedCornerShape(26.dp))
-                            .clip(RoundedCornerShape(26.dp))
-                            .background(Color(0xFF1E1724))
+                            .shadow(
+                                elevation = 28.dp,
+                                shape = if (settings.rotatingThumbnail) CircleShape else RoundedCornerShape(26.dp)
+                            )
                             .swipeToChangeSong(
                                 enabled = settings.enableSwipeToChangeSong,
                                 onPrevious = onPrevious,
                                 onNext = onNext
                             )
-                    ) {
-                        AsyncImage(
-                            model = track.artworkUrl,
-                            contentDescription = track.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(20.dp))
 
