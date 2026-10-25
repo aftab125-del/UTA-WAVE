@@ -40,6 +40,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MusicNote
@@ -86,9 +88,6 @@ import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.ObsidianBackground
 import com.uta.wave.ui.theme.SoftViolet
 import com.uta.wave.ui.theme.SurfaceDark
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import com.uta.wave.ui.theme.TextMuted
 import com.uta.wave.ui.theme.TextPrimary
 import com.uta.wave.ui.theme.TextSecondary
@@ -434,8 +433,21 @@ fun RecognizeMusicScreen(
                             ),
                             color = TextPrimary
                         )
-                        IconButton(onClick = { showHistorySheet = false }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (recognizedHistory.isNotEmpty()) {
+                                IconButton(onClick = {
+                                    scope.launch { localDatabase.clearRecognizedHistory() }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteSweep,
+                                        contentDescription = "Clear History",
+                                        tint = TextMuted
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { showHistorySheet = false }) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
+                            }
                         }
                     }
 
@@ -496,19 +508,37 @@ fun RecognizeMusicScreen(
                                         )
                                     }
 
-                                    Box(
-                                        modifier = Modifier
-                                            .size(34.dp)
-                                            .clip(CircleShape)
-                                            .background(BlushRose.copy(alpha = 0.2f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.PlayArrow,
-                                            contentDescription = "Play",
-                                            tint = BlushRose,
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch { localDatabase.deleteRecognizedTrack(track.id) }
+                                            },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete",
+                                                tint = TextMuted.copy(alpha = 0.6f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(4.dp))
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .background(BlushRose.copy(alpha = 0.2f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.PlayArrow,
+                                                contentDescription = "Play",
+                                                tint = BlushRose,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }

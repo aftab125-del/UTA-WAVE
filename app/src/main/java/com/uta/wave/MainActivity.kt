@@ -1,5 +1,6 @@
 package com.uta.wave
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,15 +9,28 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.uta.wave.data.preferences.UserPreferences
+import com.uta.wave.quicksettings.MusicRecognizerTileService
 import com.uta.wave.ui.WaveApp
 import com.uta.wave.ui.theme.UtaWaveTheme
 
 class MainActivity : ComponentActivity() {
+
+    private var requestedTab by mutableStateOf<Int?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        if (intent?.getBooleanExtra(MusicRecognizerTileService.EXTRA_OPEN_RECOGNIZE, false) == true ||
+            intent?.action == MusicRecognizerTileService.ACTION_RECOGNIZE_MUSIC
+        ) {
+            requestedTab = 1
+        }
+
         setContent {
             val userPrefs = remember { UserPreferences.getInstance(applicationContext) }
             val settings by userPrefs.settingsFlow.collectAsState()
@@ -60,8 +74,18 @@ class MainActivity : ComponentActivity() {
                 selectedFont = settings.selectedFont,
                 customFontPath = settings.customFontPath
             ) {
-                WaveApp()
+                WaveApp(initialTab = requestedTab ?: 0)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(MusicRecognizerTileService.EXTRA_OPEN_RECOGNIZE, false) ||
+            intent.action == MusicRecognizerTileService.ACTION_RECOGNIZE_MUSIC
+        ) {
+            requestedTab = 1
         }
     }
 }
