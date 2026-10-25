@@ -57,6 +57,57 @@ data class AppSettings(
     val equalizerPreset: String = "FLAT",          // FLAT, BASS_BOOST, VOCAL, POP, ROCK, ACOUSTIC
     val stopOnTaskRemoved: Boolean = true,
 
+    // EchoMusic Player and Audio Feature Suite
+    // Group 1: Data Saver
+    val dataSaverEnabled: Boolean = false,
+
+    // Group 2: Player & Audio Engine
+    val showSeekButtons: Boolean = false,
+    val audioQualityWifi: String = "AUTO",          // AUTO, HIGH, MEDIUM, LOW
+    val audioQualityCellular: String = "MEDIUM",    // AUTO, HIGH, MEDIUM, LOW
+    val downloadQuality: String = "YOUTUBE",        // YOUTUBE
+    val downloadWithMetadata: Boolean = true,
+    val downloadOnWifiOnly: Boolean = false,
+    val playbackEngine: String = "POTOKEN",         // POTOKEN, BRAVEPIPE, AUTO
+    val crossfadeEnabled: Boolean = false,
+    val crossfadeDuration: Float = 5.0f,            // 1f .. 15f
+    val crossfadeGapless: Boolean = true,
+    val automixCrossfade: Boolean = false,
+    val automixDebugOverlay: Boolean = false,
+    val enableBitPerfectUsbDac: Boolean = false,
+    val usbDacVolumeMode: String = "PURE_BIT_PERFECT", // PURE_BIT_PERFECT, SOFTWARE_SCALED
+    val historyDuration: Float = 30.0f,             // 10s .. 60s
+    val skipSilenceInstant: Boolean = false,
+    val audioNormalization: Boolean = true,
+    val audioLoudnessPreset: String = "NORMAL",      // QUIET, NORMAL, LOUD, AGGRESSIVE
+    val varispeed: Boolean = false,
+    val spatialAudio: Boolean = false,
+    val audioOffload: Boolean = false,
+    val preloadNextSongEnabled: Boolean = true,
+    val preloadNextSongLimit: Int = 10,             // 1 .. 20
+    val preloadLyricsEnabled: Boolean = true,
+    val enableGoogleCast: Boolean = true,
+    val seekExtraSeconds: Boolean = false,          // Progressive seek (+5s incrementally)
+
+    // Group 3: Queue Management
+    val persistentQueue: Boolean = true,
+    val autoLoadMore: Boolean = true,
+    val autoDownloadOnLike: Boolean = false,
+    val similarContent: Boolean = true,
+    val persistentShuffleAcrossQueues: Boolean = false,
+    val rememberShuffleAndRepeat: Boolean = true,
+    val shufflePlaylistFirst: Boolean = false,
+    val preventDuplicateTracksInQueue: Boolean = false,
+    val autoSkipNextOnError: Boolean = false,
+
+    // Group 4: Misc & System Integration
+    val stopMusicOnTaskClear: Boolean = true,
+    val pauseOnMute: Boolean = false,
+    val resumeOnBluetoothConnect: Boolean = false,
+    val autoplayOnAutomotiveConnect: Boolean = false,
+    val keepScreenOn: Boolean = false,
+    val enableExportAsMp3: Boolean = false,
+
     // AI Hub
     val aiTranslationEnabled: Boolean = false,
     val aiRomanizationEnabled: Boolean = false,
@@ -183,6 +234,52 @@ class UserPreferences private constructor(context: Context) {
             normalizeVolume = prefs.getBoolean("normalize_volume", false),
             equalizerPreset = prefs.getString("equalizer_preset", "FLAT") ?: "FLAT",
             stopOnTaskRemoved = prefs.getBoolean("stop_on_task_removed", true),
+
+            // EchoMusic Player and Audio Preferences Loading
+            dataSaverEnabled = prefs.getBoolean("data_saver_enabled", false),
+            showSeekButtons = prefs.getBoolean("show_seek_buttons", false),
+            audioQualityWifi = prefs.getString("audio_quality_wifi", "AUTO") ?: "AUTO",
+            audioQualityCellular = prefs.getString("audio_quality_cellular", "MEDIUM") ?: "MEDIUM",
+            downloadQuality = prefs.getString("download_quality", "YOUTUBE") ?: "YOUTUBE",
+            downloadWithMetadata = prefs.getBoolean("download_with_metadata", true),
+            downloadOnWifiOnly = prefs.getBoolean("download_on_wifi_only", false),
+            playbackEngine = prefs.getString("playback_engine", "POTOKEN") ?: "POTOKEN",
+            crossfadeEnabled = prefs.getBoolean("crossfade_enabled", false),
+            crossfadeDuration = prefs.getFloat("crossfade_duration", 5.0f),
+            crossfadeGapless = prefs.getBoolean("crossfade_gapless", true),
+            automixCrossfade = prefs.getBoolean("automix_crossfade", false),
+            automixDebugOverlay = prefs.getBoolean("automix_debug_overlay", false),
+            enableBitPerfectUsbDac = prefs.getBoolean("enable_bit_perfect_usb_dac", false),
+            usbDacVolumeMode = prefs.getString("usb_dac_volume_mode", "PURE_BIT_PERFECT") ?: "PURE_BIT_PERFECT",
+            historyDuration = prefs.getFloat("history_duration", 30.0f),
+            skipSilenceInstant = prefs.getBoolean("skip_silence_instant", false),
+            audioNormalization = prefs.getBoolean("audio_normalization", true),
+            audioLoudnessPreset = prefs.getString("audio_loudness_preset", "NORMAL") ?: "NORMAL",
+            varispeed = prefs.getBoolean("varispeed", false),
+            spatialAudio = prefs.getBoolean("spatial_audio", false),
+            audioOffload = prefs.getBoolean("audio_offload", false),
+            preloadNextSongEnabled = prefs.getBoolean("preload_next_song_enabled", true),
+            preloadNextSongLimit = prefs.getInt("preload_next_song_limit", 10),
+            preloadLyricsEnabled = prefs.getBoolean("preload_lyrics_enabled", true),
+            enableGoogleCast = prefs.getBoolean("enable_google_cast", true),
+            seekExtraSeconds = prefs.getBoolean("seek_extra_seconds", false),
+
+            persistentQueue = prefs.getBoolean("persistent_queue", true),
+            autoLoadMore = prefs.getBoolean("auto_load_more", true),
+            autoDownloadOnLike = prefs.getBoolean("auto_download_on_like", false),
+            similarContent = prefs.getBoolean("similar_content", true),
+            persistentShuffleAcrossQueues = prefs.getBoolean("persistent_shuffle_across_queues", false),
+            rememberShuffleAndRepeat = prefs.getBoolean("remember_shuffle_and_repeat", true),
+            shufflePlaylistFirst = prefs.getBoolean("shuffle_playlist_first", false),
+            preventDuplicateTracksInQueue = prefs.getBoolean("prevent_duplicate_tracks_in_queue", false),
+            autoSkipNextOnError = prefs.getBoolean("auto_skip_next_on_error", false),
+
+            stopMusicOnTaskClear = prefs.getBoolean("stop_music_on_task_clear", true),
+            pauseOnMute = prefs.getBoolean("pause_on_mute", false),
+            resumeOnBluetoothConnect = prefs.getBoolean("resume_on_bluetooth_connect", false),
+            autoplayOnAutomotiveConnect = prefs.getBoolean("autoplay_on_automotive_connect", false),
+            keepScreenOn = prefs.getBoolean("keep_screen_on", false),
+            enableExportAsMp3 = prefs.getBoolean("enable_export_as_mp3", false),
 
             aiTranslationEnabled = prefs.getBoolean("ai_translation_enabled", false),
             aiRomanizationEnabled = prefs.getBoolean("ai_romanization_enabled", false),
@@ -503,6 +600,221 @@ class UserPreferences private constructor(context: Context) {
     fun updateStopOnTaskRemoved(enabled: Boolean) {
         prefs.edit().putBoolean("stop_on_task_removed", enabled).apply()
         _settingsFlow.update { it.copy(stopOnTaskRemoved = enabled) }
+    }
+
+    // EchoMusic Player and Audio Feature Suite Updaters
+    // Group 1: Data Saver
+    fun updateDataSaverEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("data_saver_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(dataSaverEnabled = enabled) }
+    }
+
+    // Group 2: Player & Audio Engine
+    fun updateShowSeekButtons(enabled: Boolean) {
+        prefs.edit().putBoolean("show_seek_buttons", enabled).apply()
+        _settingsFlow.update { it.copy(showSeekButtons = enabled) }
+    }
+
+    fun updateAudioQualityWifi(quality: String) {
+        prefs.edit().putString("audio_quality_wifi", quality).apply()
+        _settingsFlow.update { it.copy(audioQualityWifi = quality) }
+    }
+
+    fun updateAudioQualityCellular(quality: String) {
+        prefs.edit().putString("audio_quality_cellular", quality).apply()
+        _settingsFlow.update { it.copy(audioQualityCellular = quality) }
+    }
+
+    fun updateDownloadQualityProfile(quality: String) {
+        prefs.edit().putString("download_quality", quality).apply()
+        _settingsFlow.update { it.copy(downloadQuality = quality) }
+    }
+
+    fun updateDownloadWithMetadata(enabled: Boolean) {
+        prefs.edit().putBoolean("download_with_metadata", enabled).apply()
+        _settingsFlow.update { it.copy(downloadWithMetadata = enabled) }
+    }
+
+    fun updateDownloadOnWifiOnly(enabled: Boolean) {
+        prefs.edit().putBoolean("download_on_wifi_only", enabled).apply()
+        _settingsFlow.update { it.copy(downloadOnWifiOnly = enabled) }
+    }
+
+    fun updatePlaybackEngine(engine: String) {
+        prefs.edit().putString("playback_engine", engine).apply()
+        _settingsFlow.update { it.copy(playbackEngine = engine) }
+    }
+
+    fun updateCrossfadeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("crossfade_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(crossfadeEnabled = enabled) }
+    }
+
+    fun updateCrossfadeDuration(duration: Float) {
+        prefs.edit().putFloat("crossfade_duration", duration).apply()
+        _settingsFlow.update { it.copy(crossfadeDuration = duration) }
+    }
+
+    fun updateCrossfadeGapless(enabled: Boolean) {
+        prefs.edit().putBoolean("crossfade_gapless", enabled).apply()
+        _settingsFlow.update { it.copy(crossfadeGapless = enabled) }
+    }
+
+    fun updateAutomixCrossfade(enabled: Boolean) {
+        prefs.edit().putBoolean("automix_crossfade", enabled).apply()
+        _settingsFlow.update { it.copy(automixCrossfade = enabled) }
+    }
+
+    fun updateAutomixDebugOverlay(enabled: Boolean) {
+        prefs.edit().putBoolean("automix_debug_overlay", enabled).apply()
+        _settingsFlow.update { it.copy(automixDebugOverlay = enabled) }
+    }
+
+    fun updateEnableBitPerfectUsbDac(enabled: Boolean) {
+        prefs.edit().putBoolean("enable_bit_perfect_usb_dac", enabled).apply()
+        _settingsFlow.update { it.copy(enableBitPerfectUsbDac = enabled) }
+    }
+
+    fun updateUsbDacVolumeMode(mode: String) {
+        prefs.edit().putString("usb_dac_volume_mode", mode).apply()
+        _settingsFlow.update { it.copy(usbDacVolumeMode = mode) }
+    }
+
+    fun updateHistoryDuration(duration: Float) {
+        prefs.edit().putFloat("history_duration", duration).apply()
+        _settingsFlow.update { it.copy(historyDuration = duration) }
+    }
+
+    fun updateSkipSilenceInstant(enabled: Boolean) {
+        prefs.edit().putBoolean("skip_silence_instant", enabled).apply()
+        _settingsFlow.update { it.copy(skipSilenceInstant = enabled) }
+    }
+
+    fun updateAudioNormalization(enabled: Boolean) {
+        prefs.edit().putBoolean("audio_normalization", enabled).apply()
+        _settingsFlow.update { it.copy(audioNormalization = enabled) }
+    }
+
+    fun updateAudioLoudnessPreset(preset: String) {
+        prefs.edit().putString("audio_loudness_preset", preset).apply()
+        _settingsFlow.update { it.copy(audioLoudnessPreset = preset) }
+    }
+
+    fun updateVarispeed(enabled: Boolean) {
+        prefs.edit().putBoolean("varispeed", enabled).apply()
+        _settingsFlow.update { it.copy(varispeed = enabled) }
+    }
+
+    fun updateSpatialAudio(enabled: Boolean) {
+        prefs.edit().putBoolean("spatial_audio", enabled).apply()
+        _settingsFlow.update { it.copy(spatialAudio = enabled) }
+    }
+
+    fun updateAudioOffload(enabled: Boolean) {
+        prefs.edit().putBoolean("audio_offload", enabled).apply()
+        _settingsFlow.update { it.copy(audioOffload = enabled) }
+    }
+
+    fun updatePreloadNextSongEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("preload_next_song_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(preloadNextSongEnabled = enabled) }
+    }
+
+    fun updatePreloadNextSongLimit(limit: Int) {
+        prefs.edit().putInt("preload_next_song_limit", limit).apply()
+        _settingsFlow.update { it.copy(preloadNextSongLimit = limit) }
+    }
+
+    fun updatePreloadLyricsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("preload_lyrics_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(preloadLyricsEnabled = enabled) }
+    }
+
+    fun updateEnableGoogleCast(enabled: Boolean) {
+        prefs.edit().putBoolean("enable_google_cast", enabled).apply()
+        _settingsFlow.update { it.copy(enableGoogleCast = enabled) }
+    }
+
+    fun updateSeekExtraSeconds(enabled: Boolean) {
+        prefs.edit().putBoolean("seek_extra_seconds", enabled).apply()
+        _settingsFlow.update { it.copy(seekExtraSeconds = enabled) }
+    }
+
+    // Group 3: Queue Management
+    fun updatePersistentQueue(enabled: Boolean) {
+        prefs.edit().putBoolean("persistent_queue", enabled).apply()
+        _settingsFlow.update { it.copy(persistentQueue = enabled) }
+    }
+
+    fun updateAutoLoadMore(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_load_more", enabled).apply()
+        _settingsFlow.update { it.copy(autoLoadMore = enabled) }
+    }
+
+    fun updateAutoDownloadOnLike(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_download_on_like", enabled).apply()
+        _settingsFlow.update { it.copy(autoDownloadOnLike = enabled) }
+    }
+
+    fun updateSimilarContent(enabled: Boolean) {
+        prefs.edit().putBoolean("similar_content", enabled).apply()
+        _settingsFlow.update { it.copy(similarContent = enabled) }
+    }
+
+    fun updatePersistentShuffleAcrossQueues(enabled: Boolean) {
+        prefs.edit().putBoolean("persistent_shuffle_across_queues", enabled).apply()
+        _settingsFlow.update { it.copy(persistentShuffleAcrossQueues = enabled) }
+    }
+
+    fun updateRememberShuffleAndRepeat(enabled: Boolean) {
+        prefs.edit().putBoolean("remember_shuffle_and_repeat", enabled).apply()
+        _settingsFlow.update { it.copy(rememberShuffleAndRepeat = enabled) }
+    }
+
+    fun updateShufflePlaylistFirst(enabled: Boolean) {
+        prefs.edit().putBoolean("shuffle_playlist_first", enabled).apply()
+        _settingsFlow.update { it.copy(shufflePlaylistFirst = enabled) }
+    }
+
+    fun updatePreventDuplicateTracksInQueue(enabled: Boolean) {
+        prefs.edit().putBoolean("prevent_duplicate_tracks_in_queue", enabled).apply()
+        _settingsFlow.update { it.copy(preventDuplicateTracksInQueue = enabled) }
+    }
+
+    fun updateAutoSkipNextOnError(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_skip_next_on_error", enabled).apply()
+        _settingsFlow.update { it.copy(autoSkipNextOnError = enabled) }
+    }
+
+    // Group 4: Misc & System Integration
+    fun updateStopMusicOnTaskClear(enabled: Boolean) {
+        prefs.edit().putBoolean("stop_music_on_task_clear", enabled).apply()
+        _settingsFlow.update { it.copy(stopMusicOnTaskClear = enabled) }
+    }
+
+    fun updatePauseOnMute(enabled: Boolean) {
+        prefs.edit().putBoolean("pause_on_mute", enabled).apply()
+        _settingsFlow.update { it.copy(pauseOnMute = enabled) }
+    }
+
+    fun updateResumeOnBluetoothConnect(enabled: Boolean) {
+        prefs.edit().putBoolean("resume_on_bluetooth_connect", enabled).apply()
+        _settingsFlow.update { it.copy(resumeOnBluetoothConnect = enabled) }
+    }
+
+    fun updateAutoplayOnAutomotiveConnect(enabled: Boolean) {
+        prefs.edit().putBoolean("autoplay_on_automotive_connect", enabled).apply()
+        _settingsFlow.update { it.copy(autoplayOnAutomotiveConnect = enabled) }
+    }
+
+    fun updateKeepScreenOn(enabled: Boolean) {
+        prefs.edit().putBoolean("keep_screen_on", enabled).apply()
+        _settingsFlow.update { it.copy(keepScreenOn = enabled) }
+    }
+
+    fun updateEnableExportAsMp3(enabled: Boolean) {
+        prefs.edit().putBoolean("enable_export_as_mp3", enabled).apply()
+        _settingsFlow.update { it.copy(enableExportAsMp3 = enabled) }
     }
 
     // AI Hub Updates

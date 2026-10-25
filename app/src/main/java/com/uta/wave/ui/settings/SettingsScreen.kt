@@ -95,6 +95,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -2379,65 +2380,512 @@ private fun AppearanceSettingsSection(
 // -------------------------------------------------------------------------
 @Composable
 private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSettings) {
-    SectionHeader("Audio Streaming Bitrate")
-
-    val qualities = listOf(
-        Pair("LOSSLESS", "Lossless Master (256k AAC / 160k Opus)"),
-        Pair("HIGH", "High Quality (160 kbps)"),
-        Pair("STANDARD", "Standard Quality (128 kbps)"),
-        Pair("DATA_SAVER", "Data Saver (64 kbps)")
-    )
-
-    Text(
-        text = "Wi-Fi Quality",
-        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-        color = Color(0xFFF2AEC7),
-        modifier = Modifier.padding(start = 4.dp)
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF1E1522))
-            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
-    ) {
-        qualities.forEachIndexed { idx, (id, label) ->
-            val isSelected = settings.wifiQuality == id
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { prefs.updateWifiQuality(id) }
-                    .padding(horizontal = 16.dp, vertical = 13.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                    ),
-                    color = Color.White,
-                    modifier = Modifier.weight(1f)
-                )
-                if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color(0xFFF2AEC7),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-            if (idx < qualities.size - 1) SettingsItemDivider()
+    val currentAccent = remember(settings.accentColorHex) {
+        try {
+            Color(android.graphics.Color.parseColor(settings.accentColorHex))
+        } catch (e: Exception) {
+            Color(0xFFF2AEC7)
         }
     }
 
-    Spacer(modifier = Modifier.height(10.dp))
-    Text(
-        text = "Mobile Data Quality",
-        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-        color = Color(0xFFF2AEC7),
-        modifier = Modifier.padding(start = 4.dp)
-    )
+    // Dialog states
+    var showAudioQualityWifiDialog by remember { mutableStateOf(false) }
+    var showAudioQualityCellularDialog by remember { mutableStateOf(false) }
+    var showDownloadQualityDialog by remember { mutableStateOf(false) }
+    var showPlaybackEngineDialog by remember { mutableStateOf(false) }
+    var showCrossfadeBetaDialog by remember { mutableStateOf(false) }
+    var showCrossfadeDurationDialog by remember { mutableStateOf(false) }
+    var showHistoryDurationDialog by remember { mutableStateOf(false) }
+    var showLoudnessPresetDialog by remember { mutableStateOf(false) }
+    var showPreloadLimitDialog by remember { mutableStateOf(false) }
+    var showEqualizerPresetDialog by remember { mutableStateOf(false) }
+
+    // 1. Wi-Fi Audio Quality Dialog
+    if (showAudioQualityWifiDialog) {
+        val options = listOf(
+            "AUTO" to "Auto (Adaptive)",
+            "HIGH" to "High (256k AAC / 160k Opus)",
+            "MEDIUM" to "Medium (128k AAC / 70k Opus)",
+            "LOW" to "Low (48k Opus)"
+        )
+        AlertDialog(
+            onDismissRequest = { showAudioQualityWifiDialog = false },
+            title = { Text("Wi-Fi Audio Quality", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    options.forEach { (key, label) ->
+                        val isSelected = settings.audioQualityWifi.equals(key, ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    prefs.updateAudioQualityWifi(key)
+                                    showAudioQualityWifiDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    prefs.updateAudioQualityWifi(key)
+                                    showAudioQualityWifiDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = currentAccent, unselectedColor = Color.White.copy(alpha = 0.5f))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(text = label, color = Color.White, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAudioQualityWifiDialog = false }) {
+                    Text("Cancel", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // 2. Cellular Audio Quality Dialog
+    if (showAudioQualityCellularDialog) {
+        val options = listOf(
+            "AUTO" to "Auto (Adaptive)",
+            "HIGH" to "High (160 kbps)",
+            "MEDIUM" to "Medium (128 kbps)",
+            "LOW" to "Low (48 kbps)"
+        )
+        AlertDialog(
+            onDismissRequest = { showAudioQualityCellularDialog = false },
+            title = { Text("Cellular Audio Quality", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    options.forEach { (key, label) ->
+                        val isSelected = settings.audioQualityCellular.equals(key, ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    prefs.updateAudioQualityCellular(key)
+                                    showAudioQualityCellularDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    prefs.updateAudioQualityCellular(key)
+                                    showAudioQualityCellularDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = currentAccent, unselectedColor = Color.White.copy(alpha = 0.5f))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(text = label, color = Color.White, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAudioQualityCellularDialog = false }) {
+                    Text("Cancel", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // 3. Download Quality Dialog
+    if (showDownloadQualityDialog) {
+        AlertDialog(
+            onDismissRequest = { showDownloadQualityDialog = false },
+            title = { Text("Download Quality", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { showDownloadQualityDialog = false }
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = true,
+                            onClick = { showDownloadQualityDialog = false },
+                            colors = RadioButtonDefaults.colors(selectedColor = currentAccent)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("YouTube Music (AAC/Default)", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDownloadQualityDialog = false }) {
+                    Text("Done", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // 4. Playback Engine Dialog
+    if (showPlaybackEngineDialog) {
+        val engines = listOf(
+            Triple("POTOKEN", "eXtended InnerTube", "Uses WebView PoToken + CipherDeobfuscator. Most reliable and future-proof."),
+            Triple("BRAVEPIPE", "BravePipe (NewPipe)", "Uses NewPipe extractor for stream resolution."),
+            Triple("AUTO", "Auto (Try Both)", "Tries PoToken first, falls back to BravePipe if it fails.")
+        )
+        AlertDialog(
+            onDismissRequest = { showPlaybackEngineDialog = false },
+            title = { Text("Playback Engine", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    engines.forEach { (key, label, desc) ->
+                        val isSelected = settings.playbackEngine.equals(key, ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    prefs.updatePlaybackEngine(key)
+                                    showPlaybackEngineDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    prefs.updatePlaybackEngine(key)
+                                    showPlaybackEngineDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = currentAccent, unselectedColor = Color.White.copy(alpha = 0.5f))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(text = label, color = Color.White, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold, fontSize = 15.sp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = desc, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPlaybackEngineDialog = false }) {
+                    Text("Cancel", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // 5. Crossfade Beta Warning Dialog
+    if (showCrossfadeBetaDialog) {
+        AlertDialog(
+            onDismissRequest = { showCrossfadeBetaDialog = false },
+            title = { Text("Beta Feature", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Text(
+                    text = "Crossfade is a new feature and may have bugs. If you experience any issues, please report them.\n\nThis feature disables audio offload due to technical limitations.",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 14.sp
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showCrossfadeBetaDialog = false }) {
+                    Text("Cancel", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCrossfadeBetaDialog = false
+                    prefs.updateCrossfadeEnabled(true)
+                }) {
+                    Text("Enable", color = currentAccent, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // 6. Crossfade Duration Dialog
+    if (showCrossfadeDurationDialog) {
+        var tempDuration by remember { mutableFloatStateOf(settings.crossfadeDuration) }
+        AlertDialog(
+            onDismissRequest = { showCrossfadeDurationDialog = false },
+            title = { Text("Crossfade duration", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "${tempDuration.toInt()} seconds",
+                        color = currentAccent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Slider(
+                        value = tempDuration,
+                        onValueChange = { tempDuration = it },
+                        valueRange = 1f..15f,
+                        steps = 13,
+                        colors = SliderDefaults.colors(
+                            thumbColor = currentAccent,
+                            activeTrackColor = currentAccent,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("1s", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("Default: 5s", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("15s", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    tempDuration = 5.0f
+                    prefs.updateCrossfadeDuration(5.0f)
+                }) {
+                    Text("Reset", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.updateCrossfadeDuration(tempDuration)
+                    showCrossfadeDurationDialog = false
+                }) {
+                    Text("Done", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // 7. History Duration Dialog
+    if (showHistoryDurationDialog) {
+        var tempSec by remember { mutableFloatStateOf(settings.historyDuration) }
+        AlertDialog(
+            onDismissRequest = { showHistoryDurationDialog = false },
+            title = { Text("History duration threshold", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "${tempSec.toInt()} seconds",
+                        color = currentAccent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Slider(
+                        value = tempSec,
+                        onValueChange = { tempSec = it },
+                        valueRange = 10f..60f,
+                        steps = 9,
+                        colors = SliderDefaults.colors(
+                            thumbColor = currentAccent,
+                            activeTrackColor = currentAccent,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("10s", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("Default: 30s", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("60s", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    tempSec = 30f
+                    prefs.updateHistoryDuration(30f)
+                }) {
+                    Text("Reset", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.updateHistoryDuration(tempSec)
+                    showHistoryDurationDialog = false
+                }) {
+                    Text("Done", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // 8. Loudness Preset Dialog
+    if (showLoudnessPresetDialog) {
+        val presets = listOf(
+            "QUIET" to "Quiet (-18 LUFS, max dynamic range)",
+            "NORMAL" to "Normal (-14 LUFS, streaming standard)",
+            "LOUD" to "Loud (-11 LUFS, punchy outdoor)",
+            "AGGRESSIVE" to "Aggressive (-8 LUFS, max gain limiter)"
+        )
+        AlertDialog(
+            onDismissRequest = { showLoudnessPresetDialog = false },
+            title = { Text("Loudness Preset", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    presets.forEach { (key, label) ->
+                        val isSelected = settings.audioLoudnessPreset.equals(key, ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    prefs.updateAudioLoudnessPreset(key)
+                                    showLoudnessPresetDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    prefs.updateAudioLoudnessPreset(key)
+                                    showLoudnessPresetDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = currentAccent, unselectedColor = Color.White.copy(alpha = 0.5f))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(text = label, color = Color.White, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLoudnessPresetDialog = false }) {
+                    Text("Cancel", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // 9. Preload Limit Dialog
+    if (showPreloadLimitDialog) {
+        var tempLimit by remember { mutableFloatStateOf(settings.preloadNextSongLimit.toFloat()) }
+        AlertDialog(
+            onDismissRequest = { showPreloadLimitDialog = false },
+            title = { Text("Preload Limit", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "${tempLimit.toInt()} songs",
+                        color = currentAccent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Slider(
+                        value = tempLimit,
+                        onValueChange = { tempLimit = it },
+                        valueRange = 1f..20f,
+                        steps = 18,
+                        colors = SliderDefaults.colors(
+                            thumbColor = currentAccent,
+                            activeTrackColor = currentAccent,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("1", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("Default: 10", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                        Text("20", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    tempLimit = 10f
+                    prefs.updatePreloadNextSongLimit(10)
+                }) {
+                    Text("Reset", color = Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.updatePreloadNextSongLimit(tempLimit.toInt())
+                    showPreloadLimitDialog = false
+                }) {
+                    Text("Done", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // 10. Equalizer Preset Dialog
+    if (showEqualizerPresetDialog) {
+        val eqPresets = listOf("FLAT", "BASS_BOOST", "VOCAL", "POP", "ROCK", "ACOUSTIC")
+        AlertDialog(
+            onDismissRequest = { showEqualizerPresetDialog = false },
+            title = { Text("Equalizer Preset", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    eqPresets.forEach { preset ->
+                        val isSelected = settings.equalizerPreset.equals(preset, ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    prefs.updateEqualizerPreset(preset)
+                                    showEqualizerPresetDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    prefs.updateEqualizerPreset(preset)
+                                    showEqualizerPresetDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = currentAccent, unselectedColor = Color.White.copy(alpha = 0.5f))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(text = preset.replace("_", " "), color = Color.White, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showEqualizerPresetDialog = false }) {
+                    Text("Cancel", color = currentAccent, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color(0xFF221726),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // =========================================================================
+    // GROUP 1: DATA SAVER
+    // =========================================================================
+    SectionHeader("Data Saver")
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2445,38 +2893,20 @@ private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSett
             .background(Color(0xFF1E1522))
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
     ) {
-        qualities.drop(1).forEachIndexed { idx, (id, label) ->
-            val isSelected = settings.cellularQuality == id
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { prefs.updateCellularQuality(id) }
-                    .padding(horizontal = 16.dp, vertical = 13.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                    ),
-                    color = Color.White,
-                    modifier = Modifier.weight(1f)
-                )
-                if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color(0xFFF2AEC7),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-            if (idx < qualities.size - 2) SettingsItemDivider()
-        }
+        SettingsToggleRow(
+            title = "Data Saver Mode (Beta)",
+            subtitle = "Disable lyrics, videos, preloading, background syncs, and force Opus audio to save data",
+            checked = settings.dataSaverEnabled,
+            onCheckedChange = { prefs.updateDataSaverEnabled(it) }
+        )
     }
 
     Spacer(modifier = Modifier.height(14.dp))
-    SectionHeader("Audio Engine & Transitions")
+
+    // =========================================================================
+    // GROUP 2: PLAYER & AUDIO ENGINE
+    // =========================================================================
+    SectionHeader("Player & Audio Engine")
 
     Column(
         modifier = Modifier
@@ -2486,38 +2916,361 @@ private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSett
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
     ) {
         SettingsToggleRow(
-            title = "Gapless Audio Playback",
-            subtitle = "Pre-buffers subsequent songs for zero-latency seamless transitions",
-            checked = settings.gaplessPlayback,
-            onCheckedChange = { prefs.updateGaplessPlayback(it) }
+            title = "Show 10-second seek buttons",
+            subtitle = "Show backward and forward buttons in the full player",
+            checked = settings.showSeekButtons,
+            onCheckedChange = { prefs.updateShowSeekButtons(it) }
         )
         SettingsItemDivider()
+
+        // Wi-Fi Quality Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showAudioQualityWifiDialog = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Wi-Fi Audio Quality", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = when (settings.audioQualityWifi.uppercase()) {
+                        "HIGH" -> "High (256k AAC / 160k Opus)"
+                        "MEDIUM" -> "Medium (128k AAC / 70k Opus)"
+                        "LOW" -> "Low (48k Opus)"
+                        else -> "Auto (Adaptive)"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = currentAccent
+                )
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
+        SettingsItemDivider()
+
+        // Cellular Quality Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showAudioQualityCellularDialog = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Cellular Audio Quality", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = when (settings.audioQualityCellular.uppercase()) {
+                        "HIGH" -> "High (160 kbps)"
+                        "LOW" -> "Low (48 kbps)"
+                        "AUTO" -> "Auto (Adaptive)"
+                        else -> "Medium (128 kbps)"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = currentAccent
+                )
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
+        SettingsItemDivider()
+
+        // Download Quality Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showDownloadQualityDialog = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Download Quality", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text("YouTube Music (AAC/Default)", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = currentAccent)
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
+        SettingsItemDivider()
+
         SettingsToggleRow(
-            title = "Skip Silence",
-            subtitle = "Fast-forwards dead air at intros and outros",
+            title = "Download with metadata",
+            subtitle = "Downloads lyrics and tags when downloading a song",
+            checked = settings.downloadWithMetadata,
+            onCheckedChange = { prefs.updateDownloadWithMetadata(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Download on Wi-Fi only",
+            subtitle = "Pause song downloads while on mobile data",
+            checked = settings.downloadOnWifiOnly,
+            onCheckedChange = { prefs.updateDownloadOnWifiOnly(it) }
+        )
+        SettingsItemDivider()
+
+        // Playback Engine Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showPlaybackEngineDialog = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Playback Engine", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = when (settings.playbackEngine.uppercase()) {
+                        "BRAVEPIPE" -> "BravePipe (NewPipe)"
+                        "AUTO" -> "Auto (Try Both)"
+                        else -> "eXtended InnerTube (PoToken)"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = currentAccent
+                )
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
+        SettingsItemDivider()
+
+        // Crossfade Toggle
+        SettingsToggleRow(
+            title = "Crossfade",
+            subtitle = "Crossfade between songs with constant acoustic power",
+            checked = settings.crossfadeEnabled,
+            onCheckedChange = { enabled ->
+                if (enabled) {
+                    showCrossfadeBetaDialog = true
+                } else {
+                    prefs.updateCrossfadeEnabled(false)
+                }
+            }
+        )
+
+        if (settings.crossfadeEnabled) {
+            SettingsItemDivider()
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showCrossfadeDurationDialog = true }
+                    .padding(horizontal = 16.dp, vertical = 13.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Crossfade duration", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("${settings.crossfadeDuration.toInt()} seconds", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = currentAccent)
+                }
+                Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+            }
+            SettingsItemDivider()
+
+            SettingsToggleRow(
+                title = "Disable for gapless albums",
+                subtitle = "Don't crossfade if the album is gapless",
+                checked = settings.crossfadeGapless,
+                onCheckedChange = { prefs.updateCrossfadeGapless(it) }
+            )
+        }
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Automix (Beta)",
+            subtitle = "Beat-matched transitions: align downbeats and tempo of songs during crossfade",
+            checked = settings.automixCrossfade,
+            onCheckedChange = { prefs.updateAutomixCrossfade(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Automix debug overlay",
+            subtitle = "Show live beat analysis and transition plan on the player",
+            checked = settings.automixDebugOverlay,
+            onCheckedChange = { prefs.updateAutomixDebugOverlay(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Bit-Perfect USB-DAC Output",
+            subtitle = "Direct UAC1/UAC2 driver bypassing Android OS mixer",
+            checked = settings.enableBitPerfectUsbDac,
+            onCheckedChange = { prefs.updateEnableBitPerfectUsbDac(it) }
+        )
+        SettingsItemDivider()
+
+        // History Duration Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showHistoryDurationDialog = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("History duration", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text("${settings.historyDuration.toInt()} seconds threshold", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = currentAccent)
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Skip silence",
+            subtitle = "Fast forward through silent parts of songs",
             checked = settings.skipSilence,
             onCheckedChange = { prefs.updateSkipSilence(it) }
         )
         SettingsItemDivider()
+
         SettingsToggleRow(
-            title = "Audio Normalization (ReplayGain)",
-            subtitle = "Dynamically balances audio volume across different albums",
-            checked = settings.normalizeVolume,
-            onCheckedChange = { prefs.updateNormalizeVolume(it) }
+            title = "Instantly skip silence",
+            subtitle = "Jump ahead during silent moments instead of speeding up playback",
+            checked = settings.skipSilenceInstant,
+            onCheckedChange = { prefs.updateSkipSilenceInstant(it) }
         )
         SettingsItemDivider()
+
         SettingsToggleRow(
-            title = "Stop on Task Removed",
-            subtitle = "Stops playback when app is swiped away from Recents",
-            checked = settings.stopOnTaskRemoved,
-            onCheckedChange = { prefs.updateStopOnTaskRemoved(it) }
+            title = "Audio normalization",
+            subtitle = "Manage audio normalization settings",
+            checked = settings.audioNormalization,
+            onCheckedChange = { prefs.updateAudioNormalization(it) }
         )
+        SettingsItemDivider()
+
+        // Loudness Preset Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showLoudnessPresetDialog = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Loudness Preset", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = when (settings.audioLoudnessPreset.uppercase()) {
+                        "QUIET" -> "Quiet (-18 LUFS)"
+                        "LOUD" -> "Loud (-11 LUFS)"
+                        "AGGRESSIVE" -> "Aggressive (-8 LUFS)"
+                        else -> "Normal (-14 LUFS)"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = currentAccent
+                )
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Enable varispeed",
+            subtitle = "Link pitch to playback speed, resulting in tape-style speedup and slowdown effects",
+            checked = settings.varispeed,
+            onCheckedChange = { prefs.updateVarispeed(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Spatial Audio",
+            subtitle = "Widens stereo tracks for a more immersive feel",
+            checked = settings.spatialAudio,
+            onCheckedChange = { prefs.updateSpatialAudio(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Enable offload",
+            subtitle = if (settings.crossfadeEnabled) "Disabled because Crossfade is active" else "Use offload audio path to minimize power consumption",
+            checked = settings.audioOffload && !settings.crossfadeEnabled,
+            onCheckedChange = { if (!settings.crossfadeEnabled) prefs.updateAudioOffload(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Preload Next Song",
+            subtitle = "Cache the next song for gapless playback",
+            checked = settings.preloadNextSongEnabled,
+            onCheckedChange = { prefs.updatePreloadNextSongEnabled(it) }
+        )
+        SettingsItemDivider()
+
+        // Preload Limit Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showPreloadLimitDialog = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Preload Limit", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text("${settings.preloadNextSongLimit} songs in background cache", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = currentAccent)
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Preload Lyrics",
+            subtitle = "Also cache lyrics for the preloaded songs",
+            checked = settings.preloadLyricsEnabled,
+            onCheckedChange = { prefs.updatePreloadLyricsEnabled(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Google Cast",
+            subtitle = "Enable casting audio to Chromecast and other Cast-enabled devices",
+            checked = settings.enableGoogleCast,
+            onCheckedChange = { prefs.updateEnableGoogleCast(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Progressive seek",
+            subtitle = "If enabled, adds up 5 extra seconds incrementally on each seek skip",
+            checked = settings.seekExtraSeconds,
+            onCheckedChange = { prefs.updateSeekExtraSeconds(it) }
+        )
+        SettingsItemDivider()
+
+        // Equalizer Preset Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showEqualizerPresetDialog = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Equalizer", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text("Pro-grade acoustic tuning • ${settings.equalizerPreset.replace("_", " ")}", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = currentAccent)
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
     }
 
-    Spacer(modifier = Modifier.height(10.dp))
-    SectionHeader("Equalizer Preset")
+    Spacer(modifier = Modifier.height(14.dp))
 
-    val eqPresets = listOf("FLAT", "BASS_BOOST", "VOCAL", "POP", "ROCK", "ACOUSTIC")
+    // =========================================================================
+    // GROUP 3: QUEUE
+    // =========================================================================
+    SectionHeader("Queue")
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2525,62 +3278,138 @@ private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSett
             .background(Color(0xFF1E1522))
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
     ) {
-        eqPresets.forEachIndexed { idx, preset ->
-            val isSelected = settings.equalizerPreset == preset
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { prefs.updateEqualizerPreset(preset) }
-                    .padding(horizontal = 16.dp, vertical = 13.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = preset.replace("_", " "),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                    ),
-                    color = Color.White,
-                    modifier = Modifier.weight(1f)
-                )
-                if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color(0xFFF2AEC7),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-            if (idx < eqPresets.size - 1) SettingsItemDivider()
-        }
+        SettingsToggleRow(
+            title = "Persistent queue",
+            subtitle = "Restore your last queue when the app starts",
+            checked = settings.persistentQueue,
+            onCheckedChange = { prefs.updatePersistentQueue(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Auto load more songs",
+            subtitle = "Automatically add more songs when the end of the queue is reached, if possible",
+            checked = settings.autoLoadMore,
+            onCheckedChange = { prefs.updateAutoLoadMore(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Auto download on like",
+            subtitle = "Automatically download songs when you like them",
+            checked = settings.autoDownloadOnLike,
+            onCheckedChange = { prefs.updateAutoDownloadOnLike(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Enable similar content",
+            subtitle = "Automatically add more similar songs when the end of the queue is reached",
+            checked = settings.similarContent,
+            onCheckedChange = { prefs.updateSimilarContent(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Persistent shuffle",
+            subtitle = "Keep shuffle enabled when starting new songs or playlists",
+            checked = settings.persistentShuffleAcrossQueues,
+            onCheckedChange = { prefs.updatePersistentShuffleAcrossQueues(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Remember shuffle and repeat",
+            subtitle = "Remember shuffle and repeat mode when restarting the app",
+            checked = settings.rememberShuffleAndRepeat,
+            onCheckedChange = { prefs.updateRememberShuffleAndRepeat(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Shuffle playlist/album first",
+            subtitle = "When shuffling, play all songs from the original playlist/album first, then similar content",
+            checked = settings.shufflePlaylistFirst,
+            onCheckedChange = { prefs.updateShufflePlaylistFirst(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Prevent duplicate tracks in queue",
+            subtitle = "When adding a track to queue, remove it from its previous position if already present",
+            checked = settings.preventDuplicateTracksInQueue,
+            onCheckedChange = { prefs.updatePreventDuplicateTracksInQueue(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Auto skip to next song when error occurs",
+            subtitle = "Ensure your continuous playback experience",
+            checked = settings.autoSkipNextOnError,
+            onCheckedChange = { prefs.updateAutoSkipNextOnError(it) }
+        )
     }
 
-    Spacer(modifier = Modifier.height(10.dp))
-    SectionHeader("Seek Step Seconds")
+    Spacer(modifier = Modifier.height(14.dp))
 
-    val seekOptions = listOf(5, 10, 15, 30)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    // =========================================================================
+    // GROUP 4: MISC
+    // =========================================================================
+    SectionHeader("Misc")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
     ) {
-        seekOptions.forEach { sec ->
-            val isSelected = settings.seekStepSeconds == sec
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (isSelected) Color(0xFFF2AEC7) else Color.White.copy(alpha = 0.06f))
-                    .clickable { prefs.updateSeekStep(sec) }
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "${sec}s",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                    color = if (isSelected) Color(0xFF351225) else Color.White
-                )
-            }
-        }
+        SettingsToggleRow(
+            title = "Stop music on task clear",
+            subtitle = "Stop music service when app is swiped away from recent apps",
+            checked = settings.stopMusicOnTaskClear,
+            onCheckedChange = { prefs.updateStopMusicOnTaskClear(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Pause music when media is muted",
+            subtitle = "Automatically pause playback when volume reaches zero",
+            checked = settings.pauseOnMute,
+            onCheckedChange = { prefs.updatePauseOnMute(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Resume on Bluetooth connect",
+            subtitle = "Resume playback when Bluetooth audio device connects",
+            checked = settings.resumeOnBluetoothConnect,
+            onCheckedChange = { prefs.updateResumeOnBluetoothConnect(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Autoplay on Android Auto",
+            subtitle = "Start last queue automatically when Android Auto connects",
+            checked = settings.autoplayOnAutomotiveConnect,
+            onCheckedChange = { prefs.updateAutoplayOnAutomotiveConnect(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Keep screen on when player is expanded",
+            subtitle = "Keep display on while viewing fullscreen player or lyrics",
+            checked = settings.keepScreenOn,
+            onCheckedChange = { prefs.updateKeepScreenOn(it) }
+        )
+        SettingsItemDivider()
+
+        SettingsToggleRow(
+            title = "Export as MP3",
+            subtitle = "Show 'Export as MP3' in track action menus",
+            checked = settings.enableExportAsMp3,
+            onCheckedChange = { prefs.updateEnableExportAsMp3(it) }
+        )
     }
 }
 
