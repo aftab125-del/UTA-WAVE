@@ -27,10 +27,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SportsEsports
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Token
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,7 +57,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,8 +89,12 @@ fun AccountScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     val accountManager = remember { AccountManager.getInstance(context) }
+    val syncManager = remember { com.uta.wave.data.account.AccountSyncManager.getInstance(context) }
+    val syncState by syncManager.syncState.collectAsState()
+    val localDatabase = remember { com.uta.wave.data.local.LocalDatabase.getInstance(context) }
     val profile by accountManager.profileFlow.collectAsState()
 
     var showSignInDialog by remember { mutableStateOf(false) }
@@ -549,6 +560,199 @@ fun AccountScreen(
                                 uncheckedThumbColor = Color(0xFF8E7D8A),
                                 uncheckedTrackColor = Color(0xFF2C2230)
                             )
+                        )
+                    }
+
+                    AccountCardDivider()
+
+                    // Row 3: Manual Sync Now with Google / YouTube Music
+                    val isSyncing = syncState is com.uta.wave.data.account.AccountSyncState.Syncing
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isSyncing && profile.isLoggedIn) {
+                                syncManager.triggerSync()
+                            }
+                            .padding(horizontal = 18.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (syncState is com.uta.wave.data.account.AccountSyncState.Success) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                            contentDescription = null,
+                            tint = if (profile.isLoggedIn) Color(0xFFF2AEC7) else Color.White.copy(alpha = 0.4f),
+                            modifier = Modifier.size(22.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Sync Library Now",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp
+                                ),
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = when (val s = syncState) {
+                                    is com.uta.wave.data.account.AccountSyncState.Syncing -> s.message
+                                    is com.uta.wave.data.account.AccountSyncState.Success -> "Synced ${s.playlistsSynced} playlists, ${s.likedSynced} liked songs"
+                                    is com.uta.wave.data.account.AccountSyncState.Error -> s.error
+                                    com.uta.wave.data.account.AccountSyncState.Idle -> {
+                                        if (!profile.isLoggedIn) "Sign in with Google to sync"
+                                        else if (syncManager.lastSyncTime > 0) "Last synced: active"
+                                        else "Tap to restore and sync Google library"
+                                    }
+                                },
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                color = if (syncState is com.uta.wave.data.account.AccountSyncState.Error) Color(0xFFEF5350) else Color.White.copy(alpha = 0.65f)
+                            )
+                        }
+
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color(0xFFF2AEC7),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(if (profile.isLoggedIn) Color(0xFF2C2230) else Color.White.copy(alpha = 0.05f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(50))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "Sync",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    ),
+                                    color = if (profile.isLoggedIn) Color(0xFFF8C8D8) else Color.White.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // SECTION: BACKUP & RESTORE
+            // -------------------------------------------------------------
+            Column {
+                AccountSectionHeader(title = "BACKUP & RESTORE")
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xFF1E1522))
+                        .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                scope.launch {
+                                    try {
+                                        val json = localDatabase.exportJson()
+                                        clipboardManager.setText(AnnotatedString(json))
+                                        Toast.makeText(context, "Full library backup copied to clipboard!", Toast.LENGTH_LONG).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Backup failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Backup,
+                            contentDescription = null,
+                            tint = Color(0xFFF2AEC7),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Export Full Library Backup",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp
+                                ),
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Copy all playlists, favorites & history as JSON",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                color = Color.White.copy(alpha = 0.60f)
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.4f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    AccountCardDivider()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                val clip = clipboardManager.getText()?.text
+                                if (!clip.isNullOrBlank() && clip.trim().startsWith("{") && clip.contains("playlists")) {
+                                    scope.launch {
+                                        val ok = localDatabase.restoreBackupJson(clip, overwrite = false)
+                                        if (ok) {
+                                            Toast.makeText(context, "Library successfully restored from clipboard!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "Failed to restore backup", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                } else {
+                                    Toast.makeText(context, "Clipboard does not contain a valid UTA-WAVE backup JSON", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = null,
+                            tint = Color(0xFFF2AEC7),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Restore Backup from Clipboard",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp
+                                ),
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Paste & import previously exported library data",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                color = Color.White.copy(alpha = 0.60f)
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.35f),
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }

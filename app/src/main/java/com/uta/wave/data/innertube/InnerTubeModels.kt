@@ -89,3 +89,11 @@ data class NextResult(
     val continuation: String? = null,
     val playlistId: String? = null
 )
+
+data class UserPlaylistItem(
+    val id: String,                     // e.g. "PL..." or "VLPL..."
+    val title: String,
+    val description: String? = null,
+    val trackCount: Int = 0,
+    val artworkUrl: String? = null
+)
