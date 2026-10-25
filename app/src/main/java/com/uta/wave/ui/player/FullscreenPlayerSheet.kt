@@ -67,6 +67,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -249,6 +251,49 @@ fun FullscreenPlayerSheet(
         }
     }
 
+    // Seek tracking & Progressive seek (+5s incrementally if within 1500ms)
+    var lastSeekBackTime by remember { mutableLongStateOf(0L) }
+    var consecutiveBackCount by remember { mutableIntStateOf(0) }
+    var currentBackSec by remember(settings.seekStepSeconds) { mutableIntStateOf(settings.seekStepSeconds.coerceAtLeast(5)) }
+
+    var lastSeekForwardTime by remember { mutableLongStateOf(0L) }
+    var consecutiveForwardCount by remember { mutableIntStateOf(0) }
+    var currentForwardSec by remember(settings.seekStepSeconds) { mutableIntStateOf(settings.seekStepSeconds.coerceAtLeast(5)) }
+
+    val handleSeekBackward: () -> Unit = {
+        val now = System.currentTimeMillis()
+        val baseSec = settings.seekStepSeconds.coerceAtLeast(5)
+        val sec = if (settings.seekExtraSeconds && (now - lastSeekBackTime <= 1500L)) {
+            consecutiveBackCount += 1
+            baseSec + (consecutiveBackCount * 5)
+        } else {
+            consecutiveBackCount = 0
+            baseSec
+        }
+        lastSeekBackTime = now
+        currentBackSec = sec
+        val target = (playerState.positionMs - (sec * 1000L)).coerceAtLeast(0L)
+        onSeekTo(target)
+        seekFeedbackDirection = "-${sec}s"
+    }
+
+    val handleSeekForward: () -> Unit = {
+        val now = System.currentTimeMillis()
+        val baseSec = settings.seekStepSeconds.coerceAtLeast(5)
+        val sec = if (settings.seekExtraSeconds && (now - lastSeekForwardTime <= 1500L)) {
+            consecutiveForwardCount += 1
+            baseSec + (consecutiveForwardCount * 5)
+        } else {
+            consecutiveForwardCount = 0
+            baseSec
+        }
+        lastSeekForwardTime = now
+        currentForwardSec = sec
+        val target = (playerState.positionMs + (sec * 1000L)).coerceAtMost(playerState.durationMs)
+        onSeekTo(target)
+        seekFeedbackDirection = "+${sec}s"
+    }
+
     // Wavy cookie play/pause morph & rotation
     val cookieIndent by animateFloatAsState(
         targetValue = if (settings.wavyPlayPause && playerState.isPlaying) 0.14f else 0f,
@@ -333,6 +378,8 @@ fun FullscreenPlayerSheet(
                             onSeekTo(target)
                         },
                         onTogglePlayPause = onTogglePlayPause,
+                        onSeekBackward = handleSeekBackward,
+                        onSeekForward = handleSeekForward,
                         modifier = Modifier
                             .size(260.dp)
                             .shadow(elevation = 28.dp, shape = CircleShape)
@@ -371,13 +418,9 @@ fun FullscreenPlayerSheet(
                                             (layoutDirection == LayoutDirection.Rtl && offset.x < leftBound)
 
                                     if (isLeft) {
-                                        val target = (playerState.positionMs - 10000L).coerceAtLeast(0L)
-                                        onSeekTo(target)
-                                        seekFeedbackDirection = "-10s"
+                                        handleSeekBackward()
                                     } else if (isRight) {
-                                        val target = (playerState.positionMs + 10000L).coerceAtMost(playerState.durationMs)
-                                        onSeekTo(target)
-                                        seekFeedbackDirection = "+10s"
+                                        handleSeekForward()
                                     } else {
                                         onTogglePlayPause()
                                     }
@@ -682,14 +725,23 @@ fun FullscreenPlayerSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp),
+                        .padding(horizontal = if (settings.showSeekButtons) 14.dp else 24.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (settings.showSeekButtons) {
+                        SeekButton(
+                            isForward = false,
+                            stepSeconds = currentBackSec,
+                            isAppleMusic = true,
+                            onClick = handleSeekBackward
+                        )
+                    }
+
                     // Previous (<<)
                     Box(
                         modifier = Modifier
-                            .size(60.dp)
+                            .size(if (settings.showSeekButtons) 52.dp else 60.dp)
                             .clickable(onClick = onPrevious),
                         contentAlignment = Alignment.Center
                     ) {
@@ -697,14 +749,14 @@ fun FullscreenPlayerSheet(
                             painter = painterResource(R.drawable.apple_skip_previous),
                             contentDescription = "Previous",
                             tint = Color.White,
-                            modifier = Modifier.size(46.dp)
+                            modifier = Modifier.size(if (settings.showSeekButtons) 40.dp else 46.dp)
                         )
                     }
 
                     // Play / Pause (|| or ▶)
                     Box(
                         modifier = Modifier
-                            .size(84.dp)
+                            .size(if (settings.showSeekButtons) 76.dp else 84.dp)
                             .clickable(onClick = onTogglePlayPause),
                         contentAlignment = Alignment.Center
                     ) {
@@ -719,7 +771,7 @@ fun FullscreenPlayerSheet(
                                 painter = painterResource(if (playerState.isPlaying) R.drawable.pause_applemusic else R.drawable.play_applemusic),
                                 contentDescription = if (playerState.isPlaying) "Pause" else "Play",
                                 tint = Color.White,
-                                modifier = Modifier.size(68.dp)
+                                modifier = Modifier.size(if (settings.showSeekButtons) 60.dp else 68.dp)
                             )
                         }
                     }
@@ -727,7 +779,7 @@ fun FullscreenPlayerSheet(
                     // Next (>>)
                     Box(
                         modifier = Modifier
-                            .size(60.dp)
+                            .size(if (settings.showSeekButtons) 52.dp else 60.dp)
                             .clickable(onClick = onNext),
                         contentAlignment = Alignment.Center
                     ) {
@@ -735,7 +787,16 @@ fun FullscreenPlayerSheet(
                             painter = painterResource(R.drawable.apple_skip_next),
                             contentDescription = "Next",
                             tint = Color.White,
-                            modifier = Modifier.size(46.dp)
+                            modifier = Modifier.size(if (settings.showSeekButtons) 40.dp else 46.dp)
+                        )
+                    }
+
+                    if (settings.showSeekButtons) {
+                        SeekButton(
+                            isForward = true,
+                            stepSeconds = currentForwardSec,
+                            isAppleMusic = true,
+                            onClick = handleSeekForward
                         )
                     }
                 }
@@ -939,6 +1000,8 @@ fun FullscreenPlayerSheet(
                             onSeekTo(target)
                         },
                         onTogglePlayPause = onTogglePlayPause,
+                        onSeekBackward = handleSeekBackward,
+                        onSeekForward = handleSeekForward,
                         modifier = Modifier
                             .size(300.dp)
                             .shadow(
@@ -1103,15 +1166,26 @@ fun FullscreenPlayerSheet(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Playback Controls Row: Scalloped play button
+                // Playback Controls Row: Scalloped play button + optional Seek buttons
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = if (settings.showSeekButtons) 12.dp else 0.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (settings.showSeekButtons) {
+                        SeekButton(
+                            isForward = false,
+                            stepSeconds = currentBackSec,
+                            isAppleMusic = false,
+                            onClick = handleSeekBackward
+                        )
+                    }
+
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(if (settings.showSeekButtons) 50.dp else 56.dp)
                             .clip(CircleShape)
                             .background(Color(0xFFF3D7EC))
                             .clickable(onClick = onPrevious),
@@ -1121,13 +1195,13 @@ fun FullscreenPlayerSheet(
                             imageVector = Icons.Default.SkipPrevious,
                             contentDescription = "Previous",
                             tint = Color(0xFF3B1E38),
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(if (settings.showSeekButtons) 26.dp else 30.dp)
                         )
                     }
 
                     Box(
                         modifier = Modifier
-                            .size(78.dp)
+                            .size(if (settings.showSeekButtons) 72.dp else 78.dp)
                             .graphicsLayer {
                                 scaleX = playPauseScale
                                 scaleY = playPauseScale
@@ -1159,7 +1233,7 @@ fun FullscreenPlayerSheet(
 
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(if (settings.showSeekButtons) 50.dp else 56.dp)
                             .clip(CircleShape)
                             .background(Color(0xFFF3D7EC))
                             .clickable(onClick = onNext),
@@ -1169,7 +1243,16 @@ fun FullscreenPlayerSheet(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = "Next",
                             tint = Color(0xFF3B1E38),
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(if (settings.showSeekButtons) 26.dp else 30.dp)
+                        )
+                    }
+
+                    if (settings.showSeekButtons) {
+                        SeekButton(
+                            isForward = true,
+                            stepSeconds = currentForwardSec,
+                            isAppleMusic = false,
+                            onClick = handleSeekForward
                         )
                     }
                 }
@@ -1408,4 +1491,53 @@ private fun formatMs(ms: Long): String {
     val m = totalSeconds / 60
     val s = totalSeconds % 60
     return String.format("%d:%02d", m, s)
+}
+
+@Composable
+private fun SeekButton(
+    isForward: Boolean,
+    stepSeconds: Int,
+    isAppleMusic: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bgColor = if (isAppleMusic) {
+        Color.White.copy(alpha = 0.12f)
+    } else {
+        Color(0xFFF3D7EC).copy(alpha = 0.70f)
+    }
+    val contentColor = if (isAppleMusic) {
+        Color.White.copy(alpha = 0.90f)
+    } else {
+        Color(0xFF3B1E38)
+    }
+
+    Box(
+        modifier = modifier
+            .size(46.dp)
+            .clip(CircleShape)
+            .background(bgColor)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = if (isForward) Icons.Default.FastForward else Icons.Default.FastRewind,
+                contentDescription = if (isForward) "Seek Forward $stepSeconds seconds" else "Seek Backward $stepSeconds seconds",
+                tint = contentColor,
+                modifier = Modifier.size(19.dp)
+            )
+            Text(
+                text = "${if (isForward) "+" else "-"}${stepSeconds}s",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = contentColor
+            )
+        }
+    }
 }
