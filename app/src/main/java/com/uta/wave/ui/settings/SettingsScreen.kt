@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -153,6 +154,13 @@ fun SettingsScreen(
     val settings by userPrefs.settingsFlow.collectAsState()
 
     var activeSubSection by remember { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = activeSubSection != null) {
+        activeSubSection = null
+    }
+    BackHandler(enabled = activeSubSection == null) {
+        onBack()
+    }
 
     if (activeSubSection == "Account") {
         AccountScreen(

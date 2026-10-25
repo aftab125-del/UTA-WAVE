@@ -1,5 +1,6 @@
 package com.uta.wave.ui.player
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -73,6 +74,10 @@ fun LyricsSheet(
     val context = LocalContext.current
     val userPrefs = remember { UserPreferences.getInstance(context) }
     val settings by userPrefs.settingsFlow.collectAsState()
+
+    BackHandler {
+        onClose()
+    }
 
     val lyricsClient = remember { LyricsClient() }
     var lines by remember { mutableStateOf<List<LyricLine>>(emptyList()) }

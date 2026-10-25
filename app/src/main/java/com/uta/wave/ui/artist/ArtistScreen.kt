@@ -1,6 +1,7 @@
 package com.uta.wave.ui.artist
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -86,6 +87,13 @@ fun ArtistScreen(
     var isLoading by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var showBioDialog by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showBioDialog) {
+        showBioDialog = false
+    }
+    BackHandler(enabled = !showBioDialog) {
+        onBack()
+    }
 
     LaunchedEffect(artistIdOrName) {
         isLoading = true

@@ -1,6 +1,7 @@
 package com.uta.wave.ui.settings.glass
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -92,6 +93,10 @@ fun GlassEffectSettingsScreen(
         } catch (e: Exception) {
             ElectricViolet
         }
+    }
+
+    BackHandler {
+        onBack()
     }
 
     // Dialog state controllers

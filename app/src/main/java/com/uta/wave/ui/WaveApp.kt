@@ -22,6 +22,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -131,9 +133,33 @@ fun WaveApp() {
     val recentHistory by localDatabase.historyFlow.collectAsState(initial = emptyList())
 
     var selectedTab by remember { mutableIntStateOf(0) }
+    val tabBackStack = remember { mutableStateListOf(0) }
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
     var isPlayerExpanded by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var isBottomBarCollapsed by remember { mutableStateOf(false) }
+
+    fun navigateToTab(tab: Int) {
+        if (selectedTab != tab) {
+            tabBackStack.remove(tab)
+            tabBackStack.add(tab)
+            selectedTab = tab
+            isBottomBarCollapsed = false
+        }
+    }
+
+    fun popTab() {
+        if (tabBackStack.size > 1) {
+            tabBackStack.removeAt(tabBackStack.lastIndex)
+            selectedTab = tabBackStack.last()
+            isBottomBarCollapsed = false
+        } else {
+            selectedTab = 0
+            tabBackStack.clear()
+            tabBackStack.add(0)
+            isBottomBarCollapsed = false
+        }
+    }
 
     // Artist & Album Viewing Navigation Stack
     var viewingArtistId by remember { mutableStateOf<String?>(null) }
@@ -168,27 +194,58 @@ fun WaveApp() {
         }
     }
 
-    // Hardware / Gesture Back Navigation Handlers
-    BackHandler(enabled = isAccountScreenOpen) {
-        isAccountScreenOpen = false
+    val hasTopOverlay = isAmbientModeActive || isPlayerExpanded || isAccountScreenOpen ||
+            isAccountSheetOpen || isListeningSummaryOpen || isSettingsOpen ||
+            showDiagnostics || viewingAlbumId != null || viewingArtistId != null
+
+    // Hardware / Gesture Back Navigation Handlers (Ordered lowest to highest priority in composition)
+    // 1. Root double-back-to-exit on Home tab when no overlays or sub-views are active
+    BackHandler(enabled = !hasTopOverlay && selectedTab == 0 && tabBackStack.size <= 1) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastBackPressTime < 2000L) {
+            (context as? android.app.Activity)?.finish()
+        } else {
+            lastBackPressTime = currentTime
+            Toast.makeText(context, "Press back again to exit", Toast.LENGTH_SHORT).show()
+        }
     }
-    BackHandler(enabled = isListeningSummaryOpen) {
+
+    // 2. Tab Backstack: Pop backward through visited tabs to Home
+    BackHandler(enabled = !hasTopOverlay && (selectedTab != 0 || tabBackStack.size > 1)) {
+        popTab()
+    }
+
+    // 3. Artist & Album details (Album is on top of Artist, so Artist pops only when Album is null)
+    BackHandler(enabled = viewingArtistId != null && viewingAlbumId == null && !isPlayerExpanded && !isAmbientModeActive) {
+        viewingArtistId = null
+    }
+    BackHandler(enabled = viewingAlbumId != null && !isPlayerExpanded && !isAmbientModeActive) {
+        viewingAlbumId = null
+    }
+
+    // 4. Sheets & Fullscreen Overlays
+    BackHandler(enabled = showDiagnostics) {
+        showDiagnostics = false
+    }
+    BackHandler(enabled = isAccountSheetOpen) {
+        isAccountSheetOpen = false
+    }
+    BackHandler(enabled = isSettingsOpen && !isAccountScreenOpen && !isListeningSummaryOpen && !isPlayerExpanded && !isAmbientModeActive) {
+        isSettingsOpen = false
+    }
+    BackHandler(enabled = isListeningSummaryOpen && !isPlayerExpanded && !isAmbientModeActive) {
         isListeningSummaryOpen = false
     }
-    BackHandler(enabled = isSettingsOpen) {
-        isSettingsOpen = false
+    BackHandler(enabled = isAccountScreenOpen && !isPlayerExpanded && !isAmbientModeActive) {
+        isAccountScreenOpen = false
+    }
+
+    // 5. Fullscreen Player & Ambient Mode (Highest priority top layers)
+    BackHandler(enabled = isPlayerExpanded && !isAmbientModeActive) {
+        isPlayerExpanded = false
     }
     BackHandler(enabled = isAmbientModeActive) {
         isAmbientModeActive = false
-    }
-    BackHandler(enabled = isPlayerExpanded) {
-        isPlayerExpanded = false
-    }
-    BackHandler(enabled = viewingAlbumId != null) {
-        viewingAlbumId = null
-    }
-    BackHandler(enabled = viewingArtistId != null) {
-        viewingArtistId = null
     }
 
     CompositionLocalProvider(
@@ -221,12 +278,10 @@ fun WaveApp() {
                         scope.launch { localDatabase.toggleFavorite(track) }
                     },
                     onNavigateToCharts = {
-                        selectedTab = 1
-                        isBottomBarCollapsed = false
+                        navigateToTab(1)
                     },
                     onNavigateToSearch = {
-                        selectedTab = 3
-                        isBottomBarCollapsed = false
+                        navigateToTab(3)
                     },
                     onOpenArtist = { artistId ->
                         viewingArtistId = artistId
@@ -247,8 +302,7 @@ fun WaveApp() {
                         scope.launch { localDatabase.toggleFavorite(track) }
                     },
                     onNavigateBack = {
-                        selectedTab = 0
-                        isBottomBarCollapsed = false
+                        popTab()
                     }
                 )
                 2 -> LibraryScreen(
@@ -313,8 +367,7 @@ fun WaveApp() {
             FloatingNavBar(
                 selectedTab = selectedTab,
                 onTabSelected = {
-                    selectedTab = it
-                    isBottomBarCollapsed = false
+                    navigateToTab(it)
                 },
                 isCollapsed = isBottomBarCollapsed,
                 onExpandBar = { isBottomBarCollapsed = false },

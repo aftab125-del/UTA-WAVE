@@ -1,6 +1,7 @@
 package com.uta.wave.ui.player
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -177,6 +178,17 @@ fun QueueSheet(
 
     // 3-dots context menu state
     var selectedTrackForMenu by remember { mutableStateOf<TrackItem?>(null) }
+
+    BackHandler(enabled = selectedTrackForMenu != null) {
+        selectedTrackForMenu = null
+    }
+    BackHandler(enabled = inSelectMode) {
+        inSelectMode = false
+        selectedIds.clear()
+    }
+    BackHandler(enabled = !inSelectMode && selectedTrackForMenu == null) {
+        onDismiss()
+    }
 
     var automixTracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
     var isLoadingAutomix by remember { mutableStateOf(false) }

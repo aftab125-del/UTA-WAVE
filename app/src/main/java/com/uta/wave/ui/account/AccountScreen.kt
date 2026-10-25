@@ -1,6 +1,7 @@
 package com.uta.wave.ui.account
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -99,6 +100,16 @@ fun AccountScreen(
 
     var showSignInDialog by remember { mutableStateOf(false) }
     var showTokenDialog by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showSignInDialog) {
+        showSignInDialog = false
+    }
+    BackHandler(enabled = showTokenDialog) {
+        showTokenDialog = false
+    }
+    BackHandler(enabled = !showSignInDialog && !showTokenDialog) {
+        onBack()
+    }
 
     // Auto-refresh profile from YouTube when screen opens
     LaunchedEffect(profile.isLoggedIn) {

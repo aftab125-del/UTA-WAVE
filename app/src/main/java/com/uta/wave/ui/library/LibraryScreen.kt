@@ -3,6 +3,7 @@ package com.uta.wave.ui.library
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -182,6 +183,29 @@ fun LibraryScreen(
         bottom50Tracks = localDatabase.getBottom50()
         localTracks = LocalMediaScanner.scanLocalTracks(context)
         allLibraryTracks = localDatabase.getAllTracks()
+    }
+
+    // Modal & Sub-Screen Back Handlers
+    BackHandler(enabled = showSpotifyImport) {
+        showSpotifyImport = false
+    }
+    BackHandler(enabled = selectedPlaylist != null) {
+        selectedPlaylist = null
+    }
+    BackHandler(enabled = selectedCategoryView != null) {
+        selectedCategoryView = null
+    }
+    BackHandler(enabled = showAiStudio) {
+        showAiStudio = false
+    }
+    BackHandler(enabled = showAddBottomSheet) {
+        showAddBottomSheet = false
+    }
+    BackHandler(enabled = showCreateDialog) {
+        showCreateDialog = false
+    }
+    BackHandler(enabled = showYtmDialog) {
+        showYtmDialog = false
     }
 
     // Handle Sub-Screens

@@ -1,5 +1,6 @@
 package com.uta.wave.ui.search
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -82,6 +83,13 @@ fun SearchScreen(
     var searchJob by remember { mutableStateOf<Job?>(null) }
 
     val popularTags = listOf("Top 100", "Arijit Singh", "Taylor Swift", "Karan Aujla", "The Weeknd", "Lo-Fi Beats", "EDM Hits", "Bollywood")
+
+    BackHandler(enabled = query.isNotEmpty() || results.isNotEmpty()) {
+        query = ""
+        suggestions = emptyList()
+        results = emptyList()
+        focusManager.clearFocus()
+    }
 
     fun executeSearch(searchQuery: String) {
         if (searchQuery.isBlank()) return
