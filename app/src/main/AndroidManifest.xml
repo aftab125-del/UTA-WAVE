@@ -43,6 +43,11 @@
             </intent-filter>
         </service>
 
+        <receiver
+            android:name=".sync.WaveSyncActionReceiver"
+            android:exported="false" />
+
+
     </application>
 
 </manifest>

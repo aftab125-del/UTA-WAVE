@@ -123,6 +123,14 @@ data class AppSettings(
     // Listen Together
     val listenTogetherRoomCode: String = "",
     val listenTogetherSyncMode: String = "HOST_SYNC", // HOST_SYNC, COLLABORATIVE
+    val listenTogetherServerUrl: String = "wss://metroserverx.meowery.eu/ws",
+    val listenTogetherUsername: String = "",
+    val listenTogetherAutoApproval: Boolean = false,
+    val listenTogetherSyncVolume: Boolean = true,
+    val listenTogetherSmartResync: Boolean = true,
+    val listenTogetherSessionToken: String = "",
+    val listenTogetherSessionTimestamp: Long = 0L,
+    val listenTogetherBlockedUsers: String = "",
 
     // Content & Language
     val contentCountry: String = "GLOBAL",         // GLOBAL, US, IN, JP, GB, KR, DE, CA, BR
@@ -299,6 +307,14 @@ class UserPreferences private constructor(context: Context) {
 
             listenTogetherRoomCode = prefs.getString("listen_together_room_code", "") ?: "",
             listenTogetherSyncMode = prefs.getString("listen_together_sync_mode", "HOST_SYNC") ?: "HOST_SYNC",
+            listenTogetherServerUrl = prefs.getString("listen_together_server_url", "wss://metroserverx.meowery.eu/ws") ?: "wss://metroserverx.meowery.eu/ws",
+            listenTogetherUsername = prefs.getString("listen_together_username", "") ?: "",
+            listenTogetherAutoApproval = prefs.getBoolean("listen_together_auto_approval", false),
+            listenTogetherSyncVolume = prefs.getBoolean("listen_together_sync_volume", true),
+            listenTogetherSmartResync = prefs.getBoolean("listen_together_smart_resync", true),
+            listenTogetherSessionToken = prefs.getString("listen_together_session_token", "") ?: "",
+            listenTogetherSessionTimestamp = prefs.getLong("listen_together_session_timestamp", 0L),
+            listenTogetherBlockedUsers = prefs.getString("listen_together_blocked_users", "") ?: "",
 
             contentCountry = prefs.getString("content_country", "GLOBAL") ?: "GLOBAL",
             contentLanguage = prefs.getString("content_language", "en") ?: "en",
@@ -887,6 +903,67 @@ class UserPreferences private constructor(context: Context) {
     fun updateListenTogetherSyncMode(mode: String) {
         prefs.edit().putString("listen_together_sync_mode", mode).apply()
         _settingsFlow.update { it.copy(listenTogetherSyncMode = mode) }
+    }
+
+    fun updateListenTogetherServerUrl(url: String) {
+        prefs.edit().putString("listen_together_server_url", url).apply()
+        _settingsFlow.update { it.copy(listenTogetherServerUrl = url) }
+    }
+
+    fun updateListenTogetherUsername(username: String) {
+        prefs.edit().putString("listen_together_username", username).apply()
+        _settingsFlow.update { it.copy(listenTogetherUsername = username) }
+    }
+
+    fun updateListenTogetherAutoApproval(enabled: Boolean) {
+        prefs.edit().putBoolean("listen_together_auto_approval", enabled).apply()
+        _settingsFlow.update { it.copy(listenTogetherAutoApproval = enabled) }
+    }
+
+    fun updateListenTogetherSyncVolume(enabled: Boolean) {
+        prefs.edit().putBoolean("listen_together_sync_volume", enabled).apply()
+        _settingsFlow.update { it.copy(listenTogetherSyncVolume = enabled) }
+    }
+
+    fun updateListenTogetherSmartResync(enabled: Boolean) {
+        prefs.edit().putBoolean("listen_together_smart_resync", enabled).apply()
+        _settingsFlow.update { it.copy(listenTogetherSmartResync = enabled) }
+    }
+
+    fun saveListenTogetherSession(token: String, roomCode: String) {
+        val now = System.currentTimeMillis()
+        prefs.edit()
+            .putString("listen_together_session_token", token)
+            .putString("listen_together_room_code", roomCode)
+            .putLong("listen_together_session_timestamp", now)
+            .apply()
+        _settingsFlow.update {
+            it.copy(
+                listenTogetherSessionToken = token,
+                listenTogetherRoomCode = roomCode,
+                listenTogetherSessionTimestamp = now
+            )
+        }
+    }
+
+    fun clearListenTogetherSession() {
+        prefs.edit()
+            .remove("listen_together_session_token")
+            .remove("listen_together_room_code")
+            .remove("listen_together_session_timestamp")
+            .apply()
+        _settingsFlow.update {
+            it.copy(
+                listenTogetherSessionToken = "",
+                listenTogetherRoomCode = "",
+                listenTogetherSessionTimestamp = 0L
+            )
+        }
+    }
+
+    fun updateListenTogetherBlockedUsers(blocked: String) {
+        prefs.edit().putString("listen_together_blocked_users", blocked).apply()
+        _settingsFlow.update { it.copy(listenTogetherBlockedUsers = blocked) }
     }
 
     // Content Updates
