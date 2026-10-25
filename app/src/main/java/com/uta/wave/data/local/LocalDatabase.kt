@@ -529,6 +529,81 @@ class LocalDatabase private constructor(context: Context) :
         _playlistsFlow.value = queryPlaylistsSync()
     }
 
+    fun isSongInPlaylist(playlistId: String, trackId: String): Boolean {
+        val db = readableDatabase
+        db.rawQuery("SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?", arrayOf(playlistId, trackId)).use { cursor ->
+            return cursor.moveToFirst()
+        }
+    }
+
+    suspend fun reorderPlaylistTracks(playlistId: String, fromPos: Int, toPos: Int) = withContext(Dispatchers.IO) {
+        if (fromPos == toPos) return@withContext
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val trackIds = mutableListOf<String>()
+            db.rawQuery("SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position ASC", arrayOf(playlistId)).use { cursor ->
+                while (cursor.moveToNext()) {
+                    trackIds.add(cursor.getString(0))
+                }
+            }
+            if (fromPos in trackIds.indices && toPos in trackIds.indices) {
+                val moved = trackIds.removeAt(fromPos)
+                trackIds.add(toPos, moved)
+                trackIds.forEachIndexed { index, trackId ->
+                    val values = ContentValues().apply { put("position", index) }
+                    db.update("playlist_tracks", values, "playlist_id = ? AND track_id = ?", arrayOf(playlistId, trackId))
+                }
+                val updateTime = ContentValues().apply { put("updated_at", System.currentTimeMillis()) }
+                db.update("playlists", updateTime, "id = ?", arrayOf(playlistId))
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        _playlistsFlow.value = queryPlaylistsSync()
+    }
+
+    suspend fun renamePlaylist(playlistId: String, newName: String, newDescription: String? = null) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("name", newName.trim())
+            if (newDescription != null) {
+                put("description", newDescription.trim())
+            }
+            put("updated_at", System.currentTimeMillis())
+        }
+        db.update("playlists", values, "id = ?", arrayOf(playlistId))
+        _playlistsFlow.value = queryPlaylistsSync()
+    }
+
+    suspend fun addTracksToPlaylist(playlistId: String, tracks: List<TrackItem>) = withContext(Dispatchers.IO) {
+        if (tracks.isEmpty()) return@withContext
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            var count = db.rawQuery("SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?", arrayOf(playlistId)).use {
+                if (it.moveToFirst()) it.getInt(0) else 0
+            }
+            for (track in tracks) {
+                insertTrack(track)
+                val values = ContentValues().apply {
+                    put("playlist_id", playlistId)
+                    put("track_id", track.id)
+                    put("position", count++)
+                    put("added_at", System.currentTimeMillis())
+                }
+                db.insertWithOnConflict("playlist_tracks", null, values, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+            val updateTime = ContentValues().apply { put("updated_at", System.currentTimeMillis()) }
+            db.update("playlists", updateTime, "id = ?", arrayOf(playlistId))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        _playlistsFlow.value = queryPlaylistsSync()
+    }
+
     suspend fun getPlaylistTracks(playlistId: String): List<TrackItem> = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<TrackItem>()
         val db = readableDatabase

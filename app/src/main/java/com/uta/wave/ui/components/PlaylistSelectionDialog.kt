@@ -42,7 +42,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.uta.wave.data.innertube.TrackItem
+import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.data.local.PlaylistRecord
 import com.uta.wave.ui.theme.TextMuted
 import com.uta.wave.ui.theme.TextPrimary
@@ -58,7 +60,10 @@ fun PlaylistSelectionSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val localDatabase = remember { LocalDatabase.getInstance(context) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var pendingDuplicatePlaylist by remember { mutableStateOf<PlaylistRecord?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -142,8 +147,12 @@ fun PlaylistSelectionSheet(
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0xFF201826))
                                 .clickable {
-                                    onAddToPlaylist(pl.id)
-                                    onDismiss()
+                                    if (localDatabase.isSongInPlaylist(pl.id, track.id)) {
+                                        pendingDuplicatePlaylist = pl
+                                    } else {
+                                        onAddToPlaylist(pl.id)
+                                        onDismiss()
+                                    }
                                 }
                                 .padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -231,6 +240,44 @@ fun PlaylistSelectionSheet(
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) {
+                    Text(text = "Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = Color(0xFF1D1623)
+        )
+    }
+
+    pendingDuplicatePlaylist?.let { targetPlaylist ->
+        AlertDialog(
+            onDismissRequest = { pendingDuplicatePlaylist = null },
+            title = {
+                Text(
+                    text = "Song Already in Playlist",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "\"${track.title}\" is already present in \"${targetPlaylist.name}\". Do you want to add it anyway?",
+                    color = TextSecondary,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onAddToPlaylist(targetPlaylist.id)
+                        pendingDuplicatePlaylist = null
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF3D7EC))
+                ) {
+                    Text(text = "Add Anyway", color = Color(0xFF3B1E38), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDuplicatePlaylist = null }) {
                     Text(text = "Cancel", color = TextSecondary)
                 }
             },

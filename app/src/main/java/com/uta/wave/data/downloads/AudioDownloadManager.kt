@@ -160,4 +160,34 @@ class AudioDownloadManager private constructor(private val context: Context) {
             AppLogger.i("Deleted download for trackId: $trackId")
         }
     }
+
+    fun downloadTracks(
+        tracks: List<TrackItem>,
+        quality: AudioQuality = AudioQuality.LOSSLESS
+    ) {
+        val pending = tracks.filter { !isDownloaded(it.id) && !_downloadingIds.value.contains(it.id) }
+        pending.forEach { track ->
+            downloadTrack(track, quality)
+        }
+    }
+
+    fun deleteTracks(tracks: List<TrackItem>) {
+        tracks.forEach { track ->
+            deleteDownload(track.id)
+        }
+    }
+
+    fun areAllTracksDownloaded(tracks: List<TrackItem>): Boolean {
+        if (tracks.isEmpty()) return false
+        return tracks.all { isDownloaded(it.id) }
+    }
+
+    fun isAnyTrackDownloading(tracks: List<TrackItem>): Boolean {
+        val downloading = _downloadingIds.value
+        return tracks.any { downloading.contains(it.id) }
+    }
+
+    fun countDownloadedTracks(tracks: List<TrackItem>): Int {
+        return tracks.count { isDownloaded(it.id) }
+    }
 }
