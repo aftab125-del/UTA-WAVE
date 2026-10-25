@@ -486,6 +486,17 @@ class WaveSyncManager private constructor(private val context: Context) {
         client.sendPlaybackAction(SyncPlaybackActions.QUEUE_CLEAR)
     }
 
+    fun onLocalQueueSync(queue: List<TrackItem>) {
+        if (isSyncing || !isInRoom || !canControlMusic) return
+        val currentTrack = playbackManager.state.value.currentTrack ?: return
+        client.sendPlaybackAction(
+            action = SyncPlaybackActions.CHANGE_TRACK,
+            trackId = currentTrack.videoId,
+            trackInfo = currentTrack.toSyncTrackInfo(),
+            queue = queue.map { it.toSyncTrackInfo() }
+        )
+    }
+
     fun onLocalVolumeChanged(volume: Float) {
         if (isSyncing || !isInRoom || !isHost) return
         if (userPrefs.settingsFlow.value.listenTogetherSyncVolume) {

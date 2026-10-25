@@ -21,6 +21,10 @@ import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.data.preferences.AppSettings
 import com.uta.wave.data.preferences.UserPreferences
+import com.uta.wave.player.queue.ListQueue
+import com.uta.wave.player.queue.OccurrenceAwareFilter
+import com.uta.wave.player.queue.WaveQueue
+import com.uta.wave.player.queue.YouTubeRadioQueue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -44,6 +49,8 @@ class PlaybackManager private constructor(private val context: Context) {
         private const val KEY_QUEUE_JSON = "persistent_queue_json"
         private const val KEY_QUEUE_INDEX = "persistent_queue_index"
         private const val KEY_QUEUE_POSITION = "persistent_queue_position"
+        private const val KEY_QUEUE_TITLE = "persistent_queue_title"
+        private const val KEY_QUEUE_IS_RADIO = "persistent_queue_is_radio"
 
         @Volatile
         private var INSTANCE: PlaybackManager? = null
@@ -59,6 +66,8 @@ class PlaybackManager private constructor(private val context: Context) {
     private val localDatabase = LocalDatabase.getInstance(context)
     private val userPrefs = UserPreferences.getInstance(context)
     private val scope = CoroutineScope(Dispatchers.Main + Job())
+
+    var currentQueueProvider: WaveQueue? = null
 
     private val streamCache = ConcurrentHashMap<String, Pair<String, Long>>()
     private val STREAM_CACHE_TTL_MS = 2 * 60 * 60 * 1000L // 2 hours
@@ -397,7 +406,78 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
+    fun playRadio(track: TrackItem) {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
+        val radioQueue = YouTubeRadioQueue(videoId = track.videoId, initialTrack = track, innerTubeClient = innerTubeClient)
+        currentQueueProvider = radioQueue
+
+        _state.update {
+            it.copy(
+                queueTitle = "${track.title} Radio",
+                isRadioActive = true
+            )
+        }
+
+        playTrack(track, listOf(track))
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val radioTracks = radioQueue.getInitialTracks()
+                if (radioTracks.isNotEmpty()) {
+                    _state.update { state ->
+                        state.copy(
+                            queue = radioTracks,
+                            queueIndex = 0,
+                            queueTitle = "${track.title} Radio",
+                            isRadioActive = true
+                        )
+                    }
+                    savePersistentQueue()
+                    AppLogger.i("▶ Algorithmic radio ready with ${radioTracks.size} tracks for \"${track.title}\"")
+                }
+            } catch (e: Exception) {
+                AppLogger.w("Failed to populate initial radio tracks: ${e.message}")
+            }
+        }
+    }
+
+    fun startRadioFromCurrentTrack() {
+        val current = _state.value.currentTrack ?: return
+        playRadio(current)
+    }
+
+    fun playQueue(queueProvider: WaveQueue, startTrack: TrackItem? = null) {
+        currentQueueProvider = queueProvider
+        scope.launch(Dispatchers.IO) {
+            try {
+                val tracks = queueProvider.getInitialTracks()
+                if (tracks.isNotEmpty()) {
+                    val target = startTrack ?: tracks.first()
+                    withContext(Dispatchers.Main) {
+                        _state.update {
+                            it.copy(
+                                queueTitle = queueProvider.title,
+                                isRadioActive = queueProvider is YouTubeRadioQueue
+                            )
+                        }
+                        playTrack(target, tracks)
+                    }
+                }
+            } catch (e: Exception) {
+                AppLogger.e("Failed to play queue: ${e.message}", e)
+            }
+        }
+    }
+
     fun playTrack(track: TrackItem, queue: List<TrackItem> = listOf(track)) {
+        if (queue.size > 1 && currentQueueProvider !is YouTubeRadioQueue) {
+            currentQueueProvider = ListQueue(queue, _state.value.queueTitle ?: "Queue")
+        }
         val sync = waveSyncManager
         if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
             sync.notifyGuestRestricted()
@@ -851,24 +931,90 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
+    fun reorderQueue(fromIndex: Int, toIndex: Int) {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
+        val currentQueue = _state.value.queue.toMutableList()
+        if (fromIndex !in currentQueue.indices || toIndex !in currentQueue.indices) return
+
+        val currentTrack = _state.value.currentTrack
+        val item = currentQueue.removeAt(fromIndex)
+        currentQueue.add(toIndex, item)
+
+        val newIndex = if (currentTrack != null) {
+            val matchedIndex = currentQueue.indexOfFirst { it.id == currentTrack.id }
+            if (matchedIndex >= 0) matchedIndex else _state.value.queueIndex
+        } else {
+            _state.value.queueIndex
+        }
+
+        _state.update {
+            it.copy(
+                queue = currentQueue,
+                queueIndex = newIndex
+            )
+        }
+        savePersistentQueue()
+        if (!isRemoteSync) {
+            sync?.onLocalQueueSync(currentQueue)
+        }
+    }
+
+    fun filterExplicitInQueue(enabled: Boolean = true) {
+        if (!enabled) return
+        val cur = _state.value.queue
+        val idx = _state.value.queueIndex
+        val (filtered, newIdx) = OccurrenceAwareFilter.filterTracks(cur, idx) {
+            !it.title.contains("(Explicit)", ignoreCase = true)
+        }
+        _state.update { it.copy(queue = filtered, queueIndex = newIdx) }
+        savePersistentQueue()
+    }
+
     private fun loadSimilarTracksAndAppend(currentTrack: TrackItem?) {
         if (currentTrack == null) return
         scope.launch(Dispatchers.IO) {
             try {
-                val trending = innerTubeClient.getTrending()
-                if (trending.isNotEmpty()) {
+                val provider = currentQueueProvider
+                val newTracks = if (provider != null && provider.hasNextPage()) {
+                    AppLogger.i("▶ Paging next batch from active queue provider (${provider.title})")
+                    provider.nextPage()
+                } else {
+                    AppLogger.i("▶ Seamlessly initiating YouTube Radio Queue for \"${currentTrack.title}\"")
+                    val radioQueue = YouTubeRadioQueue(
+                        videoId = currentTrack.videoId,
+                        initialTrack = currentTrack,
+                        innerTubeClient = innerTubeClient
+                    )
+                    currentQueueProvider = radioQueue
+                    val fetched = radioQueue.getInitialTracks()
+                    fetched.filter { it.videoId != currentTrack.videoId && it.id != currentTrack.id }
+                }
+
+                if (newTracks.isNotEmpty()) {
                     val currentQueue = _state.value.queue
                     val existingIds = currentQueue.map { it.id }.toSet()
-                    val newTracks = trending.filter { it.id !in existingIds }
-                    if (newTracks.isNotEmpty()) {
-                        val merged = currentQueue + newTracks
-                        _state.update { it.copy(queue = merged) }
+                    val existingVideoIds = currentQueue.map { it.videoId }.toSet()
+                    val filtered = newTracks.filter { it.id !in existingIds && it.videoId !in existingVideoIds }
+
+                    if (filtered.isNotEmpty()) {
+                        val merged = currentQueue + filtered
+                        _state.update {
+                            it.copy(
+                                queue = merged,
+                                isRadioActive = true
+                            )
+                        }
                         savePersistentQueue()
-                        AppLogger.i("▶ Auto-loaded ${newTracks.size} more tracks into queue")
+                        AppLogger.i("▶ Auto-appended ${filtered.size} radio tracks to queue. Total: ${merged.size}")
                     }
                 }
             } catch (e: Exception) {
-                AppLogger.w("Auto-load more tracks failed: ${e.message}")
+                AppLogger.w("Auto-load radio continuation failed: ${e.message}")
             }
         }
     }
@@ -885,6 +1031,8 @@ class PlaybackManager private constructor(private val context: Context) {
                 val q = _state.value.queue
                 val qIdx = _state.value.queueIndex
                 val pos = _state.value.positionMs
+                val qTitle = _state.value.queueTitle ?: ""
+                val isRadio = _state.value.isRadioActive
 
                 val array = JSONArray()
                 for (item in q) {
@@ -908,6 +1056,8 @@ class PlaybackManager private constructor(private val context: Context) {
                     .putString(KEY_QUEUE_JSON, array.toString())
                     .putInt(KEY_QUEUE_INDEX, qIdx)
                     .putLong(KEY_QUEUE_POSITION, pos)
+                    .putString(KEY_QUEUE_TITLE, qTitle)
+                    .putBoolean(KEY_QUEUE_IS_RADIO, isRadio)
                     .apply()
             } catch (e: Exception) {
                 AppLogger.e("Failed to save persistent queue", e)
@@ -932,6 +1082,8 @@ class PlaybackManager private constructor(private val context: Context) {
                 val rawJson = sp.getString(KEY_QUEUE_JSON, null) ?: return@launch
                 val savedIndex = sp.getInt(KEY_QUEUE_INDEX, 0)
                 val savedPos = sp.getLong(KEY_QUEUE_POSITION, 0L)
+                val savedTitle = sp.getString(KEY_QUEUE_TITLE, null)
+                val savedIsRadio = sp.getBoolean(KEY_QUEUE_IS_RADIO, false)
 
                 val array = JSONArray(rawJson)
                 val restoredList = mutableListOf<TrackItem>()
@@ -956,6 +1108,15 @@ class PlaybackManager private constructor(private val context: Context) {
                 if (restoredList.isNotEmpty()) {
                     val safeIndex = savedIndex.coerceIn(0, restoredList.size - 1)
                     val activeTrack = restoredList[safeIndex]
+                    if (savedIsRadio) {
+                        currentQueueProvider = YouTubeRadioQueue(
+                            videoId = activeTrack.videoId,
+                            initialTrack = activeTrack,
+                            innerTubeClient = innerTubeClient
+                        )
+                    } else {
+                        currentQueueProvider = ListQueue(restoredList, savedTitle ?: "Queue")
+                    }
                     _state.update {
                         it.copy(
                             queue = restoredList,
@@ -964,7 +1125,9 @@ class PlaybackManager private constructor(private val context: Context) {
                             positionMs = savedPos,
                             durationMs = (activeTrack.durationSeconds * 1000L).coerceAtLeast(0L),
                             isPlaying = false,
-                            isBuffering = false
+                            isBuffering = false,
+                            queueTitle = savedTitle,
+                            isRadioActive = savedIsRadio
                         )
                     }
                     AppLogger.i("▶ Restored persistent queue: ${restoredList.size} tracks, active=\"${activeTrack.title}\" at ${savedPos}ms")
