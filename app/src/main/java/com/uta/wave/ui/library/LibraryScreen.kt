@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddLink
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.BugReport
@@ -156,6 +157,7 @@ fun LibraryScreen(
     var isImportOptionsExpanded by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showYtmDialog by remember { mutableStateOf(false) }
+    var showAiStudio by remember { mutableStateOf(false) }
 
     var newPlaylistName by remember { mutableStateOf("") }
     var ytmLinkInput by remember { mutableStateOf("") }
@@ -568,6 +570,37 @@ fun LibraryScreen(
                         ),
                         color = TextPrimary
                     )
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(BlushRose.copy(alpha = 0.2f), ElectricViolet.copy(alpha = 0.2f))
+                                )
+                            )
+                            .border(1.dp, CardBorder, RoundedCornerShape(20.dp))
+                            .clickable { showAiStudio = true }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = BlushRose,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "AI Studio",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                ),
+                                color = TextPrimary
+                            )
+                        }
+                    }
                 }
             }
 
@@ -701,6 +734,41 @@ fun LibraryScreen(
                 ) {
                     if (!isImportOptionsExpanded) {
                         // SCREENSHOT 1 OPTIONS: Create playlist & Import playlist
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(Color(0xFF381E38), Color(0xFF261833))
+                                    )
+                                )
+                                .border(1.dp, CardBorder, RoundedCornerShape(16.dp))
+                                .clickable {
+                                    showAddBottomSheet = false
+                                    showAiStudio = true
+                                }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = BlushRose, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column {
+                                Text(
+                                    text = "AI Playlist Studio",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Generate curated sets from vibes or prompts",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                    color = BlushRose
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -973,6 +1041,18 @@ fun LibraryScreen(
                     ) {
                         Text("Cancel", color = BlushRose, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     }
+                }
+            )
+        }
+
+        if (showAiStudio) {
+            AiPlaylistStudioSheet(
+                onDismiss = { showAiStudio = false },
+                onPlaylistCreated = { record, _ ->
+                    selectedPlaylist = record
+                },
+                onPlayImmediately = { track, trackList ->
+                    onPlayTrack(track, trackList)
                 }
             )
         }
