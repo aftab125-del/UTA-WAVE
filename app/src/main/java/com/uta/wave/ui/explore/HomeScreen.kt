@@ -75,6 +75,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.uta.wave.data.innertube.InnerTubeClient
 import com.uta.wave.data.innertube.TrackItem
+import com.uta.wave.player.PlaybackManager
+import com.uta.wave.ui.components.SongMenuBottomSheet
 import com.uta.wave.ui.theme.CardBorder
 import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.ObsidianBackground
@@ -119,6 +121,7 @@ fun HomeScreen(
     var similarTracks2 by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
     var selectedMood by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+    var selectedTrackForMenu by remember { mutableStateOf<TrackItem?>(null) }
 
     val moods = listOf("Romance", "Relax", "Feel good", "Energise", "Workout", "Commute", "Party", "Focus", "Sad", "Sleep")
 
@@ -169,13 +172,16 @@ fun HomeScreen(
 
     val activeList = if (selectedMood != null && moodTracks.isNotEmpty()) moodTracks else trendingTracks
 
-    LazyColumn(
-        state = listState,
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(ObsidianBackground),
-        contentPadding = PaddingValues(top = 10.dp, bottom = 140.dp)
+            .background(ObsidianBackground)
     ) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = 10.dp, bottom = 140.dp)
+        ) {
         // -------------------------------------------------------------
         // 1. TOP BAR: "UTA-wave" + Utility Actions (History, Stats, Cast, Avatar)
         // -------------------------------------------------------------
@@ -220,66 +226,62 @@ fun HomeScreen(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    IconButton(onClick = onOpenDiagnostics) {
-                        Icon(
-                            imageVector = Icons.Outlined.BugReport,
-                            contentDescription = "Diagnostics",
-                            tint = ElectricViolet,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    IconButton(onClick = onOpenListeningSummary) {
+                    IconButton(
+                        onClick = onOpenListeningSummary,
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Outlined.History,
                             contentDescription = "Listening Summary & History",
                             tint = TextSecondary,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(onClick = onNavigateToCharts) {
-                        Icon(
-                            imageVector = Icons.Outlined.TrendingUp,
-                            contentDescription = "Charts & Stats",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    IconButton(onClick = {
-                        Toast.makeText(context, "Listen Together room ready", Toast.LENGTH_SHORT).show()
-                    }) {
+                    IconButton(
+                        onClick = {
+                            Toast.makeText(context, "Listen Together room ready", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Outlined.Cast,
                             contentDescription = "Cast & Listen Together",
                             tint = TextSecondary,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(onClick = onOpenSettings) {
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Outlined.Settings,
-                            contentDescription = "Settings & Customization",
-                            tint = ElectricViolet,
-                            modifier = Modifier.size(22.dp)
+                            contentDescription = "Settings",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                     if (!userProfile.avatarUrl.isNullOrBlank()) {
                         AsyncImage(
                             model = userProfile.avatarUrl,
-                            contentDescription = "Profile & Settings",
+                            contentDescription = "Profile",
                             modifier = Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .border(1.5.dp, ElectricViolet.copy(alpha = 0.6f), CircleShape)
-                                .clickable(onClick = onOpenSettings)
+                                .border(1.5.dp, ElectricViolet.copy(alpha = 0.8f), CircleShape)
+                                .clickable(onClick = onOpenAccount)
                         )
                     } else {
-                        IconButton(onClick = onOpenSettings) {
+                        IconButton(
+                            onClick = onOpenAccount,
+                            modifier = Modifier.size(36.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Outlined.AccountCircle,
-                                contentDescription = "Profile & Settings",
-                                tint = TextSecondary,
+                                contentDescription = "Profile",
+                                tint = ElectricViolet,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -544,7 +546,7 @@ fun HomeScreen(
                                     )
                                 }
 
-                                IconButton(onClick = { onToggleFavorite(track) }) {
+                                IconButton(onClick = { selectedTrackForMenu = track }) {
                                     Icon(
                                         imageVector = Icons.Default.MoreVert,
                                         contentDescription = "Options",
@@ -649,7 +651,7 @@ fun HomeScreen(
                                     }
                                 }
 
-                                IconButton(onClick = { onToggleFavorite(track) }) {
+                                IconButton(onClick = { selectedTrackForMenu = track }) {
                                     Icon(
                                         imageVector = Icons.Default.MoreVert,
                                         contentDescription = "Options",
@@ -1189,4 +1191,20 @@ fun HomeScreen(
             }
         }
     }
+
+    if (selectedTrackForMenu != null) {
+        val item = selectedTrackForMenu!!
+        val playbackManager = remember { PlaybackManager.getInstance(context) }
+        SongMenuBottomSheet(
+            track = item,
+            isFavorite = favoritesList.any { it.id == item.id },
+            onToggleFavorite = onToggleFavorite,
+            onPlayNext = { track -> playbackManager.addToQueue(track, insertNext = true) },
+            onAddToQueue = { track -> playbackManager.addToQueue(track, insertNext = false) },
+            onStartRadio = { track -> playbackManager.playRadio(track) },
+            onOpenArtist = onOpenArtist,
+            onDismiss = { selectedTrackForMenu = null }
+        )
+    }
+}
 }
