@@ -75,5 +75,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.androidx.palette)
 
+    // Reorderable Drag and Drop
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
+
     testImplementation(libs.junit)
 }
