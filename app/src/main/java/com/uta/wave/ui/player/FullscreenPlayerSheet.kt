@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
@@ -107,6 +108,7 @@ import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.PlaylistRecord
 import com.uta.wave.data.lyrics.LyricsClient
 import com.uta.wave.data.preferences.UserPreferences
+import com.uta.wave.sync.WaveSyncManager
 import com.uta.wave.player.RepeatMode as PlayerRepeatMode
 import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.components.AmbientCanvas
@@ -169,6 +171,9 @@ fun FullscreenPlayerSheet(
     val settings by userPrefs.settingsFlow.collectAsState()
     val isAppleMusic = settings.appleMusicPlayerEnabled || settings.playerStyle == "APPLE_MUSIC"
 
+    val syncManager = remember { WaveSyncManager.getInstance(context) }
+    val roomState by syncManager.roomState.collectAsState()
+
     // Dialog & Sheet States
     var showLyrics by remember { mutableStateOf(false) }
     var showMoreOptions by remember { mutableStateOf(false) }
@@ -181,6 +186,7 @@ fun FullscreenPlayerSheet(
     var showEqualizer by remember { mutableStateOf(false) }
     var showAudioDevices by remember { mutableStateOf(false) }
     var showPlaybackLogs by remember { mutableStateOf(false) }
+    var showListenTogether by remember { mutableStateOf(false) }
 
     // Sleep Timer Job
     var sleepTimerJob by remember { mutableStateOf<Job?>(null) }
@@ -567,15 +573,26 @@ fun FullscreenPlayerSheet(
                             .background(Color.White.copy(alpha = 0.35f))
                     )
 
-                    IconButton(onClick = {
-                        showAudioDevices = true
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Cast,
-                            contentDescription = "Cast",
-                            tint = Color.White.copy(alpha = 0.85f),
-                            modifier = Modifier.size(24.dp)
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { showListenTogether = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Group,
+                                contentDescription = "Listen Together",
+                                tint = if (roomState != null) com.uta.wave.ui.theme.ElectricViolet else Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        IconButton(onClick = {
+                            showAudioDevices = true
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Cast,
+                                contentDescription = "Cast",
+                                tint = Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
 
@@ -653,9 +670,42 @@ fun FullscreenPlayerSheet(
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .height(38.dp)
+                                .clip(if (roomState != null) RoundedCornerShape(19.dp) else CircleShape)
+                                .background(if (roomState != null) com.uta.wave.ui.theme.ElectricViolet.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.16f))
+                                .border(
+                                    1.dp,
+                                    if (roomState != null) com.uta.wave.ui.theme.ElectricViolet.copy(alpha = 0.6f) else Color.Transparent,
+                                    if (roomState != null) RoundedCornerShape(19.dp) else CircleShape
+                                )
+                                .clickable { showListenTogether = true }
+                                .padding(horizontal = if (roomState != null) 10.dp else 9.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Group,
+                                    contentDescription = "Listen Together",
+                                    tint = if (roomState != null) com.uta.wave.ui.theme.ElectricViolet else Color.White,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                                if (roomState != null) {
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = roomState?.roomCode ?: "",
+                                        color = com.uta.wave.ui.theme.ElectricViolet,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
@@ -974,15 +1024,26 @@ fun FullscreenPlayerSheet(
                         )
                     }
 
-                    IconButton(onClick = {
-                        showAudioDevices = true
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Cast,
-                            contentDescription = "Cast",
-                            tint = Color.White.copy(alpha = 0.85f),
-                            modifier = Modifier.size(24.dp)
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { showListenTogether = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Group,
+                                contentDescription = "Listen Together",
+                                tint = if (roomState != null) com.uta.wave.ui.theme.ElectricViolet else Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        IconButton(onClick = {
+                            showAudioDevices = true
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Cast,
+                                contentDescription = "Cast",
+                                tint = Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
 
@@ -1388,7 +1449,7 @@ fun FullscreenPlayerSheet(
                 showTrimRingtone = true
             },
             onListenTogether = {
-                Toast.makeText(context, "Listen Together room created: #UTA-WAVE-SYNC", Toast.LENGTH_SHORT).show()
+                showListenTogether = true
             },
             onShowDetails = {
                 showSongDetails = true
@@ -1519,6 +1580,13 @@ fun FullscreenPlayerSheet(
         PlaybackLogsDialog(
             playerState = playerState,
             onDismiss = { showPlaybackLogs = false }
+        )
+    }
+
+    // Modal Bottom Sheet: Listen Together
+    if (showListenTogether) {
+        ListenTogetherSheet(
+            onDismiss = { showListenTogether = false }
         )
     }
 }
