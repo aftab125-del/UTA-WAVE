@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">UTA-wave</string>
+    <string name="listen_together">Listen Together</string>
+    <string name="listen_together_notification_channel_name">Listen Together Session</string>
+    <string name="listen_together_notification_channel_desc">Notifications for Listen Together room requests and suggestions</string>
+    <string name="listen_together_join_request_notification">%s wants to join your room</string>
+    <string name="listen_together_suggestion_received">%1$s suggested: %2$s</string>
+    <string name="approve">Approve</string>
+    <string name="reject">Reject</string>
+    <string name="room_created">Room created: %s</string>
 </resources>
