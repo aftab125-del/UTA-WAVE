@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -82,19 +83,26 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -341,9 +349,98 @@ fun FullscreenPlayerSheet(
         label = "playPauseScale"
     )
 
+    // Swipe-down-to-collapse animation mechanics (EchoMusic / iOS style spring physics)
+    val density = LocalDensity.current
+    val dismissThresholdPx = with(density) { 130.dp.toPx() }
+    val dismissVelocityThreshold = with(density) { 800.dp.toPx() }
+
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(track.id) {
+        dragOffsetY = 0f
+    }
+
+    val animatedOffsetY by animateFloatAsState(
+        targetValue = dragOffsetY,
+        animationSpec = spring(
+            stiffness = Spring.StiffnessMediumLow,
+            dampingRatio = Spring.DampingRatioLowBouncy
+        ),
+        label = "fullscreenPlayerSwipeDown"
+    )
+
+    val swipeCollapseModifier = Modifier.pointerInput(Unit) {
+        val velocityTracker = VelocityTracker()
+        detectVerticalDragGestures(
+            onDragStart = {
+                velocityTracker.resetTracking()
+            },
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                velocityTracker.addPosition(change.uptimeMillis, change.position)
+                dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+            },
+            onDragEnd = {
+                val velocityY = velocityTracker.calculateVelocity().y
+                if (dragOffsetY > dismissThresholdPx || velocityY > dismissVelocityThreshold) {
+                    onCollapse()
+                } else {
+                    dragOffsetY = 0f
+                }
+            },
+            onDragCancel = {
+                dragOffsetY = 0f
+            }
+        )
+    }
+
+    val sheetNestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (dragOffsetY > 0f && available.y < 0f) {
+                    val consumedY = available.y.coerceAtLeast(-dragOffsetY)
+                    dragOffsetY += consumedY
+                    return Offset(0f, consumedY)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 0f) {
+                    dragOffsetY += available.y
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (available.y > dismissVelocityThreshold || dragOffsetY > dismissThresholdPx) {
+                    onCollapse()
+                    return available
+                } else if (dragOffsetY > 0f) {
+                    dragOffsetY = 0f
+                    return available
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+
+    val currentDrag = animatedOffsetY
+    val progress = (currentDrag / (density.density * 320f)).coerceIn(0f, 1f)
+
     Box(
         modifier = modifier
             .fillMaxSize()
+            .nestedScroll(sheetNestedScrollConnection)
+            .graphicsLayer {
+                translationY = currentDrag
+                scaleX = 1f - (progress * 0.08f)
+                scaleY = 1f - (progress * 0.08f)
+                alpha = 1f - (progress * 0.40f)
+                shape = RoundedCornerShape(topStart = (progress * 28).dp, topEnd = (progress * 28).dp)
+                clip = progress > 0.005f
+            }
             .background(Color(0xFF0F0A12))
     ) {
         if (isAppleMusic) {
@@ -553,6 +650,7 @@ fun FullscreenPlayerSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(swipeCollapseModifier)
                         .padding(horizontal = 20.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -568,10 +666,10 @@ fun FullscreenPlayerSheet(
 
                     Box(
                         modifier = Modifier
-                            .width(36.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color.White.copy(alpha = 0.35f))
+                            .width(42.dp)
+                            .height(5.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.45f))
                     )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -986,7 +1084,9 @@ fun FullscreenPlayerSheet(
             ) {
                 // Top Bar
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(swipeCollapseModifier),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1003,6 +1103,14 @@ fun FullscreenPlayerSheet(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.weight(1f)
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .width(42.dp)
+                                .height(5.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.45f))
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "NOW PLAYING",
                             style = MaterialTheme.typography.labelSmall.copy(

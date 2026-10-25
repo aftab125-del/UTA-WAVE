@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -146,11 +149,31 @@ fun QueueSheet(
     var inSelectMode by remember { mutableStateOf(false) }
     val selectedIds = remember { mutableStateListOf<String>() }
 
-    // Drag and Drop State
+    // Drag and Drop State (EchoMusic 1:1 sh.calvin.reorderable engine)
     val localQueue = remember(queue) { queue.toMutableStateList() }
-    var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-    val itemHeightPx = with(density) { 62.dp.toPx() }
+    val lazyListState = rememberLazyListState()
+    var dragInfo by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        localQueue.add(to.index, localQueue.removeAt(from.index))
+        dragInfo = if (dragInfo == null) {
+            from.index to to.index
+        } else {
+            dragInfo!!.first to to.index
+        }
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
+    // Dispatch reorder to PlaybackManager once user releases the dragging handle
+    LaunchedEffect(reorderableState.isAnyItemDragging) {
+        if (!reorderableState.isAnyItemDragging) {
+            dragInfo?.let { (from, to) ->
+                if (from != to) {
+                    onReorderQueue?.invoke(from, to)
+                }
+                dragInfo = null
+            }
+        }
+    }
 
     // 3-dots context menu state
     var selectedTrackForMenu by remember { mutableStateOf<TrackItem?>(null) }
@@ -160,7 +183,7 @@ fun QueueSheet(
 
     // Keep localQueue in sync with external queue changes when not actively dragging
     LaunchedEffect(queue) {
-        if (draggingIndex == null) {
+        if (!reorderableState.isAnyItemDragging) {
             localQueue.clear()
             localQueue.addAll(queue)
         }
@@ -552,6 +575,7 @@ fun QueueSheet(
                     }
                 } else {
                     LazyColumn(
+                        state = lazyListState,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f, fill = false)
@@ -564,7 +588,6 @@ fun QueueSheet(
                         ) { index, track ->
                             val isCurrent = index == currentIndex
                             val isSelected = selectedIds.contains(track.id)
-                            val isDragging = draggingIndex == index
 
                             // Dismiss state with 1-tap Undo (active only when not locked and not in select mode)
                             val dismissState = rememberSwipeToDismissBoxState(
@@ -586,98 +609,69 @@ fun QueueSheet(
                                 }
                             )
 
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                enableDismissFromStartToEnd = false,
-                                enableDismissFromEndToStart = !isLocked && !inSelectMode,
-                                backgroundContent = {
-                                    val color by animateColorAsState(
-                                        targetValue = if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
-                                            Color(0xFFEF5350).copy(alpha = 0.85f)
-                                        } else Color.Transparent,
-                                        label = "DismissColor"
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(color)
-                                            .padding(end = 20.dp),
-                                        contentAlignment = Alignment.CenterEnd
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete",
-                                            tint = Color.White
+                            ReorderableItem(
+                                state = reorderableState,
+                                key = track.id
+                            ) { isDragging ->
+                                SwipeToDismissBox(
+                                    state = dismissState,
+                                    enableDismissFromStartToEnd = false,
+                                    enableDismissFromEndToStart = !isLocked && !inSelectMode && !isDragging,
+                                    backgroundContent = {
+                                        val color by animateColorAsState(
+                                            targetValue = if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+                                                Color(0xFFEF5350).copy(alpha = 0.85f)
+                                            } else Color.Transparent,
+                                            label = "DismissColor"
                                         )
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(color)
+                                                .padding(end = 20.dp),
+                                            contentAlignment = Alignment.CenterEnd
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete",
+                                                tint = Color.White
+                                            )
+                                        }
                                     }
-                                }
-                            ) {
-                                DragDropQueueRow(
-                                    track = track,
-                                    index = index,
-                                    isCurrent = isCurrent,
-                                    isPlaying = isPlaying && isCurrent,
-                                    isLocked = isLocked,
-                                    inSelectMode = inSelectMode,
-                                    isSelected = isSelected,
-                                    isDragging = isDragging,
-                                    dragOffsetY = dragOffsetY,
-                                    onToggleSelect = {
-                                        if (isSelected) selectedIds.remove(track.id)
-                                        else selectedIds.add(track.id)
-                                    },
-                                    onClick = {
-                                        if (inSelectMode) {
+                                ) {
+                                    DragDropQueueRow(
+                                        track = track,
+                                        index = index,
+                                        isCurrent = isCurrent,
+                                        isPlaying = isPlaying && isCurrent,
+                                        isLocked = isLocked,
+                                        inSelectMode = inSelectMode,
+                                        isSelected = isSelected,
+                                        isDragging = isDragging,
+                                        onToggleSelect = {
                                             if (isSelected) selectedIds.remove(track.id)
                                             else selectedIds.add(track.id)
-                                        } else {
-                                            onSelectTrack(track)
-                                        }
-                                    },
-                                    onMoreClick = {
-                                        selectedTrackForMenu = track
-                                    },
-                                    dragHandleModifier = Modifier.pointerInput(isLocked, index) {
-                                        if (isLocked || inSelectMode) return@pointerInput
-                                        detectVerticalDragGestures(
-                                            onDragStart = {
-                                                draggingIndex = index
-                                                dragOffsetY = 0f
+                                        },
+                                        onClick = {
+                                            if (inSelectMode) {
+                                                if (isSelected) selectedIds.remove(track.id)
+                                                else selectedIds.add(track.id)
+                                            } else {
+                                                onSelectTrack(track)
+                                            }
+                                        },
+                                        onMoreClick = {
+                                            selectedTrackForMenu = track
+                                        },
+                                        dragHandleModifier = Modifier.draggableHandle(
+                                            enabled = !isLocked && !inSelectMode,
+                                            onDragStarted = {
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            },
-                                            onVerticalDrag = { change, dragAmount ->
-                                                change.consume()
-                                                dragOffsetY += dragAmount
-                                                val currentDragIdx = draggingIndex ?: return@detectVerticalDragGestures
-                                                val targetOffset = (dragOffsetY / itemHeightPx).roundToInt()
-                                                val targetIndex = (currentDragIdx + targetOffset).coerceIn(0, localQueue.lastIndex)
-                                                if (targetIndex != currentDragIdx) {
-                                                    val moved = localQueue.removeAt(currentDragIdx)
-                                                    localQueue.add(targetIndex, moved)
-                                                    draggingIndex = targetIndex
-                                                    dragOffsetY -= targetOffset * itemHeightPx
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                }
-                                            },
-                                            onDragEnd = {
-                                                val fromIndex = index
-                                                val toIndex = draggingIndex
-                                                if (toIndex != null && toIndex != fromIndex) {
-                                                    onReorderQueue?.invoke(fromIndex, toIndex)
-                                                }
-                                                draggingIndex = null
-                                                dragOffsetY = 0f
-                                            },
-                                            onDragCancel = {
-                                                draggingIndex = null
-                                                dragOffsetY = 0f
-                                                localQueue.clear()
-                                                localQueue.addAll(queue)
                                             }
                                         )
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
@@ -755,7 +749,6 @@ fun DragDropQueueRow(
     inSelectMode: Boolean,
     isSelected: Boolean,
     isDragging: Boolean,
-    dragOffsetY: Float,
     onToggleSelect: () -> Unit,
     onClick: () -> Unit,
     onMoreClick: () -> Unit,
@@ -768,12 +761,10 @@ fun DragDropQueueRow(
             .zIndex(if (isDragging) 10f else 1f)
             .graphicsLayer {
                 if (isDragging) {
-                    translationY = dragOffsetY
                     shadowElevation = 14f
                     scaleX = 1.02f
                     scaleY = 1.02f
                 } else {
-                    translationY = 0f
                     shadowElevation = 0f
                     scaleX = 1f
                     scaleY = 1f
