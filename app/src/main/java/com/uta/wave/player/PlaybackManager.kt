@@ -96,10 +96,13 @@ class PlaybackManager private constructor(private val context: Context) {
     private var currentSpeed: Float = 1.0f
 
     init {
+        WaveEqualizer.initialize(context)
         setupPlayerListener(primaryPlayerInstance)
+        setupPlayerListener(standbyPlayerInstance)
         setupSettingsCollector()
         setupVolumeObserver()
         restorePersistentQueueIfEnabled()
+        WaveEqualizer.attachAudioSession(primaryPlayerInstance.audioSessionId)
     }
 
     private fun setupSettingsCollector() {
@@ -237,6 +240,12 @@ class PlaybackManager private constructor(private val context: Context) {
                     }
                 }
             }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                if (exoPlayer == primaryPlayerInstance && audioSessionId > 0) {
+                    WaveEqualizer.attachAudioSession(audioSessionId)
+                }
+            }
         })
     }
 
@@ -362,6 +371,7 @@ class PlaybackManager private constructor(private val context: Context) {
             standbyPlayerInstance.volume = 0f
 
             setupPlayerListener(primaryPlayerInstance)
+            WaveEqualizer.attachAudioSession(primaryPlayerInstance.audioSessionId)
             onPlayerSwapped?.invoke(primaryPlayerInstance)
 
             _state.update {
@@ -727,6 +737,7 @@ class PlaybackManager private constructor(private val context: Context) {
         stopProgressTracker()
         resolveJob?.cancel()
         crossfadeJob?.cancel()
+        WaveEqualizer.release()
         primaryPlayerInstance.release()
         standbyPlayerInstance.release()
     }
