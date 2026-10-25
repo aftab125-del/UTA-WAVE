@@ -69,7 +69,9 @@ fun ArtworkThumbnailView(
     onTogglePlayPause: () -> Unit,
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 26.dp,
-    contentScale: ContentScale = ContentScale.Crop
+    contentScale: ContentScale = ContentScale.Crop,
+    onSeekBackward: (() -> Unit)? = null,
+    onSeekForward: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
@@ -127,11 +129,19 @@ fun ArtworkThumbnailView(
                                 (layoutDirection == LayoutDirection.Rtl && offset.x < leftBound)
 
                         if (isLeft) {
-                            onSeekDelta(-10000L)
-                            seekFeedbackDirection = "-10s"
+                            if (onSeekBackward != null) {
+                                onSeekBackward()
+                            } else {
+                                onSeekDelta(-10000L)
+                                seekFeedbackDirection = "-10s"
+                            }
                         } else if (isRight) {
-                            onSeekDelta(+10000L)
-                            seekFeedbackDirection = "+10s"
+                            if (onSeekForward != null) {
+                                onSeekForward()
+                            } else {
+                                onSeekDelta(+10000L)
+                                seekFeedbackDirection = "+10s"
+                            }
                         } else {
                             onTogglePlayPause()
                         }
