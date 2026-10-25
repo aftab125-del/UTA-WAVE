@@ -172,6 +172,7 @@ fun FullscreenPlayerSheet(
     val isAppleMusic = settings.appleMusicPlayerEnabled || settings.playerStyle == "APPLE_MUSIC"
 
     val syncManager = remember { WaveSyncManager.getInstance(context) }
+    val playbackManager = remember { com.uta.wave.player.PlaybackManager.getInstance(context) }
     val roomState by syncManager.roomState.collectAsState()
 
     // Dialog & Sheet States
@@ -1478,8 +1479,26 @@ fun FullscreenPlayerSheet(
             queue = playerState.queue,
             currentIndex = playerState.queueIndex,
             isPlaying = playerState.isPlaying,
+            queueTitle = playerState.queueTitle ?: queueTitle,
+            isRadioActive = playerState.isRadioActive,
+            currentTrack = playerState.currentTrack,
             onSelectTrack = { selected ->
                 onSelectQueueTrack?.invoke(selected)
+            },
+            onReorderQueue = { from, to ->
+                playbackManager.reorderQueue(from, to)
+            },
+            onRemoveFromQueue = { id ->
+                playbackManager.removeFromQueue(id)
+            },
+            onInsertTrackNext = { trackItem ->
+                playbackManager.addToQueue(trackItem, insertNext = true)
+            },
+            onAddToQueue = { trackItem ->
+                playbackManager.addToQueue(trackItem, insertNext = false)
+            },
+            onStartRadio = {
+                playbackManager.startRadioFromCurrentTrack()
             },
             onClearQueue = {
                 onClearQueue?.invoke()
