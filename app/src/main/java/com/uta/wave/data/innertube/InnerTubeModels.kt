@@ -81,3 +81,11 @@ data class UserAccountInfo(
     val avatarUrl: String?,
     val handle: String? = null
 )
+
+data class NextResult(
+    val title: String? = null,
+    val items: List<TrackItem> = emptyList(),
+    val currentIndex: Int? = null,
+    val continuation: String? = null,
+    val playlistId: String? = null
+)

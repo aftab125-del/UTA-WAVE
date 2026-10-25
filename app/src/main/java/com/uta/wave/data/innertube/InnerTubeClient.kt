@@ -808,9 +808,201 @@ class InnerTubeClient(
         )
     }
 
+    fun parsePlaylistPanelVideoRenderer(renderer: JSONObject): TrackItem? {
+        val videoId = renderer.optString("videoId")
+        if (videoId.length != 11) return null
+
+        val title = renderer.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: renderer.optJSONObject("title")?.optString("simpleText")
+            ?: "Unknown Title"
+
+        val bylineRuns = renderer.optJSONObject("longBylineText")?.optJSONArray("runs")
+            ?: renderer.optJSONObject("shortBylineText")?.optJSONArray("runs")
+
+        var artist = "YouTube"
+        var artistId: String? = null
+        var album: String? = null
+        var albumId: String? = null
+
+        if (bylineRuns != null && bylineRuns.length() > 0) {
+            val firstRun = bylineRuns.optJSONObject(0)
+            artist = firstRun?.optString("text") ?: "YouTube"
+            artistId = firstRun?.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")
+                ?.optString("browseId")
+
+            for (i in 1 until bylineRuns.length()) {
+                val runObj = bylineRuns.optJSONObject(i) ?: continue
+                val text = runObj.optString("text", "")
+                val bId = runObj.optJSONObject("navigationEndpoint")
+                    ?.optJSONObject("browseEndpoint")
+                    ?.optString("browseId")
+                if (!bId.isNullOrBlank() && (bId.startsWith("MPREb_") || bId.startsWith("FEmusic_library_album"))) {
+                    album = text
+                    albumId = bId
+                    break
+                }
+            }
+        }
+
+        val durationText = renderer.optJSONObject("lengthText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: renderer.optJSONObject("lengthText")?.optString("simpleText") ?: ""
+        val duration = parseDuration(durationText)
+
+        val thumbs = renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        val thumbnail = if (thumbs != null && thumbs.length() > 0) {
+            val url = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url") ?: ""
+            upgradeThumbnail(url)
+        } else {
+            "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+        }
+
+        return TrackItem(
+            id = "youtube:$videoId",
+            videoId = videoId,
+            title = title,
+            artist = artist,
+            album = album,
+            artworkUrl = thumbnail,
+            durationSeconds = duration,
+            isSynced = true,
+            artistId = artistId,
+            albumId = albumId
+        )
+    }
+
+    suspend fun getNext(
+        videoId: String? = null,
+        playlistId: String? = null,
+        continuation: String? = null
+    ): NextResult? = withContext(Dispatchers.IO) {
+        refreshVisitorDataIfNeeded()
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                if (!continuation.isNullOrBlank()) {
+                    put("continuation", continuation)
+                } else {
+                    if (!videoId.isNullOrBlank()) {
+                        put("videoId", videoId)
+                    }
+                    val targetPlaylistId = when {
+                        !playlistId.isNullOrBlank() -> playlistId
+                        !videoId.isNullOrBlank() -> "RDAMVM$videoId"
+                        else -> null
+                    }
+                    if (targetPlaylistId != null) {
+                        put("playlistId", targetPlaylistId)
+                    }
+                    put("isAudioOnly", true)
+                }
+            }
+
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/next")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    AppLogger.w("InnerTube /next failed with HTTP ${response.code}")
+                    return@withContext null
+                }
+                val bodyStr = response.body?.string() ?: return@withContext null
+                val root = JSONObject(bodyStr)
+
+                val tracks = mutableListOf<TrackItem>()
+                var nextContinuation: String? = null
+                var title: String? = null
+
+                if (!continuation.isNullOrBlank()) {
+                    val contContents = root.optJSONObject("continuationContents")
+                        ?.optJSONObject("playlistPanelContinuation")
+                    if (contContents != null) {
+                        val contents = contContents.optJSONArray("contents")
+                        if (contents != null) {
+                            for (i in 0 until contents.length()) {
+                                val item = contents.optJSONObject(i)?.optJSONObject("playlistPanelVideoRenderer")
+                                if (item != null) {
+                                    parsePlaylistPanelVideoRenderer(item)?.let { tracks.add(it) }
+                                }
+                            }
+                        }
+                        val contArray = contContents.optJSONArray("continuations")
+                        if (contArray != null && contArray.length() > 0) {
+                            val contObj = contArray.optJSONObject(0)
+                            nextContinuation = contObj?.optJSONObject("nextRadioContinuationData")?.optString("continuation")
+                                ?: contObj?.optJSONObject("nextContinuationData")?.optString("continuation")
+                        }
+                    }
+                } else {
+                    val tabs = root.optJSONObject("contents")
+                        ?.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
+                        ?.optJSONObject("tabbedRenderer")
+                        ?.optJSONObject("watchNextTabbedResultsRenderer")
+                        ?.optJSONArray("tabs")
+
+                    val playlistPanel = tabs?.optJSONObject(0)
+                        ?.optJSONObject("tabRenderer")
+                        ?.optJSONObject("content")
+                        ?.optJSONObject("musicQueueRenderer")
+                        ?.optJSONObject("content")
+                        ?.optJSONObject("playlistPanelRenderer")
+
+                    if (playlistPanel != null) {
+                        title = playlistPanel.optString("title")
+                        val contents = playlistPanel.optJSONArray("contents")
+                        if (contents != null) {
+                            for (i in 0 until contents.length()) {
+                                val item = contents.optJSONObject(i)?.optJSONObject("playlistPanelVideoRenderer")
+                                if (item != null) {
+                                    parsePlaylistPanelVideoRenderer(item)?.let { tracks.add(it) }
+                                }
+                            }
+                        }
+
+                        val contArray = playlistPanel.optJSONArray("continuations")
+                        if (contArray != null && contArray.length() > 0) {
+                            val contObj = contArray.optJSONObject(0)
+                            nextContinuation = contObj?.optJSONObject("nextRadioContinuationData")?.optString("continuation")
+                                ?: contObj?.optJSONObject("nextContinuationData")?.optString("continuation")
+                        }
+                    }
+
+                    if (tracks.isEmpty()) {
+                        parseTracksRecursively(root, tracks)
+                    }
+                }
+
+                AppLogger.i("InnerTube /next resolved ${tracks.size} tracks, nextContinuation=${nextContinuation != null}")
+                NextResult(
+                    title = title,
+                    items = tracks,
+                    continuation = nextContinuation,
+                    playlistId = playlistId ?: videoId?.let { "RDAMVM$it" }
+                )
+            }
+        } catch (e: Exception) {
+            AppLogger.e("InnerTube getNext failed: ${e.message}", e)
+            null
+        }
+    }
+
     private fun parseTracksRecursively(json: Any?, outTracks: MutableList<TrackItem>) {
         when (json) {
             is JSONObject -> {
+                val panelRenderer = json.optJSONObject("playlistPanelVideoRenderer")
+                if (panelRenderer != null) {
+                    val track = parsePlaylistPanelVideoRenderer(panelRenderer)
+                    if (track != null && outTracks.none { it.videoId == track.videoId }) {
+                        outTracks.add(track)
+                    }
+                }
                 val musicRenderer = json.optJSONObject("musicResponsiveListItemRenderer")
                 if (musicRenderer != null) {
                     val track = parseTrackRenderer(musicRenderer)

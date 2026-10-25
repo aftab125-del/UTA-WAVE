@@ -19,5 +19,7 @@ data class WavePlayerState(
     val queueIndex: Int = 0,
     val isShuffle: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
+    val queueTitle: String? = null,
+    val isRadioActive: Boolean = false,
     val error: String? = null
 )
