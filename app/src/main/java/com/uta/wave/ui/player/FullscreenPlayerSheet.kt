@@ -432,6 +432,7 @@ fun FullscreenPlayerSheet(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .then(if (!showLyrics) swipeCollapseModifier else Modifier)
             .nestedScroll(sheetNestedScrollConnection)
             .graphicsLayer {
                 translationY = currentDrag
@@ -471,7 +472,8 @@ fun FullscreenPlayerSheet(
                             enabled = settings.enableSwipeToChangeSong,
                             onPrevious = onPrevious,
                             onNext = onNext
-                        ),
+                        )
+                        .then(swipeCollapseModifier),
                     contentAlignment = Alignment.Center
                 ) {
                     ArtworkThumbnailView(
@@ -541,7 +543,8 @@ fun FullscreenPlayerSheet(
                             enabled = settings.enableSwipeToChangeSong,
                             onPrevious = onPrevious,
                             onNext = onNext
-                        ),
+                        )
+                        .then(swipeCollapseModifier),
                     contentAlignment = Alignment.Center
                 ) {
                     AsyncImage(
@@ -643,6 +646,7 @@ fun FullscreenPlayerSheet(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .then(swipeCollapseModifier)
                     .padding(top = 16.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
@@ -1078,6 +1082,7 @@ fun FullscreenPlayerSheet(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .then(swipeCollapseModifier)
                     .padding(horizontal = 22.dp, vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
@@ -1158,7 +1163,10 @@ fun FullscreenPlayerSheet(
 
                 // Center Content: Artwork + Single Line Preview
                 Column(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .then(swipeCollapseModifier),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {

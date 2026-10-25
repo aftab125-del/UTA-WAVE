@@ -367,8 +367,11 @@ fun SongMenuBottomSheet(
             },
             onCreatePlaylist = { playlistName ->
                 scope.launch {
-                    val newId = localDatabase.createPlaylist(playlistName)
+                    val newId = com.uta.wave.data.account.AccountSyncManager.getInstance(context).createPlaylist(playlistName)
                     localDatabase.addTrackToPlaylist(newId, track)
+                    if (newId.startsWith("PL") || newId.length >= 24) {
+                        com.uta.wave.data.innertube.InnerTubeClient().addTrackToRemotePlaylist(newId, track.videoId)
+                    }
                     Toast.makeText(context, "Created and added to $playlistName", Toast.LENGTH_SHORT).show()
                 }
                 showPlaylistPicker = false

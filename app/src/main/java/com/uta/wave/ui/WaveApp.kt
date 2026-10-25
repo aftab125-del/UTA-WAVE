@@ -119,6 +119,9 @@ fun WaveApp() {
         if (profile.isLoggedIn) {
             com.uta.wave.data.innertube.InnerTubeClient.authCookie = profile.cookie
             com.uta.wave.data.innertube.InnerTubeClient.authSapisid = profile.sapisid
+            if (profile.autoSyncEnabled) {
+                com.uta.wave.data.account.AccountSyncManager.getInstance(context).triggerSync()
+            }
         }
     }
 
@@ -258,7 +261,9 @@ fun WaveApp() {
                         scope.launch { localDatabase.toggleFavorite(track) }
                     },
                     onCreatePlaylist = { name ->
-                        scope.launch { localDatabase.createPlaylist(name) }
+                        scope.launch {
+                            com.uta.wave.data.account.AccountSyncManager.getInstance(context).createPlaylist(name)
+                        }
                     },
                     onExportJson = {
                         scope.launch {
@@ -363,10 +368,17 @@ fun WaveApp() {
             },
             playlists = playlists,
             onCreatePlaylist = { name ->
-                scope.launch { localDatabase.createPlaylist(name) }
+                scope.launch {
+                    com.uta.wave.data.account.AccountSyncManager.getInstance(context).createPlaylist(name)
+                }
             },
             onAddToPlaylist = { playlistId, track ->
-                scope.launch { localDatabase.addTrackToPlaylist(playlistId, track) }
+                scope.launch {
+                    localDatabase.addTrackToPlaylist(playlistId, track)
+                    if (playlistId.startsWith("PL") || playlistId.length >= 24) {
+                        com.uta.wave.data.innertube.InnerTubeClient().addTrackToRemotePlaylist(playlistId, track.videoId)
+                    }
+                }
             },
             onLaunchAmbientMode = {
                 isPlayerExpanded = false

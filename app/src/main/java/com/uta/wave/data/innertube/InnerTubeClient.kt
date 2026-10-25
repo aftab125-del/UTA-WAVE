@@ -209,6 +209,7 @@ class InnerTubeClient(
                 .apply {
                     commonHeaders.forEach { (k, v) -> addHeader(k, v) }
                     addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
                 }
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
@@ -270,6 +271,7 @@ class InnerTubeClient(
                 .apply {
                     commonHeaders.forEach { (k, v) -> addHeader(k, v) }
                     addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
                 }
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
@@ -1044,6 +1046,7 @@ class InnerTubeClient(
                 .apply {
                     commonHeaders.forEach { (k, v) -> addHeader(k, v) }
                     addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
                 }
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
@@ -1075,6 +1078,7 @@ class InnerTubeClient(
                 .apply {
                     commonHeaders.forEach { (k, v) -> addHeader(k, v) }
                     addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
                 }
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
@@ -1599,6 +1603,180 @@ class InnerTubeClient(
             AppLogger.e("fetchAccountProfile network error", e)
         }
         null
+    }
+
+    /**
+     * Fetches all playlists owned or saved by the authenticated Google account on YouTube Music.
+     */
+    suspend fun fetchUserPlaylists(): List<UserPlaylistItem> = withContext(Dispatchers.IO) {
+        refreshVisitorDataIfNeeded()
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("browseId", "FEmusic_liked_playlists")
+            }
+
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/browse")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    AppLogger.w("fetchUserPlaylists failed: HTTP ${response.code}")
+                    return@withContext emptyList()
+                }
+                val body = response.body?.string() ?: return@withContext emptyList()
+                val root = JSONObject(body)
+                val playlists = mutableListOf<UserPlaylistItem>()
+                parseUserPlaylistsRecursively(root, playlists)
+                AppLogger.i("fetchUserPlaylists: Discovered ${playlists.size} playlists from YouTube Music")
+                playlists
+            }
+        } catch (e: Exception) {
+            AppLogger.e("fetchUserPlaylists error", e)
+            emptyList()
+        }
+    }
+
+    private fun parseUserPlaylistsRecursively(json: Any?, outPlaylists: MutableList<UserPlaylistItem>) {
+        when (json) {
+            is JSONObject -> {
+                if (json.has("musicTwoRowItemRenderer")) {
+                    val renderer = json.optJSONObject("musicTwoRowItemRenderer")
+                    if (renderer != null) {
+                        val title = renderer.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text") ?: ""
+                        val navEndpoint = renderer.optJSONObject("navigationEndpoint")
+                        val browseId = navEndpoint?.optJSONObject("browseEndpoint")?.optString("browseId")
+                            ?: navEndpoint?.optJSONObject("watchPlaylistEndpoint")?.optString("playlistId")
+
+                        if (!browseId.isNullOrBlank() && title.isNotBlank() && browseId != "SE" && browseId != "LM") {
+                            val cleanId = extractYouTubePlaylistId(browseId)
+                            val thumbUrl = renderer.optJSONObject("thumbnailRenderer")
+                                ?.optJSONObject("musicThumbnailRenderer")
+                                ?.optJSONObject("thumbnail")
+                                ?.optJSONArray("thumbnails")
+                                ?.let { thumbs ->
+                                    thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+                                }
+
+                            val subtitle = renderer.optJSONObject("subtitle")?.optJSONArray("runs")?.let { runs ->
+                                (0 until runs.length()).joinToString("") { runs.optJSONObject(it)?.optString("text") ?: "" }
+                            }
+                            val count = subtitle?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() } ?: 0
+
+                            if (outPlaylists.none { it.id == cleanId }) {
+                                outPlaylists.add(
+                                    UserPlaylistItem(
+                                        id = cleanId,
+                                        title = title,
+                                        description = subtitle,
+                                        trackCount = count,
+                                        artworkUrl = thumbUrl
+                                    )
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    val keys = json.keys()
+                    while (keys.hasNext()) {
+                        parseUserPlaylistsRecursively(json.opt(keys.next()), outPlaylists)
+                    }
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until json.length()) {
+                    parseUserPlaylistsRecursively(json.opt(i), outPlaylists)
+                }
+            }
+        }
+    }
+
+    /**
+     * Creates a new playlist on the authenticated user's YouTube Music / Google account.
+     * Returns the created remote playlistId (e.g. "PL...").
+     */
+    suspend fun createRemotePlaylist(title: String, privacyStatus: String = "PRIVATE"): String? = withContext(Dispatchers.IO) {
+        refreshVisitorDataIfNeeded()
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("title", title.trim())
+                put("privacyStatus", privacyStatus)
+            }
+
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/playlist/create")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: return@withContext null
+                    val root = JSONObject(body)
+                    val playlistId = root.optString("playlistId").takeIf { it.isNotBlank() }
+                    AppLogger.i("createRemotePlaylist succeeded: '$title' -> ID: $playlistId")
+                    playlistId
+                } else {
+                    AppLogger.w("createRemotePlaylist failed: HTTP ${response.code}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.e("createRemotePlaylist network error", e)
+            null
+        }
+    }
+
+    /**
+     * Adds a track video ID to an existing YouTube Music playlist on the user's account.
+     */
+    suspend fun addTrackToRemotePlaylist(playlistId: String, videoId: String): Boolean = withContext(Dispatchers.IO) {
+        refreshVisitorDataIfNeeded()
+        try {
+            val cleanPlaylistId = extractYouTubePlaylistId(playlistId)
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("playlistId", cleanPlaylistId)
+                val actions = JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("action", "ACTION_ADD_VIDEO")
+                        put("addedVideoId", videoId)
+                    })
+                }
+                put("actions", actions)
+            }
+
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/browse/edit_playlist")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val ok = response.isSuccessful
+                AppLogger.i("addTrackToRemotePlaylist: $videoId -> $cleanPlaylistId (success=$ok)")
+                ok
+            }
+        } catch (e: Exception) {
+            AppLogger.e("addTrackToRemotePlaylist network error", e)
+            false
+        }
     }
 
     private fun findActiveAccountHeader(obj: JSONObject): JSONObject? {

@@ -171,7 +171,9 @@ fun GoogleSignInDialog(
                                                 userEmail = "Connected via YouTube Music",
                                                 avatarUrl = avatar
                                             )
-                                            Toast.makeText(ctx, "Signed in as $name!", Toast.LENGTH_SHORT).show()
+                                            // Automatically sync user's playlists and liked music from Google account
+                                            com.uta.wave.data.account.AccountSyncManager.getInstance(ctx).triggerSync()
+                                            Toast.makeText(ctx, "Signed in as $name! Syncing library...", Toast.LENGTH_SHORT).show()
                                             onSuccess()
                                         }
                                     }

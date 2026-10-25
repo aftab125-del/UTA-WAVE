@@ -484,8 +484,28 @@ class LocalDatabase private constructor(context: Context) :
         }
     }
 
-    suspend fun createPlaylist(name: String, description: String? = null): String = withContext(Dispatchers.IO) {
-        val id = UUID.randomUUID().toString()
+    suspend fun addFavorites(tracks: List<TrackItem>) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val now = System.currentTimeMillis()
+            tracks.forEachIndexed { idx, track ->
+                insertTrack(track)
+                val values = ContentValues().apply {
+                    put("track_id", track.id)
+                    put("liked_at", now - (idx * 1000L))
+                }
+                db.insertWithOnConflict("favorites", null, values, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        _favoritesFlow.value = queryFavoritesSync()
+    }
+
+    suspend fun createPlaylist(name: String, description: String? = null, customId: String? = null): String = withContext(Dispatchers.IO) {
+        val id = customId ?: UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val db = writableDatabase
         val values = ContentValues().apply {
@@ -495,7 +515,7 @@ class LocalDatabase private constructor(context: Context) :
             put("created_at", now)
             put("updated_at", now)
         }
-        db.insert("playlists", null, values)
+        db.insertWithOnConflict("playlists", null, values, SQLiteDatabase.CONFLICT_REPLACE)
         _playlistsFlow.value = queryPlaylistsSync()
         id
     }
