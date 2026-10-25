@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
@@ -196,6 +197,28 @@ fun FullscreenPlayerSheet(
     var showAudioDevices by remember { mutableStateOf(false) }
     var showPlaybackLogs by remember { mutableStateOf(false) }
     var showListenTogether by remember { mutableStateOf(false) }
+
+    // Modal Sheets and Dialogs Back Handlers
+    BackHandler(enabled = showLyrics) { showLyrics = false }
+    BackHandler(enabled = showQueue) { showQueue = false }
+    BackHandler(enabled = showEqualizer) { showEqualizer = false }
+    BackHandler(enabled = showMoreOptions) { showMoreOptions = false }
+    BackHandler(enabled = showAudioDevices) { showAudioDevices = false }
+    BackHandler(enabled = showSleepTimer) { showSleepTimer = false }
+    BackHandler(enabled = showSongDetails) { showSongDetails = false }
+    BackHandler(enabled = showPlaylistPicker) { showPlaylistPicker = false }
+    BackHandler(enabled = showTrimRingtone) { showTrimRingtone = false }
+    BackHandler(enabled = showDownloadQuality) { showDownloadQuality = false }
+    BackHandler(enabled = showPlaybackLogs) { showPlaybackLogs = false }
+    BackHandler(enabled = showListenTogether) { showListenTogether = false }
+
+    val hasAnyPlayerSheetOpen = showLyrics || showQueue || showEqualizer || showMoreOptions ||
+            showAudioDevices || showSleepTimer || showSongDetails || showPlaylistPicker ||
+            showTrimRingtone || showDownloadQuality || showPlaybackLogs || showListenTogether
+
+    BackHandler(enabled = !hasAnyPlayerSheetOpen) {
+        onCollapse()
+    }
 
     // Sleep Timer Job
     var sleepTimerJob by remember { mutableStateOf<Job?>(null) }

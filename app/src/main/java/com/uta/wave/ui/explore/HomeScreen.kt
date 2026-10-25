@@ -1,6 +1,7 @@
 package com.uta.wave.ui.explore
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -122,6 +123,14 @@ fun HomeScreen(
     var selectedMood by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var selectedTrackForMenu by remember { mutableStateOf<TrackItem?>(null) }
+
+    BackHandler(enabled = selectedTrackForMenu != null) {
+        selectedTrackForMenu = null
+    }
+    BackHandler(enabled = selectedMood != null) {
+        selectedMood = null
+        moodTracks = emptyList()
+    }
 
     val moods = listOf("Romance", "Relax", "Feel good", "Energise", "Workout", "Commute", "Party", "Focus", "Sad", "Sleep")
 

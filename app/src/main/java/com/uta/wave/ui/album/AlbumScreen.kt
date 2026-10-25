@@ -1,5 +1,6 @@
 package com.uta.wave.ui.album
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +77,10 @@ fun AlbumScreen(
     var albumPage by remember { mutableStateOf<AlbumPage?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    BackHandler {
+        onBack()
+    }
 
     LaunchedEffect(albumIdOrName) {
         isLoading = true

@@ -3,6 +3,7 @@ package com.uta.wave.ui.library
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -77,6 +78,10 @@ fun SpotifyImportScreen(
     }
     var isConnected by remember {
         mutableStateOf(prefs.getBoolean("is_connected", true))
+    }
+
+    BackHandler {
+        onNavigateBack()
     }
 
     var showAccountDialog by remember { mutableStateOf(false) }

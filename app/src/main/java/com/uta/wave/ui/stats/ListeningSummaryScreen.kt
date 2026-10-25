@@ -1,5 +1,6 @@
 package com.uta.wave.ui.stats
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -78,6 +79,10 @@ fun ListeningSummaryScreen(
     val localDatabase = remember { LocalDatabase.getInstance(context) }
     val summaryState: WeeklyListeningSummary? by localDatabase.weeklySummaryFlow.collectAsState()
     val summary = summaryState ?: remember { localDatabase.queryWeeklyListeningSummarySync() }
+
+    BackHandler {
+        onBack()
+    }
 
     var isBreakdownEnabled by remember { mutableStateOf(true) }
 

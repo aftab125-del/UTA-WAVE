@@ -3,6 +3,7 @@ package com.uta.wave.ui.recognizer
 import android.Manifest
 import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -116,6 +117,13 @@ fun RecognizeMusicScreen(
     val recognizedHistory by localDatabase.recognizedFlow.collectAsState(initial = emptyList())
 
     var showHistorySheet by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showHistorySheet) {
+        showHistorySheet = false
+    }
+    BackHandler(enabled = !showHistorySheet) {
+        onNavigateBack()
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()

@@ -1,6 +1,7 @@
 package com.uta.wave.ui.settings.font
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -88,6 +89,10 @@ fun FontSelectionScreen(
 
     val activeFontFamily = remember(currentFontKey, customPath) {
         resolveFontFamily(currentFontKey, customPath)
+    }
+
+    BackHandler {
+        onBack()
     }
 
     // Custom Font File Picker Launcher

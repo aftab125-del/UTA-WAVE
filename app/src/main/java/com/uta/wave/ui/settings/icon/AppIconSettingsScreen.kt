@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -89,6 +90,10 @@ fun AppIconSettingsScreen(
     var appLabel by remember { mutableStateOf(settings.customIconLabel) }
     var selectedPresetId by remember { mutableStateOf(settings.selectedIconPreset) }
     var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    BackHandler {
+        onBack()
+    }
 
     // Update live preview bitmap whenever image, shape, or preset changes
     LaunchedEffect(customImageUri, selectedShape, selectedPresetId) {

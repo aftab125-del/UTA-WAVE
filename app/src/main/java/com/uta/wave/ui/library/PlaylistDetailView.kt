@@ -1,6 +1,7 @@
 package com.uta.wave.ui.library
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -149,6 +150,30 @@ fun PlaylistDetailView(
 
     LaunchedEffect(playlist.id) {
         refreshTracks()
+    }
+
+    // Modal & View State Back Handlers
+    BackHandler(enabled = selectedTrackMenu != null) {
+        selectedTrackMenu = null
+    }
+    BackHandler(enabled = showSortDropdown) {
+        showSortDropdown = false
+    }
+    BackHandler(enabled = showEditDialog) {
+        showEditDialog = false
+    }
+    BackHandler(enabled = showDeleteConfirmDialog) {
+        showDeleteConfirmDialog = false
+    }
+    BackHandler(enabled = isSearchActive) {
+        isSearchActive = false
+        searchQuery = ""
+    }
+    BackHandler(enabled = isReorderMode) {
+        isReorderMode = false
+    }
+    BackHandler(enabled = !isSearchActive && !isReorderMode && !showEditDialog && !showDeleteConfirmDialog && !showSortDropdown && selectedTrackMenu == null) {
+        onNavigateBack()
     }
 
     val filteredTracks = remember(tracks, searchQuery, sortOrder) {
