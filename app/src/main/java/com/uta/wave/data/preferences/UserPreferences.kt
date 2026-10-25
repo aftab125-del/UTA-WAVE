@@ -54,7 +54,12 @@ data class AppSettings(
     val crossfadeSeconds: Int = 0,                 // 0, 2, 4, 6, 8, 12
     val skipSilence: Boolean = false,
     val normalizeVolume: Boolean = false,
-    val equalizerPreset: String = "FLAT",          // FLAT, BASS_BOOST, VOCAL, POP, ROCK, ACOUSTIC
+    val equalizerEnabled: Boolean = false,
+    val equalizerPreset: String = "FLAT",          // FLAT, BASS_BOOST, VOCAL, POP, ROCK, ACOUSTIC, etc.
+    val equalizerBassBoost: Int = 0,               // 0 to 1000
+    val equalizerVirtualizer: Int = 0,             // 0 to 1000
+    val equalizerBands: String = "0,0,0,0,0,0,0,0,0,0", // 10 band gains in dB
+    val equalizerMode: Int = 0,                    // 0 = Simple (3-band), 1 = Advanced (10-band)
     val stopOnTaskRemoved: Boolean = true,
 
     // EchoMusic Player and Audio Feature Suite
@@ -232,7 +237,12 @@ class UserPreferences private constructor(context: Context) {
             crossfadeSeconds = prefs.getInt("crossfade_seconds", 0),
             skipSilence = prefs.getBoolean("skip_silence", false),
             normalizeVolume = prefs.getBoolean("normalize_volume", false),
+            equalizerEnabled = prefs.getBoolean("equalizer_enabled", false),
             equalizerPreset = prefs.getString("equalizer_preset", "FLAT") ?: "FLAT",
+            equalizerBassBoost = prefs.getInt("equalizer_bass_boost", 0),
+            equalizerVirtualizer = prefs.getInt("equalizer_virtualizer", 0),
+            equalizerBands = prefs.getString("equalizer_bands", "0,0,0,0,0,0,0,0,0,0") ?: "0,0,0,0,0,0,0,0,0,0",
+            equalizerMode = prefs.getInt("equalizer_mode", 0),
             stopOnTaskRemoved = prefs.getBoolean("stop_on_task_removed", true),
 
             // EchoMusic Player and Audio Preferences Loading
@@ -592,9 +602,34 @@ class UserPreferences private constructor(context: Context) {
         _settingsFlow.update { it.copy(normalizeVolume = enabled) }
     }
 
+    fun updateEqualizerEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("equalizer_enabled", enabled).apply()
+        _settingsFlow.update { it.copy(equalizerEnabled = enabled) }
+    }
+
     fun updateEqualizerPreset(preset: String) {
         prefs.edit().putString("equalizer_preset", preset).apply()
         _settingsFlow.update { it.copy(equalizerPreset = preset) }
+    }
+
+    fun updateEqualizerBassBoost(boost: Int) {
+        prefs.edit().putInt("equalizer_bass_boost", boost).apply()
+        _settingsFlow.update { it.copy(equalizerBassBoost = boost) }
+    }
+
+    fun updateEqualizerVirtualizer(virtualizer: Int) {
+        prefs.edit().putInt("equalizer_virtualizer", virtualizer).apply()
+        _settingsFlow.update { it.copy(equalizerVirtualizer = virtualizer) }
+    }
+
+    fun updateEqualizerBands(bands: String) {
+        prefs.edit().putString("equalizer_bands", bands).apply()
+        _settingsFlow.update { it.copy(equalizerBands = bands) }
+    }
+
+    fun updateEqualizerMode(mode: Int) {
+        prefs.edit().putInt("equalizer_mode", mode).apply()
+        _settingsFlow.update { it.copy(equalizerMode = mode) }
     }
 
     fun updateStopOnTaskRemoved(enabled: Boolean) {

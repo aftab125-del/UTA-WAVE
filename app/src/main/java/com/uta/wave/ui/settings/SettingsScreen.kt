@@ -46,6 +46,10 @@ import com.uta.wave.ui.settings.glass.GlassEffectSettingsScreen
 import com.uta.wave.ui.settings.icon.AppIconSettingsScreen
 import com.uta.wave.ui.settings.theme.ThemeScreen
 import com.uta.wave.ui.theme.*
+import com.uta.wave.ui.components.AudioDeviceBottomSheet
+import com.uta.wave.ui.components.EqualizerSheet
+import com.uta.wave.ui.components.PlaybackLogsDialog
+import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.components.PlayerSliderStyleDialog
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Equalizer
@@ -2399,6 +2403,19 @@ private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSett
     var showLoudnessPresetDialog by remember { mutableStateOf(false) }
     var showPreloadLimitDialog by remember { mutableStateOf(false) }
     var showEqualizerPresetDialog by remember { mutableStateOf(false) }
+    var showEqualizerSheet by remember { mutableStateOf(false) }
+    var showAudioDeviceSheet by remember { mutableStateOf(false) }
+    var showPlaybackLogsSheet by remember { mutableStateOf(false) }
+
+    if (showEqualizerSheet) {
+        EqualizerSheet(onDismiss = { showEqualizerSheet = false })
+    }
+    if (showAudioDeviceSheet) {
+        AudioDeviceBottomSheet(onDismiss = { showAudioDeviceSheet = false })
+    }
+    if (showPlaybackLogsSheet) {
+        PlaybackLogsDialog(playerState = WavePlayerState(), onDismiss = { showPlaybackLogsSheet = false })
+    }
 
     // 1. Wi-Fi Audio Quality Dialog
     if (showAudioQualityWifiDialog) {
@@ -3252,7 +3269,7 @@ private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSett
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { showEqualizerPresetDialog = true }
+                .clickable { showEqualizerSheet = true }
                 .padding(horizontal = 16.dp, vertical = 13.dp)
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -3410,6 +3427,42 @@ private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSett
             checked = settings.enableExportAsMp3,
             onCheckedChange = { prefs.updateEnableExportAsMp3(it) }
         )
+        SettingsItemDivider()
+
+        // Audio Output Routing Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showAudioDeviceSheet = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Audio Output Routing", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text("Bluetooth, wired headphones, phone speaker & volume", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = Color.White.copy(alpha = 0.55f))
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
+        SettingsItemDivider()
+
+        // Playback Logs HUD Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showPlaybackLogsSheet = true }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Playback Logs & Telemetry HUD", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text("Real-time stream events, decoders, buffer levels & errors", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = currentAccent)
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
+        }
     }
 }
 

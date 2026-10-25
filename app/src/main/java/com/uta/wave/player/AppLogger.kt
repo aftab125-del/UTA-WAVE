@@ -24,6 +24,12 @@ object AppLogger {
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError = _lastError.asStateFlow()
 
+    fun d(msg: String) {
+        val entry = LogEntry(timeFormat.format(Date()), "DEBUG", msg)
+        Log.d(TAG, msg)
+        appendLog(entry)
+    }
+
     fun i(msg: String) {
         val entry = LogEntry(timeFormat.format(Date()), "INFO", msg)
         Log.i(TAG, msg)
@@ -46,11 +52,16 @@ object AppLogger {
 
     private fun appendLog(entry: LogEntry) {
         _logs.update { current ->
-            (listOf(entry) + current).take(60) // Keep last 60 entries
+            (listOf(entry) + current).take(200) // Keep last 200 entries
         }
     }
 
     fun clearLastError() {
+        _lastError.value = null
+    }
+
+    fun clearLogs() {
+        _logs.value = emptyList()
         _lastError.value = null
     }
 

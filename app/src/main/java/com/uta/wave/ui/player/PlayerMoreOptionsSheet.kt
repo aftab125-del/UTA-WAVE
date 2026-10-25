@@ -23,11 +23,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LibraryAdd
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +83,9 @@ fun PlayerMoreOptionsSheet(
     onShowDetails: () -> Unit,
     onRadio: () -> Unit,
     onAddToPlaylist: () -> Unit,
+    onOpenEqualizer: (() -> Unit)? = null,
+    onOpenAudioDevices: (() -> Unit)? = null,
+    onOpenDiagnostics: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 ) {
@@ -304,6 +310,45 @@ fun PlayerMoreOptionsSheet(
                     onClick = {
                         onDismiss()
                         onShowDetails()
+                    }
+                )
+
+                OptionDivider()
+
+                // 12. Equalizer
+                OptionRow(
+                    icon = Icons.Default.GraphicEq,
+                    title = "Equalizer",
+                    subtitle = "Acoustic DSP presets & 10-band controls",
+                    onClick = {
+                        onDismiss()
+                        onOpenEqualizer?.invoke()
+                    }
+                )
+
+                OptionDivider()
+
+                // 13. Audio Output Devices
+                OptionRow(
+                    icon = Icons.Default.Speaker,
+                    title = "Audio Output Devices",
+                    subtitle = "Route between Bluetooth, headphones & speaker",
+                    onClick = {
+                        onDismiss()
+                        onOpenAudioDevices?.invoke()
+                    }
+                )
+
+                OptionDivider()
+
+                // 14. Playback Logs & Diagnostics
+                OptionRow(
+                    icon = Icons.Default.BugReport,
+                    title = "Playback Logs & HUD",
+                    subtitle = "Real-time engine telemetry & decoder status",
+                    onClick = {
+                        onDismiss()
+                        onOpenDiagnostics?.invoke()
                     }
                 )
             }

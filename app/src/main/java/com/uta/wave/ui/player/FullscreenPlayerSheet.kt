@@ -111,11 +111,14 @@ import com.uta.wave.player.RepeatMode as PlayerRepeatMode
 import com.uta.wave.player.WavePlayerState
 import com.uta.wave.ui.components.AmbientCanvas
 import com.uta.wave.ui.components.ArtworkThumbnailView
+import com.uta.wave.ui.components.AudioDeviceBottomSheet
 import com.uta.wave.ui.components.CanvasArtworkPlayer
 import com.uta.wave.ui.components.DownloadQualityBottomSheet
+import com.uta.wave.ui.components.EqualizerSheet
 import com.uta.wave.ui.components.GlassComponent
 import com.uta.wave.ui.components.LocalGlassEffectConfig
 import com.uta.wave.ui.components.PLAYER_BLUR_MULTIPLIER
+import com.uta.wave.ui.components.PlaybackLogsDialog
 import com.uta.wave.ui.components.PlaylistSelectionSheet
 import com.uta.wave.ui.components.ScallopedFlowerShape
 import com.uta.wave.ui.components.SongDetailsDialog
@@ -175,6 +178,9 @@ fun FullscreenPlayerSheet(
     var showPlaylistPicker by remember { mutableStateOf(false) }
     var showTrimRingtone by remember { mutableStateOf(false) }
     var showDownloadQuality by remember { mutableStateOf(false) }
+    var showEqualizer by remember { mutableStateOf(false) }
+    var showAudioDevices by remember { mutableStateOf(false) }
+    var showPlaybackLogs by remember { mutableStateOf(false) }
 
     // Sleep Timer Job
     var sleepTimerJob by remember { mutableStateOf<Job?>(null) }
@@ -562,7 +568,7 @@ fun FullscreenPlayerSheet(
                     )
 
                     IconButton(onClick = {
-                        Toast.makeText(context, "Ready to cast UTA-wave audio", Toast.LENGTH_SHORT).show()
+                        showAudioDevices = true
                     }) {
                         Icon(
                             imageVector = Icons.Default.Cast,
@@ -875,7 +881,7 @@ fun FullscreenPlayerSheet(
                         ) {
                             IconButton(
                                 onClick = {
-                                    Toast.makeText(context, "Audio Output: Phone Speaker / Bluetooth", Toast.LENGTH_SHORT).show()
+                                    showAudioDevices = true
                                 },
                                 modifier = Modifier.size(24.dp)
                             ) {
@@ -969,7 +975,7 @@ fun FullscreenPlayerSheet(
                     }
 
                     IconButton(onClick = {
-                        Toast.makeText(context, "Ready to cast UTA-wave audio", Toast.LENGTH_SHORT).show()
+                        showAudioDevices = true
                     }) {
                         Icon(
                             imageVector = Icons.Default.Cast,
@@ -1392,6 +1398,15 @@ fun FullscreenPlayerSheet(
             },
             onAddToPlaylist = {
                 showPlaylistPicker = true
+            },
+            onOpenEqualizer = {
+                showEqualizer = true
+            },
+            onOpenAudioDevices = {
+                showAudioDevices = true
+            },
+            onOpenDiagnostics = {
+                showPlaybackLogs = true
             }
         )
     }
@@ -1482,6 +1497,28 @@ fun FullscreenPlayerSheet(
                 }
             },
             onDismiss = { showDownloadQuality = false }
+        )
+    }
+
+    // Modal Bottom Sheet: Equalizer
+    if (showEqualizer) {
+        EqualizerSheet(
+            onDismiss = { showEqualizer = false }
+        )
+    }
+
+    // Modal Bottom Sheet: Audio Output Devices
+    if (showAudioDevices) {
+        AudioDeviceBottomSheet(
+            onDismiss = { showAudioDevices = false }
+        )
+    }
+
+    // Modal Bottom Sheet: Playback Logs & Telemetry HUD
+    if (showPlaybackLogs) {
+        PlaybackLogsDialog(
+            playerState = playerState,
+            onDismiss = { showPlaybackLogs = false }
         )
     }
 }
