@@ -70,7 +70,9 @@ import com.uta.wave.ui.theme.ObsidianBackground
 import kotlinx.coroutines.launch
 
 @Composable
-fun WaveApp() {
+fun WaveApp(
+    initialTab: Int = 0
+) {
     val context = LocalContext.current
     val userPrefs = remember { UserPreferences.getInstance(context) }
     val settings by userPrefs.settingsFlow.collectAsState()
@@ -134,8 +136,17 @@ fun WaveApp() {
     val recentHistory by localDatabase.historyFlow.collectAsState(initial = emptyList())
 
     var isSplashActive by remember { mutableStateOf(true) }
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val tabBackStack = remember { mutableStateListOf(0) }
+    var selectedTab by remember { mutableIntStateOf(initialTab) }
+    val tabBackStack = remember { mutableStateListOf(initialTab) }
+
+    LaunchedEffect(initialTab) {
+        if (initialTab != 0) {
+            selectedTab = initialTab
+            if (tabBackStack.isEmpty() || tabBackStack.last() != initialTab) {
+                tabBackStack.add(initialTab)
+            }
+        }
+    }
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
     var isPlayerExpanded by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }

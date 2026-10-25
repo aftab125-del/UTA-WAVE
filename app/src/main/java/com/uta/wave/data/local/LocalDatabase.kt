@@ -406,6 +406,18 @@ class LocalDatabase private constructor(context: Context) :
         refreshAllFlows()
     }
 
+    suspend fun clearRecognizedHistory() = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.delete("recognized", null, null)
+        refreshAllFlows()
+    }
+
+    suspend fun deleteRecognizedTrack(trackId: String) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.delete("recognized", "track_id = ?", arrayOf(trackId))
+        refreshAllFlows()
+    }
+
     private fun queryRecognizedSync(): List<TrackItem> {
         val tracks = mutableListOf<TrackItem>()
         val db = readableDatabase
