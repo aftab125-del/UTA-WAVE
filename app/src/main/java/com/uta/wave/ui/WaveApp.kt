@@ -64,6 +64,7 @@ import com.uta.wave.ui.player.FullscreenPlayerSheet
 import com.uta.wave.ui.recognizer.RecognizeMusicScreen
 import com.uta.wave.ui.search.SearchScreen
 import com.uta.wave.ui.settings.SettingsScreen
+import com.uta.wave.ui.splash.SplashWaterSurface
 import com.uta.wave.ui.stats.ListeningSummaryScreen
 import com.uta.wave.ui.theme.ObsidianBackground
 import kotlinx.coroutines.launch
@@ -132,6 +133,7 @@ fun WaveApp() {
     val playlists by localDatabase.playlistsFlow.collectAsState(initial = emptyList())
     val recentHistory by localDatabase.historyFlow.collectAsState(initial = emptyList())
 
+    var isSplashActive by remember { mutableStateOf(true) }
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabBackStack = remember { mutableStateListOf(0) }
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
@@ -194,7 +196,7 @@ fun WaveApp() {
         }
     }
 
-    val hasTopOverlay = isAmbientModeActive || isPlayerExpanded || isAccountScreenOpen ||
+    val hasTopOverlay = isSplashActive || isAmbientModeActive || isPlayerExpanded || isAccountScreenOpen ||
             isAccountSheetOpen || isListeningSummaryOpen || isSettingsOpen ||
             showDiagnostics || viewingAlbumId != null || viewingArtistId != null
 
@@ -246,6 +248,9 @@ fun WaveApp() {
     }
     BackHandler(enabled = isAmbientModeActive) {
         isAmbientModeActive = false
+    }
+    BackHandler(enabled = isSplashActive) {
+        // Absorb back events during initial 2s splash drop
     }
 
     CompositionLocalProvider(
@@ -575,6 +580,15 @@ fun WaveApp() {
     ) {
         ListeningSummaryScreen(
             onBack = { isListeningSummaryOpen = false }
+        )
+    }
+
+    // Cinematic Liquid Water Splash Opening Screen
+    if (isSplashActive) {
+        SplashWaterSurface(
+            onAnimationComplete = {
+                isSplashActive = false
+            }
         )
     }
     }
