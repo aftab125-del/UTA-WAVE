@@ -89,6 +89,9 @@ class PlaybackManager private constructor(private val context: Context) {
     private val _state = MutableStateFlow(WavePlayerState())
     val state = _state.asStateFlow()
 
+    var waveSyncManager: com.uta.wave.sync.WaveSyncManager? = null
+    var isRemoteSync: Boolean = false
+
     private var progressJob: Job? = null
     private var resolveJob: Job? = null
     private var crossfadeJob: Job? = null
@@ -157,12 +160,14 @@ class PlaybackManager private constructor(private val context: Context) {
             context.registerReceiver(object : BroadcastReceiver() {
                 override fun onReceive(c: Context?, intent: Intent?) {
                     val settings = userPrefs.settingsFlow.value
-                    if (settings.pauseOnMute) {
-                        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                        val currentVolume = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: -1
-                        if (currentVolume == 0 && player.isPlaying) {
-                            player.pause()
-                        }
+                    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    val currentVolume = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: -1
+                    val maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 1
+                    if (currentVolume >= 0 && maxVolume > 0) {
+                        waveSyncManager?.onLocalVolumeChanged(currentVolume.toFloat() / maxVolume.toFloat())
+                    }
+                    if (settings.pauseOnMute && currentVolume == 0 && player.isPlaying) {
+                        player.pause()
                     }
                 }
             }, filter)
@@ -210,6 +215,9 @@ class PlaybackManager private constructor(private val context: Context) {
                     }
                 } else {
                     stopProgressTracker()
+                }
+                if (!isRemoteSync) {
+                    waveSyncManager?.onPlayerIsPlayingChanged(isPlaying, primaryPlayerInstance.currentPosition)
                 }
             }
 
@@ -390,6 +398,12 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun playTrack(track: TrackItem, queue: List<TrackItem> = listOf(track)) {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
         val settings = userPrefs.settingsFlow.value
 
         // Cancel any active crossfade
@@ -470,6 +484,10 @@ class PlaybackManager private constructor(private val context: Context) {
                 primaryPlayerInstance.play()
                 AppLogger.i("▶ ExoPlayer.prepare() and play() called successfully")
 
+                if (!isRemoteSync) {
+                    sync?.onLocalTrackChange(track, processedQueue)
+                }
+
                 // Pre-resolve next track if available
                 if (targetIndex + 1 < processedQueue.size) {
                     launch(Dispatchers.IO) {
@@ -503,10 +521,19 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun togglePlayPause() {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
         if (player.isPlaying) {
             player.pause()
             if (isCrossfading) {
                 standbyPlayerInstance.pause()
+            }
+            if (!isRemoteSync) {
+                sync?.onLocalPause(player.currentPosition)
             }
         } else {
             if (player.playbackState == Player.STATE_IDLE && _state.value.currentTrack != null) {
@@ -516,14 +543,26 @@ class PlaybackManager private constructor(private val context: Context) {
                 if (isCrossfading) {
                     standbyPlayerInstance.play()
                 }
+                if (!isRemoteSync) {
+                    sync?.onLocalPlay(player.currentPosition)
+                }
             }
         }
     }
 
     fun seekTo(positionMs: Long) {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
         player.seekTo(positionMs.coerceAtLeast(0L))
         _state.update { it.copy(positionMs = positionMs) }
         savePersistentQueuePosition(positionMs)
+        if (!isRemoteSync) {
+            sync?.onLocalSeek(positionMs)
+        }
     }
 
     private fun getNextIndex(currentIndex: Int, queueSize: Int, repeatMode: RepeatMode, isShuffle: Boolean): Int? {
@@ -541,6 +580,12 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun next() {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
         val currentState = _state.value
         val queue = currentState.queue
         if (queue.isEmpty()) return
@@ -554,20 +599,233 @@ class PlaybackManager private constructor(private val context: Context) {
         }
 
         playTrack(queue[nextIndex], queue)
+        if (!isRemoteSync) {
+            sync?.onLocalSkipNext()
+        }
     }
 
     fun previous() {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
         val currentState = _state.value
         val queue = currentState.queue
         if (queue.isEmpty()) return
 
         if (player.currentPosition > 3000) {
             player.seekTo(0)
+            if (!isRemoteSync) {
+                sync?.onLocalSeek(0L)
+            }
             return
         }
 
         val prevIndex = if (currentState.queueIndex - 1 >= 0) currentState.queueIndex - 1 else queue.size - 1
         playTrack(queue[prevIndex], queue)
+        if (!isRemoteSync) {
+            sync?.onLocalSkipPrev()
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Remote Sync & Collaborative Playback Methods
+    // -------------------------------------------------------------------------
+
+    fun applyRemotePlay(positionMs: Long) {
+        isRemoteSync = true
+        primaryPlayerInstance.seekTo(positionMs.coerceAtLeast(0L))
+        primaryPlayerInstance.play()
+        scope.launch {
+            delay(300)
+            isRemoteSync = false
+        }
+    }
+
+    fun applyRemotePause(positionMs: Long) {
+        isRemoteSync = true
+        primaryPlayerInstance.pause()
+        primaryPlayerInstance.seekTo(positionMs.coerceAtLeast(0L))
+        scope.launch {
+            delay(300)
+            isRemoteSync = false
+        }
+    }
+
+    fun applyRemoteSeek(positionMs: Long) {
+        isRemoteSync = true
+        primaryPlayerInstance.seekTo(positionMs.coerceAtLeast(0L))
+        _state.update { it.copy(positionMs = positionMs) }
+        scope.launch {
+            delay(300)
+            isRemoteSync = false
+        }
+    }
+
+    fun applyRemoteTrackChange(
+        track: TrackItem,
+        queue: List<TrackItem>,
+        positionMs: Long,
+        shouldPlay: Boolean,
+        onPrepared: (() -> Unit)? = null
+    ) {
+        isRemoteSync = true
+        val targetIndex = queue.indexOfFirst { it.videoId == track.videoId }.coerceAtLeast(0)
+        _state.update {
+            it.copy(
+                currentTrack = track,
+                queue = queue,
+                queueIndex = targetIndex,
+                isResolving = true,
+                isBuffering = true,
+                error = null,
+                positionMs = positionMs
+            )
+        }
+
+        resolveJob?.cancel()
+        resolveJob = scope.launch {
+            val videoId = track.videoId
+            val streamUrl = getCachedStreamUrl(videoId) ?: innerTubeClient.resolveStreamUrl(videoId)?.also {
+                setCachedStreamUrl(videoId, it)
+            }
+
+            if (streamUrl != null) {
+                val mediaMetadata = MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist)
+                    .setArtworkUri(android.net.Uri.parse(track.artworkUrl))
+                    .build()
+
+                val mediaItem = MediaItem.Builder()
+                    .setUri(streamUrl)
+                    .setMediaId(track.id)
+                    .setMediaMetadata(mediaMetadata)
+                    .build()
+
+                primaryPlayerInstance.setMediaItem(mediaItem)
+                primaryPlayerInstance.prepare()
+                primaryPlayerInstance.seekTo(positionMs.coerceAtLeast(0L))
+                if (shouldPlay) {
+                    primaryPlayerInstance.play()
+                } else {
+                    primaryPlayerInstance.pause()
+                }
+                onPrepared?.invoke()
+            }
+            delay(300)
+            isRemoteSync = false
+        }
+    }
+
+    fun applyRemoteQueueSync(queue: List<TrackItem>) {
+        isRemoteSync = true
+        _state.update { it.copy(queue = queue) }
+        savePersistentQueue()
+        scope.launch {
+            delay(300)
+            isRemoteSync = false
+        }
+    }
+
+    fun applyRemoteQueueAdd(track: TrackItem, insertNext: Boolean) {
+        isRemoteSync = true
+        val cur = _state.value.queue.toMutableList()
+        val curIdx = _state.value.queueIndex
+        if (insertNext && curIdx in 0 until cur.size) {
+            cur.add(curIdx + 1, track)
+        } else {
+            cur.add(track)
+        }
+        _state.update { it.copy(queue = cur) }
+        savePersistentQueue()
+        scope.launch {
+            delay(300)
+            isRemoteSync = false
+        }
+    }
+
+    fun applyRemoteQueueRemove(trackId: String) {
+        isRemoteSync = true
+        val cleanId = trackId.removePrefix("youtube:")
+        val cur = _state.value.queue.filter { it.videoId != cleanId && it.id != trackId }
+        val newIdx = _state.value.queueIndex.coerceAtMost(kotlin.math.max(0, cur.size - 1))
+        _state.update { it.copy(queue = cur, queueIndex = newIdx) }
+        savePersistentQueue()
+        scope.launch {
+            delay(300)
+            isRemoteSync = false
+        }
+    }
+
+    fun applyRemoteQueueClear() {
+        isRemoteSync = true
+        val cur = _state.value.currentTrack?.let { listOf(it) } ?: emptyList()
+        _state.update { it.copy(queue = cur, queueIndex = 0) }
+        savePersistentQueue()
+        scope.launch {
+            delay(300)
+            isRemoteSync = false
+        }
+    }
+
+    fun applyRemoteVolume(volume: Float) {
+        primaryPlayerInstance.volume = volume.coerceIn(0f, 1f)
+    }
+
+    fun addToQueue(track: TrackItem, insertNext: Boolean = false) {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
+        val cur = _state.value.queue.toMutableList()
+        val curIdx = _state.value.queueIndex
+        if (insertNext && curIdx in 0 until cur.size) {
+            cur.add(curIdx + 1, track)
+        } else {
+            cur.add(track)
+        }
+        _state.update { it.copy(queue = cur) }
+        savePersistentQueue()
+        if (!isRemoteSync) {
+            sync?.onLocalQueueAdd(track, insertNext)
+        }
+    }
+
+    fun removeFromQueue(trackId: String) {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
+        val cleanId = trackId.removePrefix("youtube:")
+        val cur = _state.value.queue.filter { it.videoId != cleanId && it.id != trackId }
+        val newIdx = _state.value.queueIndex.coerceAtMost(kotlin.math.max(0, cur.size - 1))
+        _state.update { it.copy(queue = cur, queueIndex = newIdx) }
+        savePersistentQueue()
+        if (!isRemoteSync) {
+            sync?.onLocalQueueRemove(trackId)
+        }
+    }
+
+    fun clearQueue() {
+        val sync = waveSyncManager
+        if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
+            sync.notifyGuestRestricted()
+            return
+        }
+
+        val cur = _state.value.currentTrack?.let { listOf(it) } ?: emptyList()
+        _state.update { it.copy(queue = cur, queueIndex = 0) }
+        savePersistentQueue()
+        if (!isRemoteSync) {
+            sync?.onLocalQueueClear()
+        }
     }
 
     fun toggleShuffle() {
