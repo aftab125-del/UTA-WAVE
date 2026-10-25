@@ -8,4 +8,13 @@
     <string name="approve">Approve</string>
     <string name="reject">Reject</string>
     <string name="room_created">Room created: %s</string>
+    <string name="music_player">Music Playback</string>
+    <string name="music_player_channel_desc">Playback controls for currently playing audio</string>
+    <string name="action_like">Add to Favorites</string>
+    <string name="action_remove_like">Remove from Favorites</string>
+    <string name="action_shuffle_on">Shuffle On</string>
+    <string name="action_shuffle_off">Shuffle Off</string>
+    <string name="repeat_mode_off">Repeat Off</string>
+    <string name="repeat_mode_one">Repeat Current</string>
+    <string name="repeat_mode_all">Repeat All</string>
 </resources>

@@ -344,7 +344,9 @@ class PlaybackManager private constructor(private val context: Context) {
             val mediaMetadata = MediaMetadata.Builder()
                 .setTitle(nextTrack.title)
                 .setArtist(nextTrack.artist)
+                .setAlbumTitle(nextTrack.album ?: "")
                 .setArtworkUri(android.net.Uri.parse(nextTrack.artworkUrl))
+                .setIsPlayable(true)
                 .build()
 
             val mediaItem = MediaItem.Builder()
@@ -549,7 +551,9 @@ class PlaybackManager private constructor(private val context: Context) {
                 val mediaMetadata = MediaMetadata.Builder()
                     .setTitle(track.title)
                     .setArtist(track.artist)
+                    .setAlbumTitle(track.album ?: "")
                     .setArtworkUri(android.net.Uri.parse(track.artworkUrl))
+                    .setIsPlayable(true)
                     .build()
 
                 val mediaItem = MediaItem.Builder()
@@ -776,7 +780,9 @@ class PlaybackManager private constructor(private val context: Context) {
                 val mediaMetadata = MediaMetadata.Builder()
                     .setTitle(track.title)
                     .setArtist(track.artist)
+                    .setAlbumTitle(track.album ?: "")
                     .setArtworkUri(android.net.Uri.parse(track.artworkUrl))
+                    .setIsPlayable(true)
                     .build()
 
                 val mediaItem = MediaItem.Builder()
@@ -929,6 +935,18 @@ class PlaybackManager private constructor(private val context: Context) {
             }
             else -> next()
         }
+    }
+
+    fun toggleFavoriteCurrent() {
+        val track = _state.value.currentTrack ?: return
+        scope.launch {
+            localDatabase.toggleFavorite(track)
+        }
+    }
+
+    fun isCurrentTrackFavorite(): Boolean {
+        val track = _state.value.currentTrack ?: return false
+        return localDatabase.isFavoriteSync(track.id)
     }
 
     fun reorderQueue(fromIndex: Int, toIndex: Int) {
