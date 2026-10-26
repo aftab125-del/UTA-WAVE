@@ -1,6 +1,7 @@
 package com.uta.wave.data.importer
 
 import android.content.Context
+import com.uta.wave.data.account.AccountManager
 import com.uta.wave.data.innertube.InnerTubeClient
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
@@ -34,13 +35,50 @@ object PlaylistImporter {
             return@withContext Pair("Empty or invalid playlist", 0)
         }
 
-        val playlistId = localDatabase.createPlaylist(title, "Imported from YouTube Music")
+        val accountManager = AccountManager.getInstance(context)
+        val profile = accountManager.currentProfile
+        var remotePlaylistId: String? = null
+
+        if (profile.isLoggedIn && !profile.cookie.isNullOrBlank()) {
+            try {
+                InnerTubeClient.authCookie = profile.cookie
+                InnerTubeClient.authSapisid = profile.sapisid
+                remotePlaylistId = innerTubeClient.createRemotePlaylist(title)
+                if (remotePlaylistId != null) {
+                    AppLogger.i("Created remote cloud playlist on YouTube: '$title' -> $remotePlaylistId")
+                }
+            } catch (e: Exception) {
+                AppLogger.w("Failed to create remote playlist for YouTube import: ${e.message}")
+            }
+        }
+
+        val playlistId = localDatabase.createPlaylist(
+            name = title,
+            description = "Imported from YouTube Music",
+            customId = remotePlaylistId
+        )
+
+        val videoIdsToSync = mutableListOf<String>()
         for (i in tracks.indices) {
             val track = tracks[i]
             localDatabase.addTrackToPlaylist(playlistId, track)
+            if (track.videoId.isNotBlank()) {
+                videoIdsToSync.add(track.videoId)
+            }
             onProgress(i + 1, tracks.size, track.title)
         }
 
+        // Upload tracks to YouTube Music Google account if remote playlist was created
+        if (!remotePlaylistId.isNullOrBlank() && videoIdsToSync.isNotEmpty()) {
+            try {
+                innerTubeClient.addTracksToRemotePlaylist(remotePlaylistId, videoIdsToSync)
+                AppLogger.i("Synced ${videoIdsToSync.size} imported YouTube tracks to Google account cloud playlist")
+            } catch (e: Exception) {
+                AppLogger.e("Failed to sync imported tracks to remote playlist", e)
+            }
+        }
+
+        localDatabase.saveAutoBackup()
         Pair(title, tracks.size)
     }
 
@@ -114,8 +152,30 @@ object PlaylistImporter {
             return@withContext Pair("Could not extract tracks from Spotify link", 0)
         }
 
-        val createdPlaylistId = localDatabase.createPlaylist(playlistTitle, "Imported from Spotify")
+        val accountManager = AccountManager.getInstance(context)
+        val profile = accountManager.currentProfile
+        var remotePlaylistId: String? = null
+
+        if (profile.isLoggedIn && !profile.cookie.isNullOrBlank()) {
+            try {
+                InnerTubeClient.authCookie = profile.cookie
+                InnerTubeClient.authSapisid = profile.sapisid
+                remotePlaylistId = innerTubeClient.createRemotePlaylist(playlistTitle)
+                if (remotePlaylistId != null) {
+                    AppLogger.i("Created remote cloud playlist for Spotify import: '$playlistTitle' -> $remotePlaylistId")
+                }
+            } catch (e: Exception) {
+                AppLogger.w("Failed to create remote playlist for Spotify import: ${e.message}")
+            }
+        }
+
+        val createdPlaylistId = localDatabase.createPlaylist(
+            name = playlistTitle,
+            description = "Imported from Spotify",
+            customId = remotePlaylistId
+        )
         var addedCount = 0
+        val videoIdsToSync = mutableListOf<String>()
 
         for (i in trackPairs.indices) {
             val (title, artist) = trackPairs[i]
@@ -145,10 +205,24 @@ object PlaylistImporter {
             if (searchResults.isNotEmpty()) {
                 val matched = searchResults.first()
                 localDatabase.addTrackToPlaylist(createdPlaylistId, matched)
+                if (matched.videoId.isNotBlank()) {
+                    videoIdsToSync.add(matched.videoId)
+                }
                 addedCount++
             }
         }
 
+        // Upload tracks to YouTube Music Google account if remote playlist was created
+        if (!remotePlaylistId.isNullOrBlank() && videoIdsToSync.isNotEmpty()) {
+            try {
+                innerTubeClient.addTracksToRemotePlaylist(remotePlaylistId, videoIdsToSync)
+                AppLogger.i("Synced ${videoIdsToSync.size} imported Spotify tracks to Google account cloud playlist")
+            } catch (e: Exception) {
+                AppLogger.e("Failed to sync Spotify tracks to remote playlist", e)
+            }
+        }
+
+        localDatabase.saveAutoBackup()
         Pair(playlistTitle, addedCount)
     }
 
