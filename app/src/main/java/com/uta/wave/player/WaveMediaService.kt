@@ -5,10 +5,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.Uri
+import android.os.Binder
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import androidx.annotation.OptIn
+import androidx.core.app.NotificationCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
@@ -50,6 +54,11 @@ class WaveMediaService : MediaSessionService() {
     private lateinit var playbackManager: PlaybackManager
     private lateinit var localDatabase: LocalDatabase
     private lateinit var bitmapLoader: CoilBitmapLoader
+    private val binder = WaveMediaBinder()
+
+    inner class WaveMediaBinder : Binder() {
+        val service: WaveMediaService get() = this@WaveMediaService
+    }
 
     private val sessionCallback = object : MediaSession.Callback {
         override fun onConnect(
@@ -95,22 +104,21 @@ class WaveMediaService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Guard against ForegroundServiceStartNotAllowedException on Android 12+
+        setListener(
+            object : Listener {
+                override fun onForegroundServiceStartNotAllowedException() {
+                    AppLogger.e("ForegroundServiceStartNotAllowedException caught by WaveMediaService listener")
+                }
+            }
+        )
+
         playbackManager = PlaybackManager.getInstance(this)
         localDatabase = LocalDatabase.getInstance(this)
         bitmapLoader = CoilBitmapLoader(this, serviceScope)
 
         createNotificationChannel()
-
-        setMediaNotificationProvider(
-            WaveNotificationProvider(
-                this,
-                { NOTIFICATION_ID },
-                CHANNEL_ID,
-                R.string.music_player
-            ).apply {
-                setSmallIcon(R.mipmap.ic_launcher)
-            }
-        )
 
         val sessionActivityPendingIntent = PendingIntent.getActivity(
             this,
@@ -119,6 +127,37 @@ class WaveMediaService : MediaSessionService() {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             },
             PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Bootstrap immediate ongoing foreground notification to register with OS
+        try {
+            val placeholderNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle(getString(R.string.music_player))
+                .setContentText("")
+                .setSmallIcon(R.drawable.ic_wave_notification)
+                .setContentIntent(sessionActivityPendingIntent)
+                .setOngoing(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .build()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, placeholderNotification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } else {
+                startForeground(NOTIFICATION_ID, placeholderNotification)
+            }
+        } catch (e: Exception) {
+            AppLogger.e("Failed to bootstrap foreground notification in WaveMediaService", e)
+        }
+
+        setMediaNotificationProvider(
+            WaveNotificationProvider(
+                this,
+                { NOTIFICATION_ID },
+                CHANNEL_ID,
+                R.string.music_player
+            ).apply {
+                setSmallIcon(R.drawable.ic_wave_notification)
+            }
         )
 
         mediaSession = MediaSession.Builder(this, playbackManager.player)
@@ -222,6 +261,15 @@ class WaveMediaService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
         return mediaSession
+    }
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return super.onBind(intent) ?: binder
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        return START_STICKY
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {

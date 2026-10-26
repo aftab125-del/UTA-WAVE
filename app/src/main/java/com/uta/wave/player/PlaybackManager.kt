@@ -107,7 +107,21 @@ class PlaybackManager private constructor(private val context: Context) {
     private var isCrossfading = false
     private var currentSpeed: Float = 1.0f
 
+    fun ensureServiceStarted() {
+        try {
+            val intent = Intent(context, WaveMediaService::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                androidx.core.content.ContextCompat.startForegroundService(context, intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (e: Exception) {
+            AppLogger.e("Failed to ensure WaveMediaService is started", e)
+        }
+    }
+
     init {
+        ensureServiceStarted()
         WaveEqualizer.initialize(context)
         setupPlayerListener(primaryPlayerInstance)
         setupPlayerListener(standbyPlayerInstance)
@@ -477,6 +491,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun playTrack(track: TrackItem, queue: List<TrackItem> = listOf(track)) {
+        ensureServiceStarted()
         if (queue.size > 1 && currentQueueProvider !is YouTubeRadioQueue) {
             currentQueueProvider = ListQueue(queue, _state.value.queueTitle ?: "Queue")
         }
@@ -620,6 +635,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 sync?.onLocalPause(player.currentPosition)
             }
         } else {
+            ensureServiceStarted()
             if (player.playbackState == Player.STATE_IDLE && _state.value.currentTrack != null) {
                 _state.value.currentTrack?.let { playTrack(it, _state.value.queue) }
             } else {
@@ -755,6 +771,7 @@ class PlaybackManager private constructor(private val context: Context) {
         shouldPlay: Boolean,
         onPrepared: (() -> Unit)? = null
     ) {
+        ensureServiceStarted()
         isRemoteSync = true
         val targetIndex = queue.indexOfFirst { it.videoId == track.videoId }.coerceAtLeast(0)
         _state.update {
