@@ -4,21 +4,27 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import androidx.annotation.OptIn
-import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaController
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
+import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.uta.wave.MainActivity
@@ -32,7 +38,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Production-grade MediaSessionService for UTA-WAVE.
+ * Production-grade MediaLibraryService for UTA-WAVE.
  *
  * Implements:
  * - Silent NotificationChannel (IMPORTANCE_LOW, VISIBILITY_PUBLIC) for noiseless track updates.
@@ -40,16 +46,18 @@ import kotlinx.coroutines.launch
  * - High-performance CoilBitmapLoader for lockscreen/notification album artwork with queue prefetching.
  * - Dynamic custom layout actions: Favorite (Heart), Repeat Mode cycle, and Shuffle toggle.
  * - Android 13+ Lockscreen & Notification wavy seekbar compatibility.
+ * - Full MediaLibraryService & MediaBrowserService compatibility for SystemUI lockscreen controls & Android Auto.
+ * - Warmup MediaController connection to ensure immediate OS framework MediaSessionManager registration.
  */
 @OptIn(UnstableApi::class)
-class WaveMediaService : MediaSessionService() {
+class WaveMediaService : MediaLibraryService() {
 
     companion object {
         const val CHANNEL_ID = "wave_music_playback_channel"
         const val NOTIFICATION_ID = 1001
     }
 
-    private var mediaSession: MediaSession? = null
+    private var mediaSession: MediaLibrarySession? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var playbackManager: PlaybackManager
     private lateinit var localDatabase: LocalDatabase
@@ -60,7 +68,7 @@ class WaveMediaService : MediaSessionService() {
         val service: WaveMediaService get() = this@WaveMediaService
     }
 
-    private val sessionCallback = object : MediaSession.Callback {
+    private val sessionCallback = object : MediaLibrarySession.Callback {
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo
@@ -76,6 +84,30 @@ class WaveMediaService : MediaSessionService() {
                 availableSessionCommands,
                 connectionResult.availablePlayerCommands
             )
+        }
+
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val rootExtras = Bundle().apply {
+                putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+                putBoolean("android.media.browse.SEARCH_SUPPORTED", true)
+            }
+            val rootItem = MediaItem.Builder()
+                .setMediaId("[root]")
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setIsPlayable(false)
+                        .setIsBrowsable(true)
+                        .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                        .setTitle(getString(R.string.app_name))
+                        .build()
+                )
+                .build()
+            val libraryParams = LibraryParams.Builder().setExtras(rootExtras).build()
+            return Futures.immediateFuture(LibraryResult.ofItem(rootItem, libraryParams))
         }
 
         override fun onCustomCommand(
@@ -129,26 +161,6 @@ class WaveMediaService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Bootstrap immediate ongoing foreground notification to register with OS
-        try {
-            val placeholderNotification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle(getString(R.string.music_player))
-                .setContentText("")
-                .setSmallIcon(R.drawable.ic_wave_notification)
-                .setContentIntent(sessionActivityPendingIntent)
-                .setOngoing(true)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .build()
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, placeholderNotification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-            } else {
-                startForeground(NOTIFICATION_ID, placeholderNotification)
-            }
-        } catch (e: Exception) {
-            AppLogger.e("Failed to bootstrap foreground notification in WaveMediaService", e)
-        }
-
         setMediaNotificationProvider(
             WaveNotificationProvider(
                 this,
@@ -160,11 +172,22 @@ class WaveMediaService : MediaSessionService() {
             }
         )
 
-        mediaSession = MediaSession.Builder(this, playbackManager.player)
-            .setCallback(sessionCallback)
+        mediaSession = MediaLibrarySession.Builder(this, playbackManager.player, sessionCallback)
             .setSessionActivity(sessionActivityPendingIntent)
             .setBitmapLoader(bitmapLoader)
             .build()
+
+        // Publish session immediately to Android framework MediaSessionManager (1:1 with EchoMusic)
+        val sessionToken = SessionToken(this, ComponentName(this, WaveMediaService::class.java))
+        val controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
+        controllerFuture.addListener({
+            try {
+                controllerFuture.get()
+                AppLogger.i("Internal MediaController connected successfully")
+            } catch (e: Exception) {
+                AppLogger.e("Failed to connect internal MediaController", e)
+            }
+        }, ContextCompat.getMainExecutor(this))
 
         playbackManager.onPlayerSwapped = { newPlayer ->
             try {
@@ -259,7 +282,7 @@ class WaveMediaService : MediaSessionService() {
         session.setCustomLayout(listOf(likeButton, repeatButton, shuffleButton))
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
         return mediaSession
     }
 
