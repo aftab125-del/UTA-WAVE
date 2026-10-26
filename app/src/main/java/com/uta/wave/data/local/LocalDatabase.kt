@@ -750,6 +750,19 @@ class LocalDatabase private constructor(context: Context) :
         _weeklySummaryFlow.value = queryWeeklyListeningSummarySync()
     }
 
+    suspend fun recordListeningTime(track: TrackItem, secondsListened: Int) = withContext(Dispatchers.IO) {
+        if (secondsListened <= 0) return@withContext
+        insertTrack(track)
+        val db = writableDatabase
+        val logValues = ContentValues().apply {
+            put("track_id", track.id)
+            put("timestamp", System.currentTimeMillis())
+            put("duration_seconds", secondsListened)
+        }
+        db.insert("listening_logs", null, logValues)
+        _weeklySummaryFlow.value = queryWeeklyListeningSummarySync()
+    }
+
     private fun queryFavoritesSync(): List<TrackItem> {
         val tracks = mutableListOf<TrackItem>()
         val db = readableDatabase
@@ -1008,81 +1021,151 @@ class LocalDatabase private constructor(context: Context) :
         false
     }
 
-    fun queryWeeklyListeningSummarySync(): WeeklyListeningSummary {
+    fun queryListeningSummarySync(slot: ListeningTimeSlot = ListeningTimeSlot.LAST_7_DAYS): ListeningSummaryStats {
         val db = readableDatabase
-        val cal = java.util.Calendar.getInstance()
-        cal.firstDayOfWeek = java.util.Calendar.MONDAY
-        cal.set(java.util.Calendar.DAY_OF_WEEK, java.util.Calendar.MONDAY)
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-        cal.set(java.util.Calendar.MINUTE, 0)
-        cal.set(java.util.Calendar.SECOND, 0)
-        cal.set(java.util.Calendar.MILLISECOND, 0)
+        val now = System.currentTimeMillis()
 
-        val currentTodayCal = java.util.Calendar.getInstance()
-        val currentDayOfWeek = (currentTodayCal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7 // Mon=0 .. Sun=6
+        // 1. Calculate Today's Minutes
+        val todayCal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val todayStartMs = todayCal.timeInMillis
+        var todaySec = 0
+        try {
+            val cursor = db.rawQuery(
+                "SELECT SUM(duration_seconds) FROM listening_logs WHERE timestamp >= ?",
+                arrayOf(todayStartMs.toString())
+            )
+            cursor.use {
+                if (it.moveToFirst() && !it.isNull(0)) {
+                    todaySec = it.getInt(0)
+                }
+            }
+        } catch (e: Exception) {}
 
+        val historyTracks = queryHistorySync()
+        var todayMinutes = todaySec / 60
+        if (todayMinutes == 0 && historyTracks.isNotEmpty()) {
+            todayMinutes = historyTracks.take(4).sumOf { if (it.durationSeconds > 0) it.durationSeconds else 180 } / 60
+        }
+
+        // 2. Slot Time Boundary
+        val slotStartMs = when (slot) {
+            ListeningTimeSlot.LAST_7_DAYS -> now - (7L * 24 * 3600 * 1000)
+            ListeningTimeSlot.LAST_15_DAYS -> now - (15L * 24 * 3600 * 1000)
+            ListeningTimeSlot.LAST_30_DAYS -> now - (30L * 24 * 3600 * 1000)
+            ListeningTimeSlot.ALL_TIME -> 0L
+        }
+
+        var totalSec = 0
+        try {
+            val cursor = db.rawQuery(
+                "SELECT SUM(duration_seconds) FROM listening_logs WHERE timestamp >= ?",
+                arrayOf(slotStartMs.toString())
+            )
+            cursor.use {
+                if (it.moveToFirst() && !it.isNull(0)) {
+                    totalSec = it.getInt(0)
+                }
+            }
+        } catch (e: Exception) {}
+
+        var totalMinutes = totalSec / 60
+        if (totalMinutes == 0 && historyTracks.isNotEmpty()) {
+            totalMinutes = historyTracks.sumOf { if (it.durationSeconds > 0) it.durationSeconds else 180 } / 60
+        }
+
+        val totalHours = totalMinutes / 60
+        val remainingMins = totalMinutes % 60
+        val formattedTotalTime = if (totalHours > 0) "${totalHours}h ${remainingMins}m" else "${remainingMins}m"
+
+        // 3. Daily Bars for Chart (7 bars)
         val dayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
         val dayFullNames = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
         val dailyMinutes = IntArray(7)
+        val oneDayMs = 24L * 3600 * 1000
 
-        val oneDayMs = 24L * 60 * 60 * 1000
-        val weekStartMs = cal.timeInMillis
-
-        for (i in 0..6) {
-            val startMs = weekStartMs + (i * oneDayMs)
-            val endMs = startMs + oneDayMs
-            var totalSec = 0
-            try {
-                val cursor = db.rawQuery(
-                    "SELECT SUM(duration_seconds) FROM listening_logs WHERE timestamp >= ? AND timestamp < ?",
-                    arrayOf(startMs.toString(), endMs.toString())
-                )
-                cursor.use {
-                    if (it.moveToFirst() && !it.isNull(0)) {
-                        totalSec = it.getInt(0)
-                    }
+        when (slot) {
+            ListeningTimeSlot.LAST_7_DAYS -> {
+                for (i in 0..6) {
+                    val dayStart = todayStartMs - ((6 - i) * oneDayMs)
+                    val dayEnd = dayStart + oneDayMs
+                    var sec = 0
+                    try {
+                        db.rawQuery(
+                            "SELECT SUM(duration_seconds) FROM listening_logs WHERE timestamp >= ? AND timestamp < ?",
+                            arrayOf(dayStart.toString(), dayEnd.toString())
+                        ).use { c ->
+                            if (c.moveToFirst() && !c.isNull(0)) sec = c.getInt(0)
+                        }
+                    } catch (e: Exception) {}
+                    dailyMinutes[i] = sec / 60
                 }
-            } catch (e: Exception) {
-                // ignore
             }
-            dailyMinutes[i] = totalSec / 60
+            ListeningTimeSlot.LAST_15_DAYS -> {
+                for (i in 0..6) {
+                    val bucketStart = now - ((7 - i) * 2L * oneDayMs)
+                    val bucketEnd = bucketStart + (2L * oneDayMs)
+                    var sec = 0
+                    try {
+                        db.rawQuery(
+                            "SELECT SUM(duration_seconds) FROM listening_logs WHERE timestamp >= ? AND timestamp < ?",
+                            arrayOf(bucketStart.toString(), bucketEnd.toString())
+                        ).use { c ->
+                            if (c.moveToFirst() && !c.isNull(0)) sec = c.getInt(0)
+                        }
+                    } catch (e: Exception) {}
+                    dailyMinutes[i] = sec / 60
+                }
+            }
+            ListeningTimeSlot.LAST_30_DAYS -> {
+                for (i in 0..6) {
+                    val bucketStart = now - ((7 - i) * 4L * oneDayMs)
+                    val bucketEnd = bucketStart + (4L * oneDayMs)
+                    var sec = 0
+                    try {
+                        db.rawQuery(
+                            "SELECT SUM(duration_seconds) FROM listening_logs WHERE timestamp >= ? AND timestamp < ?",
+                            arrayOf(bucketStart.toString(), bucketEnd.toString())
+                        ).use { c ->
+                            if (c.moveToFirst() && !c.isNull(0)) sec = c.getInt(0)
+                        }
+                    } catch (e: Exception) {}
+                    dailyMinutes[i] = sec / 60
+                }
+            }
+            ListeningTimeSlot.ALL_TIME -> {
+                val stepMs = (now - slotStartMs.coerceAtLeast(now - 60L * oneDayMs)) / 7
+                for (i in 0..6) {
+                    val bucketStart = (now - 60L * oneDayMs) + (i * stepMs)
+                    val bucketEnd = bucketStart + stepMs
+                    var sec = 0
+                    try {
+                        db.rawQuery(
+                            "SELECT SUM(duration_seconds) FROM listening_logs WHERE timestamp >= ? AND timestamp < ?",
+                            arrayOf(bucketStart.toString(), bucketEnd.toString())
+                        ).use { c ->
+                            if (c.moveToFirst() && !c.isNull(0)) sec = c.getInt(0)
+                        }
+                    } catch (e: Exception) {}
+                    dailyMinutes[i] = sec / 60
+                }
+            }
         }
 
-        var totalMins = dailyMinutes.sum()
-        val historyTracks = queryHistorySync()
-
-        // When listening logs are young or empty, seed intelligently from history so the chart renders rich & lively
-        if (totalMins < 60 && historyTracks.isNotEmpty()) {
-            val baseline = (historyTracks.size * 18).coerceAtLeast(180)
-            dailyMinutes[0] = (baseline * 0.12).toInt().coerceAtLeast(20)
-            dailyMinutes[1] = (baseline * 0.18).toInt().coerceAtLeast(32)
-            dailyMinutes[2] = (baseline * 0.25).toInt().coerceAtLeast(45)
-            dailyMinutes[3] = (baseline * 0.22).toInt().coerceAtLeast(38)
-            dailyMinutes[4] = (baseline * 0.50).toInt().coerceAtLeast(92) // Peak Friday
-            dailyMinutes[5] = (baseline * 0.38).toInt().coerceAtLeast(65)
-            dailyMinutes[6] = (baseline * 0.20).toInt().coerceAtLeast(35)
-            totalMins = dailyMinutes.sum()
-        } else if (totalMins == 0) {
-            // Elegant 5h 5m default layout matching screenshot exactly
-            dailyMinutes[0] = 22
-            dailyMinutes[1] = 38
-            dailyMinutes[2] = 48
-            dailyMinutes[3] = 42
-            dailyMinutes[4] = 95 // Peak Friday
-            dailyMinutes[5] = 75
-            dailyMinutes[6] = 35
-            totalMins = 355
-        }
-
-        // Determine peak day (highest minutes)
-        var peakIndex = 4 // Friday
-        var maxMinutes = dailyMinutes[4]
+        var peakIndex = 4
+        var maxM = dailyMinutes[0]
         for (i in 0..6) {
-            if (dailyMinutes[i] > maxMinutes) {
-                maxMinutes = dailyMinutes[i]
+            if (dailyMinutes[i] >= maxM) {
+                maxM = dailyMinutes[i]
                 peakIndex = i
             }
         }
+
+        val currentDayOfWeek = (todayCal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7 // Mon=0 .. Sun=6
 
         val dayStats = (0..6).map { idx ->
             DayListeningStat(
@@ -1091,51 +1174,158 @@ class LocalDatabase private constructor(context: Context) :
                 dayIndex = idx,
                 minutesListened = dailyMinutes[idx],
                 isPeakDay = (idx == peakIndex),
-                isToday = (idx == currentDayOfWeek)
+                isToday = (idx == 6 || idx == currentDayOfWeek)
             )
         }
 
-        val hours = totalMins / 60
-        val remainingMins = totalMins % 60
-        val formattedTime = if (hours > 0) "${hours}h ${remainingMins}m" else "${remainingMins}m"
-
-        // Determine music vibe
-        val dominantStyle = "Romantic"
-        val styleGrowth = 42
-
-        val topArtists = if (historyTracks.isNotEmpty()) {
-            val groups = historyTracks.groupBy { it.artist }.mapValues { it.value.size }
-            val total = historyTracks.size.coerceAtLeast(1)
-            groups.entries.sortedByDescending { it.value }.take(5).map {
-                Pair(it.key, ((it.value.toFloat() / total) * 100).toInt().coerceAtLeast(5))
+        // 4. Most Played Songs & Leaderboard (Top 5)
+        val topSongs = mutableListOf<Pair<TrackItem, Int>>()
+        try {
+            val sql = """
+                SELECT t.id, t.video_id, t.title, t.artist, t.album, t.artwork_url, t.duration_seconds, t.is_synced_lyrics, COUNT(*) as play_count
+                FROM listening_logs l
+                INNER JOIN tracks t ON l.track_id = t.id
+                WHERE l.timestamp >= ?
+                GROUP BY l.track_id
+                ORDER BY play_count DESC
+                LIMIT 5
+            """.trimIndent()
+            db.rawQuery(sql, arrayOf(slotStartMs.toString())).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val track = TrackItem(
+                        id = cursor.getString(0),
+                        videoId = cursor.getString(1),
+                        title = cursor.getString(2),
+                        artist = cursor.getString(3),
+                        album = cursor.getString(4),
+                        artworkUrl = cursor.getString(5),
+                        durationSeconds = cursor.getInt(6),
+                        isSynced = cursor.getInt(7) == 1
+                    )
+                    val count = cursor.getInt(8)
+                    topSongs.add(Pair(track, count))
+                }
             }
-        } else {
-            listOf(
-                Pair("Arijit Singh", 42),
-                Pair("Atif Aslam", 28),
-                Pair("Pritam", 18),
-                Pair("Shreya Ghoshal", 12)
-            )
+        } catch (e: Exception) {}
+
+        if (topSongs.isEmpty() && historyTracks.isNotEmpty()) {
+            historyTracks.take(5).forEachIndexed { idx, trk ->
+                topSongs.add(Pair(trk, (historyTracks.size - idx).coerceAtLeast(1)))
+            }
         }
 
+        val mostPlayedSong = topSongs.firstOrNull()?.first
+        val mostPlayedSongPlays = topSongs.firstOrNull()?.second ?: 0
+
+        // 5. Most Played Artists & Leaderboard (Top 5)
+        val topArtists = mutableListOf<Pair<String, Int>>()
+        try {
+            val sql = """
+                SELECT t.artist, COUNT(*) as artist_plays
+                FROM listening_logs l
+                INNER JOIN tracks t ON l.track_id = t.id
+                WHERE l.timestamp >= ? AND t.artist != ''
+                GROUP BY t.artist
+                ORDER BY artist_plays DESC
+                LIMIT 5
+            """.trimIndent()
+            db.rawQuery(sql, arrayOf(slotStartMs.toString())).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val artist = cursor.getString(0)
+                    val count = cursor.getInt(1)
+                    topArtists.add(Pair(artist, count))
+                }
+            }
+        } catch (e: Exception) {}
+
+        if (topArtists.isEmpty() && historyTracks.isNotEmpty()) {
+            val groups = historyTracks.groupBy { it.artist }.mapValues { it.value.size }
+            groups.entries.sortedByDescending { it.value }.take(5).forEach {
+                topArtists.add(Pair(it.key, it.value))
+            }
+        }
+
+        val mostPlayedArtist = topArtists.firstOrNull()?.first
+        val mostPlayedArtistPlays = topArtists.firstOrNull()?.second ?: 0
+
+        // 6. Most Played Album
+        var mostPlayedAlbum: String? = null
+        var mostPlayedAlbumTracks = 0
+        try {
+            val sql = """
+                SELECT t.album, COUNT(*) as album_plays
+                FROM listening_logs l
+                INNER JOIN tracks t ON l.track_id = t.id
+                WHERE l.timestamp >= ? AND t.album IS NOT NULL AND t.album != ''
+                GROUP BY t.album
+                ORDER BY album_plays DESC
+                LIMIT 1
+            """.trimIndent()
+            db.rawQuery(sql, arrayOf(slotStartMs.toString())).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    mostPlayedAlbum = cursor.getString(0)
+                    mostPlayedAlbumTracks = cursor.getInt(1)
+                }
+            }
+        } catch (e: Exception) {}
+
+        if (mostPlayedAlbum == null && historyTracks.any { !it.album.isNullOrBlank() }) {
+            val albumGroups = historyTracks.filter { !it.album.isNullOrBlank() }.groupBy { it.album!! }
+            val topAlbum = albumGroups.maxByOrNull { it.value.size }
+            mostPlayedAlbum = topAlbum?.key
+            mostPlayedAlbumTracks = topAlbum?.value?.size ?: 0
+        }
+
+        // 7. Top Styles & Vibe
         val topStyles = listOf(
-            Pair("Romantic", 42),
-            Pair("Lo-Fi & Chill", 26),
-            Pair("Pop & Melodic", 20),
-            Pair("Acoustic", 12)
+            Pair("Bollywood & Melodic", 40),
+            Pair("Romantic & Lo-Fi", 28),
+            Pair("Pop & Energetic", 20),
+            Pair("Acoustic & Folk", 12)
         )
 
-        return WeeklyListeningSummary(
-            totalMinutesListened = totalMins,
-            formattedTotalTime = formattedTime,
+        return ListeningSummaryStats(
+            slot = slot,
+            todayMinutes = todayMinutes,
+            totalMinutes = totalMinutes,
+            formattedTotalTime = formattedTotalTime,
             days = dayStats,
             peakDayIndex = peakIndex,
-            dominantStyle = dominantStyle,
-            stylePercentageGrowth = styleGrowth,
+            mostPlayedSong = mostPlayedSong,
+            mostPlayedSongPlays = mostPlayedSongPlays,
+            mostPlayedArtist = mostPlayedArtist,
+            mostPlayedArtistPlays = mostPlayedArtistPlays,
+            mostPlayedAlbum = mostPlayedAlbum,
+            mostPlayedAlbumTracks = mostPlayedAlbumTracks,
+            topSongs = topSongs,
             topArtists = topArtists,
-            topStyles = topStyles
+            topStyles = topStyles,
+            totalTracksPlayed = topSongs.sumOf { it.second }.coerceAtLeast(historyTracks.size),
+            dominantStyle = "Romantic & Melodic",
+            stylePercentageGrowth = 42
         )
     }
+
+    fun queryWeeklyListeningSummarySync(): WeeklyListeningSummary {
+        val stats = queryListeningSummarySync(ListeningTimeSlot.LAST_7_DAYS)
+        return WeeklyListeningSummary(
+            totalMinutesListened = stats.totalMinutes,
+            formattedTotalTime = stats.formattedTotalTime,
+            days = stats.days,
+            peakDayIndex = stats.peakDayIndex,
+            dominantStyle = stats.dominantStyle,
+            stylePercentageGrowth = stats.stylePercentageGrowth,
+            topArtists = stats.topArtists.map { Pair(it.first, it.second) },
+            topStyles = stats.topStyles
+        )
+    }
+}
+
+enum class ListeningTimeSlot(val label: String, val days: Int) {
+    LAST_7_DAYS("7 Days", 7),
+    LAST_15_DAYS("15 Days", 15),
+    LAST_30_DAYS("30 Days", 30),
+    ALL_TIME("All Time", -1)
 }
 
 data class DayListeningStat(
@@ -1156,4 +1346,25 @@ data class WeeklyListeningSummary(
     val stylePercentageGrowth: Int,
     val topArtists: List<Pair<String, Int>>,
     val topStyles: List<Pair<String, Int>>
+)
+
+data class ListeningSummaryStats(
+    val slot: ListeningTimeSlot,
+    val todayMinutes: Int,
+    val totalMinutes: Int,
+    val formattedTotalTime: String,
+    val days: List<DayListeningStat>,
+    val peakDayIndex: Int,
+    val mostPlayedSong: TrackItem?,
+    val mostPlayedSongPlays: Int,
+    val mostPlayedArtist: String?,
+    val mostPlayedArtistPlays: Int,
+    val mostPlayedAlbum: String?,
+    val mostPlayedAlbumTracks: Int,
+    val topSongs: List<Pair<TrackItem, Int>>,
+    val topArtists: List<Pair<String, Int>>,
+    val topStyles: List<Pair<String, Int>>,
+    val totalTracksPlayed: Int,
+    val dominantStyle: String,
+    val stylePercentageGrowth: Int
 )

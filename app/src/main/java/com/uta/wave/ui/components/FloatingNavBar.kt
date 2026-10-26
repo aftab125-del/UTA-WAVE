@@ -117,13 +117,13 @@ fun FloatingNavBar(
     val context = LocalContext.current
     val userPrefs = remember { UserPreferences.getInstance(context) }
     val settings by userPrefs.settingsFlow.collectAsState()
-    val isPureBlack = settings.pureBlackMiniPlayer || settings.pureBlack
+    val isPureBlack = settings.pureBlack
 
     val glassConfig = LocalGlassEffectConfig.current
     val useGlass = glassConfig.isEnabledFor(GlassComponent.NAV_BAR)
     val miniPlayerBackground = settings.miniplayerBackgroundStyle
     val isGlassMini = (miniPlayerBackground == "LIQUID_GLASS" || glassConfig.isEnabledFor(GlassComponent.MINI_PLAYER)) && isGlassSupported() && !isPureBlack
-    val isDynamicMini = !isGlassMini && miniPlayerBackground in listOf("BLUR", "GLOW_ANIMATED", "LIVE_MESH")
+    val isDynamicMini = !isGlassMini && miniPlayerBackground in listOf("BLUR", "GLOW_ANIMATED", "LIVE_MESH", "ACRYLIC_BLUR")
 
     val adaptiveTextColor =
         if (glassConfig.textColor.isSpecified) {

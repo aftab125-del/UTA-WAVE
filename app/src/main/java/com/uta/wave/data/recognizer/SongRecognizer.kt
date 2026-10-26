@@ -35,10 +35,11 @@ class SongRecognizer(
     private val localDatabase: LocalDatabase = LocalDatabase.getInstance(context)
 ) {
     companion object {
-        private const val RECORDING_SAMPLE_RATE = 44100
+        private const val TARGET_SAMPLE_RATE = 16_000
+        private const val FALLBACK_SAMPLE_RATE = 44_100
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-        private const val RECORDING_DURATION_MS = 6500L
+        private const val RECORDING_DURATION_MS = 10000L // 10s for comprehensive DejaVu peak density
     }
 
     private val _state = MutableStateFlow<RecognitionState>(RecognitionState.Idle)
@@ -58,32 +59,61 @@ class SongRecognizer(
         _state.value = RecognitionState.Listening(0f)
         _amplitude.value = 0f
 
-        val minBufferSize = AudioRecord.getMinBufferSize(
-            RECORDING_SAMPLE_RATE,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT
-        )
-        val bufferSize = minBufferSize.coerceAtLeast(4096)
-
         var audioRecord: AudioRecord? = null
+        var actualSampleRate = TARGET_SAMPLE_RATE
         val outputStream = ByteArrayOutputStream()
 
-        try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                RECORDING_SAMPLE_RATE,
-                CHANNEL_CONFIG,
-                AUDIO_FORMAT,
-                bufferSize
-            )
+        val audioSources = listOf(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            MediaRecorder.AudioSource.UNPROCESSED,
+            MediaRecorder.AudioSource.MIC
+        )
 
-            if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
-                _state.value = RecognitionState.Error("Microphone not initialized. Check permissions.")
-                return@withContext
+        for (source in audioSources) {
+            try {
+                val minBuffer16k = AudioRecord.getMinBufferSize(TARGET_SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+                if (minBuffer16k > 0) {
+                    val rec = AudioRecord(source, TARGET_SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT, minBuffer16k.coerceAtLeast(4096))
+                    if (rec.state == AudioRecord.STATE_INITIALIZED) {
+                        audioRecord = rec
+                        actualSampleRate = TARGET_SAMPLE_RATE
+                        AppLogger.i("SongRecognizer initialized at 16kHz native using source: $source")
+                        break
+                    } else {
+                        rec.release()
+                    }
+                }
+            } catch (e: Exception) {
+                AppLogger.d("Source $source at 16kHz not supported: ${e.message}")
             }
+        }
 
+        // Fallback to 44.1kHz if native 16kHz is rejected by hardware HAL
+        if (audioRecord == null) {
+            try {
+                val minBuffer44k = AudioRecord.getMinBufferSize(FALLBACK_SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+                val rec = AudioRecord(MediaRecorder.AudioSource.MIC, FALLBACK_SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT, minBuffer44k.coerceAtLeast(4096))
+                if (rec.state == AudioRecord.STATE_INITIALIZED) {
+                    audioRecord = rec
+                    actualSampleRate = FALLBACK_SAMPLE_RATE
+                    AppLogger.i("SongRecognizer fallback initialized at 44.1kHz MIC")
+                } else {
+                    rec.release()
+                }
+            } catch (e: Exception) {
+                AppLogger.e("Failed to initialize fallback AudioRecord: ${e.message}", e)
+            }
+        }
+
+        if (audioRecord == null || audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+            _state.value = RecognitionState.Error("Microphone not initialized. Check permissions.")
+            return@withContext
+        }
+
+        try {
             audioRecord.startRecording()
 
+            val bufferSize = AudioRecord.getMinBufferSize(actualSampleRate, CHANNEL_CONFIG, AUDIO_FORMAT).coerceAtLeast(4096)
             val readBuffer = ByteArray(bufferSize)
             val startTime = System.currentTimeMillis()
             var maxRmsDetected = 0f
@@ -141,44 +171,39 @@ class SongRecognizer(
                 return@withContext
             }
 
-            // Resample from 44.1 kHz to 16.0 kHz using Media3 SonicAudioProcessor
-            val decodedAudio = DecodedAudio(
-                data = rawAudioBytes,
-                channelCount = 1,
-                sampleRate = RECORDING_SAMPLE_RATE,
-                pcmEncoding = AUDIO_FORMAT
-            )
+            // If actualSampleRate is 16kHz, use native audio directly without resampling distortion
+            val pcm16kBytes = if (actualSampleRate == TARGET_SAMPLE_RATE) {
+                rawAudioBytes
+            } else {
+                val decodedAudio = DecodedAudio(
+                    data = rawAudioBytes,
+                    channelCount = 1,
+                    sampleRate = actualSampleRate,
+                    pcmEncoding = AUDIO_FORMAT
+                )
 
-            val resampledResult = AudioResampler.resample(
-                decodedAudio,
-                ShazamSignatureGenerator.REQUIRED_SAMPLE_RATE
-            ).getOrElse { error ->
-                AppLogger.e("Resampling error: ${error.message}", error)
-                _state.value = RecognitionState.Error("Failed to resample audio: ${error.message}")
-                return@withContext
-            }
+                val resampledResult = AudioResampler.resample(
+                    decodedAudio,
+                    ShazamSignatureGenerator.REQUIRED_SAMPLE_RATE
+                ).getOrElse { error ->
+                    AppLogger.e("Resampling error: ${error.message}", error)
+                    _state.value = RecognitionState.Error("Failed to resample audio: ${error.message}")
+                    return@withContext
+                }
 
-            require(
-                resampledResult.channelCount == 1 &&
-                        resampledResult.sampleRate == ShazamSignatureGenerator.REQUIRED_SAMPLE_RATE &&
-                        resampledResult.pcmEncoding == AudioFormat.ENCODING_PCM_16BIT &&
-                        ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN &&
-                        resampledResult.data.isNotEmpty() &&
-                        resampledResult.data.size % 2 == 0
-            ) {
-                "Invalid resampled audio format for Shazam fingerprinting"
+                resampledResult.data
             }
 
             // Generate Shazam DejaVu signature
             val signature = try {
-                ShazamSignatureGenerator.fromI16(resampledResult.data)
+                ShazamSignatureGenerator.fromI16(pcm16kBytes)
             } catch (e: Exception) {
                 AppLogger.e("Signature generation failed: ${e.message}", e)
                 _state.value = RecognitionState.Error("Failed to generate acoustic fingerprint: ${e.message}")
                 return@withContext
             }
 
-            val sampleDurationMs = (resampledResult.data.size / 2) * 1000L / ShazamSignatureGenerator.REQUIRED_SAMPLE_RATE
+            val sampleDurationMs = (pcm16kBytes.size / 2) * 1000L / ShazamSignatureGenerator.REQUIRED_SAMPLE_RATE
 
             // Query Shazam Discovery Cloud API
             val shazamResponse = ShazamApiClient.recognize(signature, sampleDurationMs)
@@ -226,20 +251,31 @@ class SongRecognizer(
 
         // Search InnerTube for best match stream
         try {
-            val query = "${shazam.title} ${shazam.artist}".trim()
-            val searchResults = innerTubeClient.search(query)
-            if (searchResults.isNotEmpty()) {
-                val best = searchResults.first()
-                return TrackItem(
-                    id = best.id.ifBlank { UUID.randomUUID().toString() },
-                    videoId = if (!directVideoId.isNullOrBlank()) directVideoId else best.videoId,
-                    title = shazam.title.ifBlank { best.title },
-                    artist = shazam.artist.ifBlank { best.artist },
-                    album = shazam.album ?: best.album,
-                    artworkUrl = if (highResArt.isNotBlank()) highResArt else best.artworkUrl,
-                    durationSeconds = if (best.durationSeconds > 0) best.durationSeconds else 180,
-                    isSynced = best.isSynced
-                )
+            val queries = listOf(
+                "${shazam.title} ${shazam.artist} official audio",
+                "${shazam.title} ${shazam.artist}"
+            )
+
+            for (query in queries) {
+                val searchResults = innerTubeClient.search(query.trim())
+                if (searchResults.isNotEmpty()) {
+                    val exactArtistMatch = searchResults.firstOrNull { candidate ->
+                        candidate.artist.contains(shazam.artist, ignoreCase = true) ||
+                                shazam.artist.contains(candidate.artist, ignoreCase = true)
+                    }
+                    val best = exactArtistMatch ?: searchResults.first()
+
+                    return TrackItem(
+                        id = best.id.ifBlank { UUID.randomUUID().toString() },
+                        videoId = if (!directVideoId.isNullOrBlank()) directVideoId else best.videoId,
+                        title = shazam.title.ifBlank { best.title },
+                        artist = shazam.artist.ifBlank { best.artist },
+                        album = shazam.album ?: best.album,
+                        artworkUrl = if (highResArt.isNotBlank()) highResArt else best.artworkUrl,
+                        durationSeconds = if (best.durationSeconds > 0) best.durationSeconds else 180,
+                        isSynced = best.isSynced
+                    )
+                }
             }
         } catch (e: Exception) {
             AppLogger.w("InnerTube search resolution failed: ${e.message}")

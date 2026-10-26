@@ -178,7 +178,7 @@ fun FullscreenPlayerSheet(
     val scope = rememberCoroutineScope()
     val userPrefs = remember { UserPreferences.getInstance(context) }
     val settings by userPrefs.settingsFlow.collectAsState()
-    val isAppleMusic = settings.appleMusicPlayerEnabled || settings.playerStyle == "APPLE_MUSIC"
+    val isAppleMusic = true
 
     val syncManager = remember { WaveSyncManager.getInstance(context) }
     val playbackManager = remember { com.uta.wave.player.PlaybackManager.getInstance(context) }

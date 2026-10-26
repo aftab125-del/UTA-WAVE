@@ -594,7 +594,8 @@ fun WaveApp(
         exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
     ) {
         ListeningSummaryScreen(
-            onBack = { isListeningSummaryOpen = false }
+            onBack = { isListeningSummaryOpen = false },
+            onPlayTrack = { track, queue -> playbackManager.playTrack(track, queue) }
         )
     }
 

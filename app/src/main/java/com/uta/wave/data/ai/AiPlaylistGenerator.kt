@@ -41,11 +41,12 @@ object AiPlaylistGenerator {
     ): AiGeneratedPlaylistResult? = withContext(Dispatchers.IO) {
         val prefs = UserPreferences.getInstance(context)
         val localDatabase = LocalDatabase.getInstance(context)
-        val apiKey = prefs.currentSettings.aiApiKey.trim()
+        val geminiKey = prefs.currentSettings.geminiApiKey.trim()
+        val openRouterKey = prefs.currentSettings.aiApiKey.trim()
         val provider = prefs.currentSettings.aiProvider
 
         onProgress("Consulting AI Music Curator...", 0, songCount)
-        AppLogger.i("Starting AI playlist generation for prompt: \"$prompt\" (count: $songCount)")
+        AppLogger.i("Starting AI playlist generation for prompt: \"$prompt\" (count: $songCount, provider: $provider)")
 
         val systemPrompt = """
             You are a master music curator and DJ with encyclopedic knowledge of all genres, eras, and moods.
@@ -75,7 +76,8 @@ object AiPlaylistGenerator {
         val rawAiResponse = callAiLlm(
             userPrompt = "Vibe/Theme: $prompt\nSong count: $songCount songs",
             systemPrompt = systemPrompt,
-            apiKey = apiKey,
+            geminiKey = geminiKey,
+            openRouterKey = openRouterKey,
             provider = provider
         )
 
@@ -156,17 +158,125 @@ object AiPlaylistGenerator {
         )
     }
 
+    suspend fun testAiConnection(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val prefs = UserPreferences.getInstance(context)
+        val settings = prefs.currentSettings
+        val provider = settings.aiProvider
+        val apiKey = when (provider) {
+            "GEMINI" -> settings.geminiApiKey.ifBlank { settings.aiApiKey }.trim()
+            "OPENROUTER" -> settings.aiApiKey.trim()
+            else -> ""
+        }
+
+        if (provider != "BUILTIN" && apiKey.isBlank()) {
+            return@withContext Pair(false, "API Key is missing for $provider. Please paste your key above.")
+        }
+
+        val startTime = System.currentTimeMillis()
+        try {
+            val response = when (provider) {
+                "GEMINI" -> callGemini("Ping test: reply with valid JSON {\"status\":\"OK\"}", "Reply with valid JSON {\"status\":\"OK\"}", apiKey)
+                "OPENROUTER" -> callOpenRouter("Ping test: reply with valid JSON {\"status\":\"OK\"}", "Reply with valid JSON {\"status\":\"OK\"}", apiKey)
+                else -> callPollinationsFreeFallback("Ping test: reply with valid JSON {\"status\":\"OK\"}", "Reply with valid JSON {\"status\":\"OK\"}")
+            }
+            val elapsed = System.currentTimeMillis() - startTime
+            if (!response.isNullOrBlank()) {
+                val modelName = when (provider) {
+                    "GEMINI" -> "Gemini 2.0 Flash"
+                    "OPENROUTER" -> "OpenRouter Neural"
+                    else -> "Free Neural Cloud"
+                }
+                Pair(true, "Connected ($elapsed ms) • $modelName is ready!")
+            } else {
+                Pair(false, "AI provider responded with empty response. Check network or API key.")
+            }
+        } catch (e: Exception) {
+            Pair(false, "Connection failed: ${e.localizedMessage ?: e.message}")
+        }
+    }
+
     private fun callAiLlm(
         userPrompt: String,
         systemPrompt: String,
-        apiKey: String,
+        geminiKey: String,
+        openRouterKey: String,
         provider: String
     ): String? {
-        return if (apiKey.isNotBlank()) {
-            callOpenRouter(userPrompt, systemPrompt, apiKey)
-                ?: callPollinationsFreeFallback(userPrompt, systemPrompt)
-        } else {
-            callPollinationsFreeFallback(userPrompt, systemPrompt)
+        return when (provider) {
+            "GEMINI" -> {
+                if (geminiKey.isNotBlank()) {
+                    callGemini(userPrompt, systemPrompt, geminiKey)
+                        ?: callPollinationsFreeFallback(userPrompt, systemPrompt)
+                } else if (openRouterKey.isNotBlank()) {
+                    callOpenRouter(userPrompt, systemPrompt, openRouterKey)
+                        ?: callPollinationsFreeFallback(userPrompt, systemPrompt)
+                } else {
+                    callPollinationsFreeFallback(userPrompt, systemPrompt)
+                }
+            }
+            "OPENROUTER" -> {
+                if (openRouterKey.isNotBlank()) {
+                    callOpenRouter(userPrompt, systemPrompt, openRouterKey)
+                        ?: callPollinationsFreeFallback(userPrompt, systemPrompt)
+                } else {
+                    callPollinationsFreeFallback(userPrompt, systemPrompt)
+                }
+            }
+            else -> {
+                callPollinationsFreeFallback(userPrompt, systemPrompt)
+            }
+        }
+    }
+
+    private fun callGemini(
+        userPrompt: String,
+        systemPrompt: String,
+        apiKey: String
+    ): String? {
+        try {
+            val payload = JSONObject().apply {
+                put("systemInstruction", JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("text", systemPrompt)
+                        })
+                    })
+                })
+                put("contents", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("parts", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("text", userPrompt)
+                            })
+                        })
+                    })
+                })
+                put("generationConfig", JSONObject().apply {
+                    put("temperature", 0.7)
+                    put("responseMimeType", "application/json")
+                })
+            }
+
+            val request = Request.Builder()
+                .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey")
+                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    AppLogger.w("Gemini API failed with HTTP ${response.code}: ${response.message}")
+                    return null
+                }
+                val bodyStr = response.body?.string() ?: return null
+                val json = JSONObject(bodyStr)
+                val candidates = json.optJSONArray("candidates") ?: return null
+                val content = candidates.optJSONObject(0)?.optJSONObject("content") ?: return null
+                val parts = content.optJSONArray("parts") ?: return null
+                return parts.optJSONObject(0)?.optString("text")
+            }
+        } catch (e: Exception) {
+            AppLogger.e("Gemini call failed: ${e.message}", e)
+            return null
         }
     }
 
