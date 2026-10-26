@@ -1779,6 +1779,58 @@ class InnerTubeClient(
         }
     }
 
+    /**
+     * Batch adds multiple track video IDs to an existing YouTube Music playlist on the user's account.
+     * Chunks in batches of 50 to prevent payload limits.
+     */
+    suspend fun addTracksToRemotePlaylist(playlistId: String, videoIds: List<String>): Boolean = withContext(Dispatchers.IO) {
+        if (videoIds.isEmpty()) return@withContext true
+        refreshVisitorDataIfNeeded()
+        try {
+            val cleanPlaylistId = extractYouTubePlaylistId(playlistId)
+            var overallSuccess = true
+
+            for (chunk in videoIds.chunked(50)) {
+                val payload = JSONObject().apply {
+                    put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                    put("playlistId", cleanPlaylistId)
+                    val actions = JSONArray().apply {
+                        chunk.forEach { videoId ->
+                            put(JSONObject().apply {
+                                put("action", "ACTION_ADD_VIDEO")
+                                put("addedVideoId", videoId)
+                            })
+                        }
+                    }
+                    put("actions", actions)
+                }
+
+                val request = Request.Builder()
+                    .url("$INNERTUBE_BASE_URL/browse/edit_playlist")
+                    .apply {
+                        commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                        addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                        applyAuthHeaders(this)
+                    }
+                    .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    val ok = response.isSuccessful
+                    if (!ok) {
+                        overallSuccess = false
+                        AppLogger.w("addTracksToRemotePlaylist chunk failed: HTTP ${response.code} for $cleanPlaylistId")
+                    }
+                }
+            }
+            AppLogger.i("addTracksToRemotePlaylist: ${videoIds.size} tracks -> $cleanPlaylistId (success=$overallSuccess)")
+            overallSuccess
+        } catch (e: Exception) {
+            AppLogger.e("addTracksToRemotePlaylist network error", e)
+            false
+        }
+    }
+
     private fun findActiveAccountHeader(obj: JSONObject): JSONObject? {
         if (obj.has("activeAccountHeaderRenderer")) {
             return obj.optJSONObject("activeAccountHeaderRenderer")

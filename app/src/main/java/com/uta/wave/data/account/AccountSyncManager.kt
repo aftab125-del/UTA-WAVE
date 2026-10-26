@@ -90,7 +90,37 @@ class AccountSyncManager private constructor(private val appContext: Context) {
                 AppLogger.w("AccountSyncManager: Liked songs sync warning: ${e.message}")
             }
 
-            // 2. Sync Google Account Playlists ("FEmusic_liked_playlists")
+            // 2. Upload Phase: Scan for local & imported playlists that are not yet on YouTube Music
+            _syncState.value = AccountSyncState.Syncing("Uploading imported & local playlists to account...")
+            val localPlaylists = localDatabase.getPlaylists()
+            for (localPlaylist in localPlaylists) {
+                val isCloudPlaylist = localPlaylist.id.startsWith("PL") ||
+                        localPlaylist.id.startsWith("VL") ||
+                        localPlaylist.id.startsWith("RD") ||
+                        localPlaylist.id.startsWith("MP")
+
+                if (!isCloudPlaylist) {
+                    try {
+                        val tracks = localDatabase.getPlaylistTracks(localPlaylist.id)
+                        if (tracks.isNotEmpty()) {
+                            AppLogger.i("AccountSyncManager: Uploading local/imported playlist '${localPlaylist.name}' to Google Account...")
+                            val remoteId = innerTube.createRemotePlaylist(localPlaylist.name)
+                            if (!remoteId.isNullOrBlank()) {
+                                val videoIds = tracks.mapNotNull { it.videoId.takeIf { vid -> vid.isNotBlank() } }
+                                if (videoIds.isNotEmpty()) {
+                                    innerTube.addTracksToRemotePlaylist(remoteId, videoIds)
+                                }
+                                localDatabase.updatePlaylistId(localPlaylist.id, remoteId)
+                                AppLogger.i("AccountSyncManager: Successfully uploaded '${localPlaylist.name}' -> $remoteId with ${videoIds.size} tracks")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        AppLogger.w("AccountSyncManager: Failed to upload local playlist ${localPlaylist.name}: ${e.message}")
+                    }
+                }
+            }
+
+            // 3. Download Phase: Sync Google Account Playlists ("FEmusic_liked_playlists")
             _syncState.value = AccountSyncState.Syncing("Syncing Playlists from Google Account...")
             val remotePlaylists = innerTube.fetchUserPlaylists()
             for (remotePlaylist in remotePlaylists) {
@@ -112,6 +142,9 @@ class AccountSyncManager private constructor(private val appContext: Context) {
                     AppLogger.w("AccountSyncManager: Failed to sync playlist ${remotePlaylist.title}: ${e.message}")
                 }
             }
+
+            // Automatically persist auto-backup snapshot
+            localDatabase.saveAutoBackup()
 
             val now = System.currentTimeMillis()
             prefs.edit().putLong(KEY_LAST_SYNC, now).apply()
@@ -156,11 +189,13 @@ class AccountSyncManager private constructor(private val appContext: Context) {
                 val remoteId = InnerTubeClient().createRemotePlaylist(name)
                 if (!remoteId.isNullOrBlank()) {
                     AppLogger.i("Created cloud playlist linked to Google account: $remoteId")
-                    return@withContext localDatabase.createPlaylist(
+                    val id = localDatabase.createPlaylist(
                         name = name,
                         description = description,
                         customId = remoteId
                     )
+                    localDatabase.saveAutoBackup()
+                    return@withContext id
                 }
             } catch (e: Exception) {
                 AppLogger.w("Could not create remote playlist, creating locally: ${e.message}")
@@ -168,6 +203,8 @@ class AccountSyncManager private constructor(private val appContext: Context) {
         }
 
         // Local creation fallback
-        localDatabase.createPlaylist(name, description)
+        val finalId = localDatabase.createPlaylist(name, description)
+        localDatabase.saveAutoBackup()
+        finalId
     }
 }

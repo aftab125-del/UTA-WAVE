@@ -5,14 +5,17 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.uta.wave.data.innertube.TrackItem
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
 
 data class PlaylistRecord(
@@ -65,6 +68,11 @@ class LocalDatabase private constructor(context: Context) :
         ensureDownloadsTable()
         ensureListeningLogsTable()
         refreshAllFlows()
+        CoroutineScope(Dispatchers.IO).launch {
+            if (restoreAutoBackupIfEmpty()) {
+                refreshAllFlows()
+            }
+        }
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -548,6 +556,8 @@ class LocalDatabase private constructor(context: Context) :
         _playlistsFlow.value = queryPlaylistsSync()
     }
 
+    fun getPlaylists(): List<PlaylistRecord> = queryPlaylistsSync()
+
     suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String) = withContext(Dispatchers.IO) {
         val db = writableDatabase
         db.delete("playlist_tracks", "playlist_id = ? AND track_id = ?", arrayOf(playlistId, trackId))
@@ -558,6 +568,44 @@ class LocalDatabase private constructor(context: Context) :
         val db = writableDatabase
         db.delete("playlist_tracks", "playlist_id = ?", arrayOf(playlistId))
         db.delete("playlists", "id = ?", arrayOf(playlistId))
+        _playlistsFlow.value = queryPlaylistsSync()
+    }
+
+    suspend fun updatePlaylistId(oldId: String, newId: String) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val now = System.currentTimeMillis()
+            var name = ""
+            var desc: String? = null
+            var createdAt = now
+            db.rawQuery("SELECT name, description, created_at FROM playlists WHERE id = ?", arrayOf(oldId)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    name = cursor.getString(0)
+                    desc = cursor.getString(1)
+                    createdAt = cursor.getLong(2)
+                }
+            }
+
+            if (name.isNotBlank()) {
+                val values = ContentValues().apply {
+                    put("id", newId)
+                    put("name", name)
+                    put("description", desc)
+                    put("created_at", createdAt)
+                    put("updated_at", now)
+                }
+                db.insertWithOnConflict("playlists", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+                db.execSQL("UPDATE playlist_tracks SET playlist_id = ? WHERE playlist_id = ?", arrayOf(newId, oldId))
+                db.delete("playlists", "id = ?", arrayOf(oldId))
+            }
+
+            db.setTransactionSuccessful()
+        } catch (e: Exception) {
+            com.uta.wave.player.AppLogger.e("Failed to update playlist ID from $oldId to $newId", e)
+        } finally {
+            db.endTransaction()
+        }
         _playlistsFlow.value = queryPlaylistsSync()
     }
 
@@ -907,6 +955,51 @@ class LocalDatabase private constructor(context: Context) :
         } catch (e: Exception) {
             false
         }
+    }
+
+    suspend fun saveAutoBackup() = withContext(Dispatchers.IO) {
+        try {
+            val json = exportJson()
+            val backupFile = File(appContext.filesDir, "uta_wave_library_backup.json")
+            backupFile.writeText(json)
+            appContext.getExternalFilesDir(null)?.let { extDir ->
+                File(extDir, "uta_wave_library_backup.json").writeText(json)
+            }
+        } catch (e: Exception) {
+            com.uta.wave.player.AppLogger.e("saveAutoBackup failed", e)
+        }
+    }
+
+    suspend fun restoreAutoBackupIfEmpty(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val currentPlaylists = queryPlaylistsSync()
+            val currentFavorites = queryFavoritesSync()
+            if (currentPlaylists.isNotEmpty() || currentFavorites.isNotEmpty()) {
+                return@withContext false
+            }
+
+            val extFile = appContext.getExternalFilesDir(null)?.let { File(it, "uta_wave_library_backup.json") }
+            val internalFile = File(appContext.filesDir, "uta_wave_library_backup.json")
+            val targetFile = when {
+                extFile != null && extFile.exists() && extFile.length() > 0 -> extFile
+                internalFile.exists() && internalFile.length() > 0 -> internalFile
+                else -> null
+            }
+
+            if (targetFile != null) {
+                val json = targetFile.readText()
+                if (json.isNotBlank()) {
+                    val restored = restoreBackupJson(json, overwrite = false)
+                    if (restored) {
+                        com.uta.wave.player.AppLogger.i("Auto-restored library backup from ${targetFile.absolutePath}")
+                        return@withContext true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            com.uta.wave.player.AppLogger.e("restoreAutoBackupIfEmpty failed", e)
+        }
+        false
     }
 
     fun queryWeeklyListeningSummarySync(): WeeklyListeningSummary {
