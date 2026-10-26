@@ -42,8 +42,10 @@ class AudioDownloadManager private constructor(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.IO)
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(25, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
         .build()
 
     private val _downloadingIds = MutableStateFlow<Set<String>>(emptySet())
@@ -99,49 +101,75 @@ class AudioDownloadManager private constructor(private val context: Context) {
 
                 val request = Request.Builder()
                     .url(streamUrl)
-                    .header("User-Agent", "Mozilla/5.0")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                    .header("Accept", "*/*")
+                    .header("Accept-Encoding", "identity")
                     .build()
 
                 httpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         AppLogger.e("Download HTTP failed: ${response.code} ${response.message}")
+                        if (outputFile.exists()) outputFile.delete()
                         _downloadingIds.update { it - track.id }
                         _downloadProgress.update { it - track.id }
                         withContext(Dispatchers.Main) { onComplete(false) }
                         return@launch
                     }
 
-                    val body = response.body ?: return@use
+                    val body = response.body
+                    if (body == null) {
+                        if (outputFile.exists()) outputFile.delete()
+                        _downloadingIds.update { it - track.id }
+                        _downloadProgress.update { it - track.id }
+                        withContext(Dispatchers.Main) { onComplete(false) }
+                        return@launch
+                    }
+
                     val contentLength = body.contentLength()
                     val inputStream = body.byteStream()
                     val outputStream = FileOutputStream(outputFile)
 
-                    val buffer = ByteArray(8192)
+                    val buffer = ByteArray(16384)
                     var bytesRead: Int
                     var totalRead = 0L
 
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        outputStream.write(buffer, 0, bytesRead)
-                        totalRead += bytesRead
-                        if (contentLength > 0) {
-                            val progress = (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
-                            _downloadProgress.update { it + (track.id to progress) }
+                    try {
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
+                            totalRead += bytesRead
+                            if (contentLength > 0) {
+                                val progress = (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+                                _downloadProgress.update { it + (track.id to progress) }
+                            }
                         }
+                        outputStream.flush()
+                    } finally {
+                        try { outputStream.close() } catch (e: Exception) { /* ignore */ }
+                        try { inputStream.close() } catch (e: Exception) { /* ignore */ }
                     }
 
-                    outputStream.flush()
-                    outputStream.close()
-                    inputStream.close()
+                    if (outputFile.exists() && outputFile.length() > 0L) {
+                        localDatabase.insertDownload(track, outputFile.absolutePath, outputFile.length(), quality.badge)
+                        AppLogger.i("Download complete (${quality.badge}) for: ${track.title} (${outputFile.length() / 1024} KB)")
 
-                    localDatabase.insertDownload(track, outputFile.absolutePath, outputFile.length(), quality.badge)
-                    AppLogger.i("Download complete (${quality.badge}) for: ${track.title} (${outputFile.length() / 1024} KB)")
-
-                    _downloadingIds.update { it - track.id }
-                    _downloadProgress.update { it - track.id }
-                    withContext(Dispatchers.Main) { onComplete(true) }
+                        _downloadingIds.update { it - track.id }
+                        _downloadProgress.update { it - track.id }
+                        withContext(Dispatchers.Main) { onComplete(true) }
+                    } else {
+                        if (outputFile.exists()) outputFile.delete()
+                        AppLogger.e("Downloaded file is empty or missing: ${outputFile.absolutePath}")
+                        _downloadingIds.update { it - track.id }
+                        _downloadProgress.update { it - track.id }
+                        withContext(Dispatchers.Main) { onComplete(false) }
+                    }
                 }
             } catch (e: Exception) {
                 AppLogger.e("Download error for: ${track.title}: ${e.message}", e)
+                try {
+                    val safeId = track.id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                    val outputFile = File(downloadsDir, "$safeId.m4a")
+                    if (outputFile.exists()) outputFile.delete()
+                } catch (ex: Exception) { /* ignore */ }
                 _downloadingIds.update { it - track.id }
                 _downloadProgress.update { it - track.id }
                 withContext(Dispatchers.Main) { onComplete(false) }

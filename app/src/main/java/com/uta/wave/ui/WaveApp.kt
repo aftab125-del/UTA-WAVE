@@ -67,6 +67,7 @@ import com.uta.wave.ui.settings.SettingsScreen
 import com.uta.wave.ui.splash.SplashWaterSurface
 import com.uta.wave.ui.stats.ListeningSummaryScreen
 import com.uta.wave.ui.theme.ObsidianBackground
+import com.uta.wave.util.NetworkMonitor
 import kotlinx.coroutines.launch
 
 @Composable
@@ -124,7 +125,7 @@ fun WaveApp(
         if (profile.isLoggedIn) {
             com.uta.wave.data.innertube.InnerTubeClient.authCookie = profile.cookie
             com.uta.wave.data.innertube.InnerTubeClient.authSapisid = profile.sapisid
-            if (profile.autoSyncEnabled) {
+            if (profile.autoSyncEnabled && NetworkMonitor.isOnline(context)) {
                 com.uta.wave.data.account.AccountSyncManager.getInstance(context).triggerSync()
             }
         }
@@ -298,6 +299,9 @@ fun WaveApp(
                     },
                     onNavigateToSearch = {
                         navigateToTab(3)
+                    },
+                    onNavigateToLibrary = {
+                        navigateToTab(2)
                     },
                     onOpenArtist = { artistId ->
                         viewingArtistId = artistId

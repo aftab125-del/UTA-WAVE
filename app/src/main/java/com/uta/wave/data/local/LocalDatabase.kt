@@ -264,16 +264,19 @@ class LocalDatabase private constructor(context: Context) :
     }
 
     fun isDownloadedSync(trackId: String): Boolean {
-        val db = readableDatabase
-        db.rawQuery("SELECT 1 FROM downloads WHERE track_id = ?", arrayOf(trackId)).use { cursor ->
-            return cursor.moveToFirst()
-        }
+        val path = getDownloadPathSync(trackId)
+        return !path.isNullOrBlank()
     }
 
     fun getDownloadPathSync(trackId: String): String? {
         val db = readableDatabase
         db.rawQuery("SELECT file_path FROM downloads WHERE track_id = ?", arrayOf(trackId)).use { cursor ->
-            if (cursor.moveToFirst()) return cursor.getString(0)
+            if (cursor.moveToFirst()) {
+                val path = cursor.getString(0)
+                if (!path.isNullOrBlank() && File(path).let { it.exists() && it.length() > 0L }) {
+                    return path
+                }
+            }
         }
         return null
     }
@@ -282,7 +285,7 @@ class LocalDatabase private constructor(context: Context) :
         val tracks = mutableListOf<TrackItem>()
         val db = readableDatabase
         val sql = """
-            SELECT t.id, t.video_id, t.title, t.artist, t.album, t.artwork_url, t.duration_seconds, t.is_synced_lyrics
+            SELECT t.id, t.video_id, t.title, t.artist, t.album, t.artwork_url, t.duration_seconds, t.is_synced_lyrics, d.file_path
             FROM tracks t
             INNER JOIN downloads d ON t.id = d.track_id
             ORDER BY d.downloaded_at DESC
@@ -290,18 +293,21 @@ class LocalDatabase private constructor(context: Context) :
         try {
             db.rawQuery(sql, null).use { cursor ->
                 while (cursor.moveToNext()) {
-                    tracks.add(
-                        TrackItem(
-                            id = cursor.getString(0),
-                            videoId = cursor.getString(1),
-                            title = cursor.getString(2),
-                            artist = cursor.getString(3),
-                            album = cursor.getString(4),
-                            artworkUrl = cursor.getString(5),
-                            durationSeconds = cursor.getInt(6),
-                            isSynced = cursor.getInt(7) == 1
+                    val filePath = cursor.getString(8)
+                    if (!filePath.isNullOrBlank() && File(filePath).let { it.exists() && it.length() > 0L }) {
+                        tracks.add(
+                            TrackItem(
+                                id = cursor.getString(0),
+                                videoId = cursor.getString(1),
+                                title = cursor.getString(2),
+                                artist = cursor.getString(3),
+                                album = cursor.getString(4),
+                                artworkUrl = cursor.getString(5),
+                                durationSeconds = cursor.getInt(6),
+                                isSynced = cursor.getInt(7) == 1
+                            )
                         )
-                    )
+                    }
                 }
             }
         } catch (e: Exception) {
