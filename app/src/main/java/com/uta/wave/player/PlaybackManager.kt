@@ -212,6 +212,7 @@ class PlaybackManager private constructor(private val context: Context) {
     private fun setupPlayerListener(exoPlayer: ExoPlayer) {
         exoPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (exoPlayer != primaryPlayerInstance) return
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
                         _state.update { it.copy(isBuffering = true) }
@@ -238,6 +239,7 @@ class PlaybackManager private constructor(private val context: Context) {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (exoPlayer != primaryPlayerInstance) return
                 _state.update { it.copy(isPlaying = isPlaying) }
                 if (isPlaying) {
                     startProgressTracker()
@@ -441,19 +443,18 @@ class PlaybackManager private constructor(private val context: Context) {
             }
 
             // Crossfade complete: Swap players
-            try {
-                primaryPlayerInstance.stop()
-                primaryPlayerInstance.clearMediaItems()
-            } catch (e: Exception) {}
-
             val oldPrimary = primaryPlayerInstance
             primaryPlayerInstance = standbyPlayerInstance
             standbyPlayerInstance = oldPrimary
 
+            try {
+                standbyPlayerInstance.stop()
+                standbyPlayerInstance.clearMediaItems()
+            } catch (e: Exception) {}
+
             primaryPlayerInstance.volume = baseNormVolume
             standbyPlayerInstance.volume = 0f
 
-            setupPlayerListener(primaryPlayerInstance)
             WaveEqualizer.attachAudioSession(primaryPlayerInstance.audioSessionId)
             onPlayerSwapped?.invoke(primaryPlayerInstance)
 
@@ -462,8 +463,14 @@ class PlaybackManager private constructor(private val context: Context) {
                     currentTrack = nextTrack,
                     queueIndex = nextIndex,
                     positionMs = primaryPlayerInstance.currentPosition.coerceAtLeast(0L),
-                    durationMs = primaryPlayerInstance.duration.coerceAtLeast(0L)
+                    durationMs = primaryPlayerInstance.duration.coerceAtLeast(0L),
+                    isPlaying = primaryPlayerInstance.isPlaying,
+                    isBuffering = false,
+                    isResolving = false
                 )
+            }
+            if (primaryPlayerInstance.isPlaying) {
+                startProgressTracker()
             }
 
             savePersistentQueue()
@@ -684,11 +691,15 @@ class PlaybackManager private constructor(private val context: Context) {
             return
         }
 
-        if (player.isPlaying) {
+        val isActuallyPlaying = player.isPlaying || (player.playWhenReady && player.playbackState == Player.STATE_READY)
+
+        if (isActuallyPlaying) {
             player.pause()
             if (isCrossfading) {
                 standbyPlayerInstance.pause()
             }
+            _state.update { it.copy(isPlaying = false) }
+            stopProgressTracker()
             if (!isRemoteSync) {
                 sync?.onLocalPause(player.currentPosition)
             }
@@ -701,6 +712,8 @@ class PlaybackManager private constructor(private val context: Context) {
                 if (isCrossfading) {
                     standbyPlayerInstance.play()
                 }
+                _state.update { it.copy(isPlaying = true) }
+                startProgressTracker()
                 if (!isRemoteSync) {
                     sync?.onLocalPlay(player.currentPosition)
                 }
@@ -735,6 +748,19 @@ class PlaybackManager private constructor(private val context: Context) {
                 }
             }
         }
+    }
+
+    fun hasNextTrack(): Boolean {
+        val state = _state.value
+        val queue = state.queue
+        if (queue.isEmpty()) return false
+        if (state.repeatMode != RepeatMode.OFF || state.isShuffle) return true
+        if (state.isRadioActive) return true
+        return state.queueIndex + 1 < queue.size
+    }
+
+    fun hasPreviousTrack(): Boolean {
+        return _state.value.queue.isNotEmpty()
     }
 
     fun next() {

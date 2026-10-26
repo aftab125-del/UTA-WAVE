@@ -33,7 +33,10 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -47,6 +50,8 @@ import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TrendingUp
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -76,8 +81,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.uta.wave.data.innertube.InnerTubeClient
 import com.uta.wave.data.innertube.TrackItem
+import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.player.PlaybackManager
 import com.uta.wave.ui.components.SongMenuBottomSheet
+import com.uta.wave.util.NetworkMonitor
 import com.uta.wave.ui.theme.CardBorder
 import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.ObsidianBackground
@@ -99,6 +106,7 @@ fun HomeScreen(
     onToggleFavorite: (TrackItem) -> Unit,
     onNavigateToCharts: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
+    onNavigateToLibrary: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
     onOpenArtist: (String) -> Unit = {},
     onOpenAlbum: (String) -> Unit = {},
@@ -109,6 +117,10 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val innerTubeClient = remember { InnerTubeClient() }
+    val localDatabase = remember { LocalDatabase.getInstance(context) }
+    val downloadedTracks by localDatabase.downloadsFlow.collectAsState(initial = emptyList())
+    val playlists by localDatabase.playlistsFlow.collectAsState(initial = emptyList())
+    val isOnline by NetworkMonitor.observeNetwork(context).collectAsState(initial = NetworkMonitor.isOnline(context))
     val accountManager = remember { com.uta.wave.data.account.AccountManager.getInstance(context) }
     val userProfile by accountManager.profileFlow.collectAsState()
     val userPrefs = remember { com.uta.wave.data.preferences.UserPreferences.getInstance(context) }
@@ -121,7 +133,7 @@ fun HomeScreen(
     var similarTracks1 by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
     var similarTracks2 by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
     var selectedMood by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(isOnline) }
     var selectedTrackForMenu by remember { mutableStateOf<TrackItem?>(null) }
 
     BackHandler(enabled = selectedTrackForMenu != null) {
@@ -147,20 +159,27 @@ fun HomeScreen(
         Pair("Hip Hop", Color(0xFF673AB7))
     )
 
-    LaunchedEffect(Unit) {
-        val trending = innerTubeClient.getTrending()
-        trendingTracks = trending
-        isLoading = false
+    LaunchedEffect(isOnline) {
+        if (!isOnline) {
+            isLoading = false
+            return@LaunchedEffect
+        }
+        if (trendingTracks.isEmpty()) {
+            isLoading = true
+            val trending = innerTubeClient.getTrending()
+            trendingTracks = trending
+            isLoading = false
 
-        // Load similar artist recommendations in background
-        if (trending.isNotEmpty()) {
-            val artist1 = trending.firstOrNull()?.artist ?: "The Weeknd"
-            val artist2 = trending.getOrNull(4)?.artist ?: "Dua Lipa"
-            scope.launch {
-                similarTracks1 = innerTubeClient.search("$artist1 hits")
-            }
-            scope.launch {
-                similarTracks2 = innerTubeClient.search("$artist2 hits")
+            // Load similar artist recommendations in background
+            if (trending.isNotEmpty()) {
+                val artist1 = trending.firstOrNull()?.artist ?: "The Weeknd"
+                val artist2 = trending.getOrNull(4)?.artist ?: "Dua Lipa"
+                scope.launch {
+                    similarTracks1 = innerTubeClient.search("$artist1 hits")
+                }
+                scope.launch {
+                    similarTracks2 = innerTubeClient.search("$artist2 hits")
+                }
             }
         }
     }
@@ -299,9 +318,304 @@ fun HomeScreen(
             }
         }
 
-        // -------------------------------------------------------------
-        // 2. HORIZONTAL MOOD FILTER CHIPS
-        // -------------------------------------------------------------
+        if (!isOnline) {
+            // -------------------------------------------------------------
+            // OFFLINE HUB BANNER & LIBRARY SHORTCUT
+            // -------------------------------------------------------------
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xFF1E1624))
+                        .border(1.dp, CardBorder, RoundedCornerShape(20.dp))
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF2E1C36)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudOff,
+                                contentDescription = "Offline Mode",
+                                tint = SoftViolet,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Offline Mode",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 17.sp
+                                ),
+                                color = TextPrimary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "No internet connection detected. You can listen to your downloaded songs and playlists offline.",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = onNavigateToLibrary,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = ElectricViolet,
+                                contentColor = ObsidianBackground
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Open Library",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+
+                        if (downloadedTracks.isNotEmpty()) {
+                            Button(
+                                onClick = { onPlayTrack(downloadedTracks.first(), downloadedTracks) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF2C1E34),
+                                    contentColor = TextPrimary
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    tint = ElectricViolet,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Play All",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Downloaded Tracks Section
+            if (downloadedTracks.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "DOWNLOADED SONGS (${downloadedTracks.size})",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp,
+                                fontSize = 12.sp
+                            ),
+                            color = TextMuted
+                        )
+                        TextButton(
+                            onClick = onNavigateToLibrary,
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
+                            Text("See in Library", color = ElectricViolet, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+
+                items(downloadedTracks.take(15)) { track ->
+                    val isCurrent = track.id == currentTrackId
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (isCurrent) Color(0xFF2B1D32) else Color(0xFF19121E))
+                            .border(1.dp, if (isCurrent) ElectricViolet.copy(alpha = 0.5f) else CardBorder, RoundedCornerShape(14.dp))
+                            .clickable { onPlayTrack(track, downloadedTracks) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AsyncImage(
+                            model = track.artworkUrl,
+                            contentDescription = track.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = track.title,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
+                                    fontSize = 14.sp
+                                ),
+                                color = if (isCurrent) ElectricViolet else TextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${track.artist} • Downloaded",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = TextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        IconButton(onClick = { selectedTrackForMenu = track }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Options",
+                                tint = TextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Offline Playlists Section
+            if (playlists.isNotEmpty()) {
+                item {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "PLAYLISTS (${playlists.size})",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp,
+                            fontSize = 12.sp
+                        ),
+                        color = TextMuted,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                    )
+                }
+
+                items(playlists) { playlist ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF19121E))
+                            .border(1.dp, CardBorder, RoundedCornerShape(14.dp))
+                            .clickable { onNavigateToLibrary() }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF26182B)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = SoftViolet,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = playlist.name,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp
+                                ),
+                                color = TextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${playlist.trackCount} songs",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = TextSecondary
+                            )
+                        }
+
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = TextMuted,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            if (downloadedTracks.isEmpty() && playlists.isEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "No Offline Tracks Found",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Download songs while connected to the internet, or visit the Library to scan local audio files stored on your device.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Button(
+                            onClick = onNavigateToLibrary,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet, contentColor = ObsidianBackground)
+                        ) {
+                            Text("Go to Library", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        } else {
+            // -------------------------------------------------------------
+            // 2. HORIZONTAL MOOD FILTER CHIPS
+            // -------------------------------------------------------------
         item {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 20.dp),
@@ -1198,6 +1512,7 @@ fun HomeScreen(
                     }
                 }
             }
+        }
         }
     }
 

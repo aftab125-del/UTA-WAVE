@@ -172,7 +172,8 @@ class WaveMediaService : MediaLibraryService() {
             }
         )
 
-        mediaSession = MediaLibrarySession.Builder(this, playbackManager.player, sessionCallback)
+        val sessionPlayer = WaveSessionPlayer(playbackManager.player, playbackManager)
+        mediaSession = MediaLibrarySession.Builder(this, sessionPlayer, sessionCallback)
             .setSessionActivity(sessionActivityPendingIntent)
             .setBitmapLoader(bitmapLoader)
             .build()
@@ -191,7 +192,7 @@ class WaveMediaService : MediaLibraryService() {
 
         playbackManager.onPlayerSwapped = { newPlayer ->
             try {
-                mediaSession?.player = newPlayer
+                mediaSession?.player = WaveSessionPlayer(newPlayer, playbackManager)
                 updateNotification()
             } catch (e: Exception) {
                 AppLogger.e("Failed to swap player in MediaSession", e)
