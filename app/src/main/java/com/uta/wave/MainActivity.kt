@@ -65,14 +65,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Pre-start WaveMediaService for immediate session warmup
+        // Pre-start WaveMediaService for immediate session warmup (1:1 with EchoMusic)
         try {
-            val serviceIntent = Intent(this, WaveMediaService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                ContextCompat.startForegroundService(this, serviceIntent)
-            } else {
-                startService(serviceIntent)
-            }
+            startService(Intent(this, WaveMediaService::class.java))
         } catch (e: Exception) {
             AppLogger.e("Failed to pre-start WaveMediaService", e)
         }

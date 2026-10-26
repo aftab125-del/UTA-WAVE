@@ -7,6 +7,8 @@ import android.content.IntentFilter
 import android.media.AudioManager
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -81,6 +83,15 @@ class PlaybackManager private constructor(private val context: Context) {
     private fun createPlayerInstance(): ExoPlayer {
         return ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpDataSourceFactory))
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                true // handleAudioFocus = true
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build().apply {
                 repeatMode = Player.REPEAT_MODE_OFF
                 playWhenReady = true
@@ -110,11 +121,7 @@ class PlaybackManager private constructor(private val context: Context) {
     fun ensureServiceStarted() {
         try {
             val intent = Intent(context, WaveMediaService::class.java)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                androidx.core.content.ContextCompat.startForegroundService(context, intent)
-            } else {
-                context.startService(intent)
-            }
+            context.startService(intent)
         } catch (e: Exception) {
             AppLogger.e("Failed to ensure WaveMediaService is started", e)
         }
