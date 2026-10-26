@@ -15,6 +15,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -80,9 +81,11 @@ class PlaybackManager private constructor(private val context: Context) {
         .setConnectTimeoutMs(15000)
         .setReadTimeoutMs(20000)
 
+    private val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
     private fun createPlayerInstance(): ExoPlayer {
         return ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpDataSourceFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -255,6 +258,37 @@ class PlaybackManager private constructor(private val context: Context) {
                 val errMsg = "Playback error (${error.errorCodeName}): ${error.message ?: error.localizedMessage}"
                 AppLogger.e(errMsg, error)
 
+                // Fallback: If playing a local/downloaded file failed, fall back to streaming online
+                val currentTrack = _state.value.currentTrack
+                val currentMediaUri = exoPlayer.currentMediaItem?.localConfiguration?.uri?.toString()
+                if (currentTrack != null && currentMediaUri?.startsWith("file:") == true &&
+                    !currentTrack.videoId.startsWith("content://") && !currentTrack.videoId.startsWith("file:")
+                ) {
+                    AppLogger.w("Offline file playback failed, falling back to online streaming for \"${currentTrack.title}\"")
+                    scope.launch {
+                        val onlineUrl = innerTubeClient.resolveStreamUrl(currentTrack.videoId)
+                        if (onlineUrl != null) {
+                            setCachedStreamUrl(currentTrack.videoId, onlineUrl)
+                            val mediaMetadata = MediaMetadata.Builder()
+                                .setTitle(currentTrack.title)
+                                .setArtist(currentTrack.artist)
+                                .setAlbumTitle(currentTrack.album ?: "")
+                                .setArtworkUri(android.net.Uri.parse(currentTrack.artworkUrl))
+                                .setIsPlayable(true)
+                                .build()
+                            val mediaItem = MediaItem.Builder()
+                                .setUri(onlineUrl)
+                                .setMediaId(currentTrack.id)
+                                .setMediaMetadata(mediaMetadata)
+                                .build()
+                            exoPlayer.setMediaItem(mediaItem)
+                            exoPlayer.prepare()
+                            exoPlayer.play()
+                            return@launch
+                        }
+                    }
+                }
+
                 val settings = userPrefs.settingsFlow.value
                 if (settings.autoSkipNextOnError && _state.value.queue.size > 1) {
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -352,8 +386,17 @@ class PlaybackManager private constructor(private val context: Context) {
         crossfadeJob = scope.launch {
             AppLogger.i("▶ Starting Equal-Power Crossfade to \"${nextTrack.title}\" (${crossfadeDurationMs}ms)")
             val nextVideoId = nextTrack.videoId
-            val streamUrl = getCachedStreamUrl(nextVideoId) ?: innerTubeClient.resolveStreamUrl(nextVideoId)?.also {
-                setCachedStreamUrl(nextVideoId, it)
+            val localDb = LocalDatabase.getInstance(context)
+            val downloadedPath = localDb.getDownloadPathSync(nextTrack.id)
+            val isLocalMedia = nextTrack.videoId.startsWith("content://") || nextTrack.videoId.startsWith("file://")
+            val isDownloadedValid = downloadedPath != null && File(downloadedPath).let { it.exists() && it.length() > 0L }
+
+            val streamUrl = when {
+                isLocalMedia -> nextTrack.videoId
+                isDownloadedValid -> android.net.Uri.fromFile(File(downloadedPath)).toString()
+                else -> getCachedStreamUrl(nextVideoId) ?: innerTubeClient.resolveStreamUrl(nextVideoId)?.also {
+                    setCachedStreamUrl(nextVideoId, it)
+                }
             }
 
             if (streamUrl == null) {
@@ -439,6 +482,10 @@ class PlaybackManager private constructor(private val context: Context) {
         val radioQueue = YouTubeRadioQueue(videoId = track.videoId, initialTrack = track, innerTubeClient = innerTubeClient)
         currentQueueProvider = radioQueue
 
+        val isAlreadyPlayingThisTrack = _state.value.currentTrack?.id == track.id &&
+                primaryPlayerInstance.playbackState != Player.STATE_IDLE &&
+                primaryPlayerInstance.playbackState != Player.STATE_ENDED
+
         _state.update {
             it.copy(
                 queueTitle = "${track.title} Radio",
@@ -446,16 +493,19 @@ class PlaybackManager private constructor(private val context: Context) {
             )
         }
 
-        playTrack(track, listOf(track))
+        if (!isAlreadyPlayingThisTrack) {
+            playTrack(track, listOf(track))
+        }
 
         scope.launch(Dispatchers.IO) {
             try {
                 val radioTracks = radioQueue.getInitialTracks()
                 if (radioTracks.isNotEmpty()) {
+                    val targetIndex = radioTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
                     _state.update { state ->
                         state.copy(
                             queue = radioTracks,
-                            queueIndex = 0,
+                            queueIndex = targetIndex,
                             queueTitle = "${track.title} Radio",
                             isRadioActive = true
                         )
@@ -553,10 +603,11 @@ class PlaybackManager private constructor(private val context: Context) {
             val localDb = LocalDatabase.getInstance(context)
             val downloadedPath = localDb.getDownloadPathSync(track.id)
             val isLocalMedia = track.videoId.startsWith("content://") || track.videoId.startsWith("file://")
+            val isDownloadedValid = downloadedPath != null && File(downloadedPath).let { it.exists() && it.length() > 0L }
 
             val streamUrl = when {
                 isLocalMedia -> track.videoId
-                downloadedPath != null && File(downloadedPath).exists() -> {
+                isDownloadedValid -> {
                     AppLogger.i("▶ Playing offline downloaded file: $downloadedPath")
                     android.net.Uri.fromFile(File(downloadedPath)).toString()
                 }
