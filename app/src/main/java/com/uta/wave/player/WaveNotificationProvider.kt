@@ -58,6 +58,7 @@ class WaveNotificationProvider(
                 player.playbackState != Player.STATE_ENDED
 
         val notification = mediaNotification.notification
+        notification.visibility = Notification.VISIBILITY_PUBLIC
         if (shouldBeOngoing) {
             notification.flags = notification.flags or Notification.FLAG_ONGOING_EVENT
         } else {
