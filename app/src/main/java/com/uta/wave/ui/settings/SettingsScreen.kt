@@ -88,6 +88,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -119,6 +120,7 @@ import com.uta.wave.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.uta.wave.data.ai.AiPlaylistGenerator
 import com.uta.wave.data.downloads.AudioDownloadManager
 import com.uta.wave.data.innertube.InnerTubeClient
 import com.uta.wave.data.innertube.TrackItem
@@ -127,6 +129,13 @@ import com.uta.wave.data.preferences.AppSettings
 import com.uta.wave.data.preferences.UserPreferences
 import com.uta.wave.ui.account.AccountScreen
 import com.uta.wave.ui.stats.ListeningSummaryScreen
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.random.Random
@@ -455,6 +464,499 @@ fun SettingsScreen(
 // -------------------------------------------------------------------------
 @Composable
 private fun AIHubSettingsSection(prefs: UserPreferences, settings: AppSettings) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
+    val currentAccent = remember(settings.accentColorHex) {
+        try {
+            Color(android.graphics.Color.parseColor(settings.accentColorHex))
+        } catch (e: Exception) {
+            Color(0xFFF2AEC7)
+        }
+    }
+
+    // AI Connection test state
+    var isTestingConnection by remember { mutableStateOf(false) }
+    var connectionTestResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+
+    // API Key inputs & visibility
+    var geminiKeyText by remember(settings.geminiApiKey) { mutableStateOf(settings.geminiApiKey) }
+    var showGeminiKey by remember { mutableStateOf(false) }
+
+    var openRouterKeyText by remember(settings.aiApiKey) { mutableStateOf(settings.aiApiKey) }
+    var showOpenRouterKey by remember { mutableStateOf(false) }
+
+    // AI Music Studio Sandbox state
+    var sandboxPrompt by remember { mutableStateOf("") }
+    var sandboxCount by remember { mutableFloatStateOf(10f) }
+    var isGeneratingPlaylist by remember { mutableStateOf(false) }
+    var generationProgressText by remember { mutableStateOf("") }
+    var generatedResultTitle by remember { mutableStateOf<String?>(null) }
+    var generatedResultTrackCount by remember { mutableIntStateOf(0) }
+
+    // -------------------------------------------------------------
+    // 1. AI PROVIDER & API KEYS CARD
+    // -------------------------------------------------------------
+    SectionHeader("AI Intelligence Engine")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Text(
+            text = "Select your AI provider for Playlist Generation & Lyrics Intelligence:",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.7f)
+        )
+
+        val providers = listOf(
+            Triple("GEMINI", "Google Gemini 2.0 Flash", "Free Official API Key • 15 RPM • Ultra Fast (< 1s)"),
+            Triple("OPENROUTER", "OpenRouter / DeepSeek", "Custom BYO Key for GPT-4o, Claude 3.5, DeepSeek"),
+            Triple("BUILTIN", "Free Neural Cloud", "Zero-setup public cloud fallback (no key needed)")
+        )
+
+        providers.forEach { (id, title, desc) ->
+            val isSelected = settings.aiProvider == id
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (isSelected) currentAccent.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.04f))
+                    .border(1.dp, if (isSelected) currentAccent.copy(alpha = 0.45f) else Color.Transparent, RoundedCornerShape(14.dp))
+                    .clickable {
+                        prefs.updateAiProvider(id)
+                        connectionTestResult = null
+                    }
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = if (isSelected) currentAccent else Color.White
+                        )
+                        if (id == "GEMINI") {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF10B981).copy(alpha = 0.2f),
+                                border = androidx.compose.foundation.BorderStroke(0.8.dp, Color(0xFF10B981).copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    text = "RECOMMENDED",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                                    color = Color(0xFF34D399),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = desc,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                        color = Color.White.copy(alpha = 0.60f)
+                    )
+                }
+                if (isSelected) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = currentAccent,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // Gemini Key Input
+        if (settings.aiProvider == "GEMINI") {
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedTextField(
+                value = geminiKeyText,
+                onValueChange = {
+                    geminiKeyText = it
+                    prefs.updateGeminiApiKey(it)
+                    connectionTestResult = null
+                },
+                label = { Text("Google Gemini API Key") },
+                placeholder = { Text("AIzaSy...") },
+                visualTransformation = if (showGeminiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { showGeminiKey = !showGeminiKey }) {
+                            Icon(
+                                imageVector = if (showGeminiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = "Toggle key visibility",
+                                tint = Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+                        IconButton(onClick = {
+                            clipboardManager.getText()?.text?.let { pasted ->
+                                val clean = pasted.trim()
+                                geminiKeyText = clean
+                                prefs.updateGeminiApiKey(clean)
+                                connectionTestResult = null
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.ContentPaste,
+                                contentDescription = "Paste key",
+                                tint = currentAccent
+                            )
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = currentAccent,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedLabelColor = currentAccent
+                )
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Free tier: 15 requests / min at Google AI Studio",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+                Text(
+                    text = "Get Free Key ↗",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
+                    color = currentAccent,
+                    modifier = Modifier.clickable {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/app/apikey"))
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Visit https://aistudio.google.com/app/apikey", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                )
+            }
+        }
+
+        // OpenRouter Key Input
+        if (settings.aiProvider == "OPENROUTER") {
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedTextField(
+                value = openRouterKeyText,
+                onValueChange = {
+                    openRouterKeyText = it
+                    prefs.updateAiApiKey(it)
+                    connectionTestResult = null
+                },
+                label = { Text("OpenRouter API Key") },
+                placeholder = { Text("sk-or-v1-...") },
+                visualTransformation = if (showOpenRouterKey) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { showOpenRouterKey = !showOpenRouterKey }) {
+                            Icon(
+                                imageVector = if (showOpenRouterKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = "Toggle key visibility",
+                                tint = Color.White.copy(alpha = 0.6f)
+                            )
+                        }
+                        IconButton(onClick = {
+                            clipboardManager.getText()?.text?.let { pasted ->
+                                val clean = pasted.trim()
+                                openRouterKeyText = clean
+                                prefs.updateAiApiKey(clean)
+                                connectionTestResult = null
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.ContentPaste,
+                                contentDescription = "Paste key",
+                                tint = currentAccent
+                            )
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = currentAccent,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedLabelColor = currentAccent
+                )
+            )
+        }
+
+        // Test Connection Button & Result Pill
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = {
+                    isTestingConnection = true
+                    connectionTestResult = null
+                    coroutineScope.launch {
+                        val res = AiPlaylistGenerator.testAiConnection(context)
+                        connectionTestResult = res
+                        isTestingConnection = false
+                    }
+                },
+                enabled = !isTestingConnection,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = currentAccent.copy(alpha = 0.25f),
+                    contentColor = currentAccent
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                if (isTestingConnection) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = currentAccent
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Testing...", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                } else {
+                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Test Connection", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                }
+            }
+
+            connectionTestResult?.let { (success, msg) ->
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (success) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFEF4444).copy(alpha = 0.15f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (success) Color(0xFF10B981).copy(alpha = 0.4f) else Color(0xFFEF4444).copy(alpha = 0.4f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (success) Icons.Default.CheckCircle else Icons.Default.Error,
+                            contentDescription = null,
+                            tint = if (success) Color(0xFF34D399) else Color(0xFFF87171),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = if (success) "Online" else "Failed",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = if (success) Color(0xFF34D399) else Color(0xFFF87171)
+                        )
+                    }
+                }
+            }
+        }
+
+        connectionTestResult?.let { (_, msg) ->
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                color = Color.White.copy(alpha = 0.8f)
+            )
+        }
+    }
+
+    // -------------------------------------------------------------
+    // 2. INTERACTIVE AI PLAYLIST STUDIO SANDBOX
+    // -------------------------------------------------------------
+    Spacer(modifier = Modifier.height(10.dp))
+    SectionHeader("AI Music Studio Sandbox")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF1E1522))
+            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Generate a bespoke themed playlist with AI right now:",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.7f)
+        )
+
+        OutlinedTextField(
+            value = sandboxPrompt,
+            onValueChange = { sandboxPrompt = it },
+            label = { Text("Vibe, Mood, or Scene") },
+            placeholder = { Text("e.g. Midnight neon drive through Neo-Tokyo") },
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 2,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = currentAccent,
+                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedLabelColor = currentAccent
+            )
+        )
+
+        // Prompt suggestions
+        val suggestions = listOf("Cyberpunk Drive", "Rainy Day Acoustic", "Tokyo City Pop", "Intense Gym", "Lo-Fi Focus")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            suggestions.take(3).forEach { chip ->
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color.White.copy(alpha = 0.06f),
+                    border = androidx.compose.foundation.BorderStroke(0.8.dp, Color.White.copy(alpha = 0.15f)),
+                    modifier = Modifier.clickable { sandboxPrompt = chip }
+                ) {
+                    Text(
+                        text = chip,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                    )
+                }
+            }
+        }
+
+        // Count slider
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Songs: ${sandboxCount.toInt()}",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = Color.White.copy(alpha = 0.8f)
+            )
+            Slider(
+                value = sandboxCount,
+                onValueChange = { sandboxCount = it },
+                valueRange = 5f..25f,
+                steps = 19,
+                modifier = Modifier.weight(1f).padding(start = 12.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = currentAccent,
+                    activeTrackColor = currentAccent,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                )
+            )
+        }
+
+        // Generate Button
+        Button(
+            onClick = {
+                val promptToUse = sandboxPrompt.ifBlank { "Top atmospheric synthwave and melodic rhythms" }
+                isGeneratingPlaylist = true
+                generationProgressText = "Starting..."
+                generatedResultTitle = null
+                coroutineScope.launch {
+                    val result = AiPlaylistGenerator.generatePlaylist(
+                        context = context,
+                        prompt = promptToUse,
+                        songCount = sandboxCount.toInt()
+                    ) { step, cur, tot ->
+                        generationProgressText = if (tot > 0) "$step ($cur/$tot)" else step
+                    }
+                    isGeneratingPlaylist = false
+                    if (result != null) {
+                        generatedResultTitle = result.name
+                        generatedResultTrackCount = result.tracks.size
+                        Toast.makeText(context, "Playlist '${result.name}' created in Library!", Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            enabled = !isGeneratingPlaylist,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = currentAccent,
+                contentColor = Color.Black
+            ),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            if (isGeneratingPlaylist) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = Color.Black
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = generationProgressText.ifBlank { "Curating Playlist..." },
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = Color.Black
+                )
+            } else {
+                Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Generate AI Playlist",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = Color.Black
+                )
+            }
+        }
+
+        generatedResultTitle?.let { title ->
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF10B981).copy(alpha = 0.15f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF34D399),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Created: $title",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White
+                        )
+                        Text(
+                            text = "$generatedResultTrackCount tracks added to your Library Playlists",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------
+    // 3. AI LYRICS TRANSLATION CARD
+    // -------------------------------------------------------------
+    Spacer(modifier = Modifier.height(10.dp))
     SectionHeader("AI Lyrics Translation")
 
     Column(
@@ -511,79 +1013,13 @@ private fun AIHubSettingsSection(prefs: UserPreferences, settings: AppSettings) 
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        tint = Color(0xFFF2AEC7),
+                        tint = currentAccent,
                         modifier = Modifier.size(18.dp)
                     )
                 }
             }
             if (idx < languages.size - 1) SettingsItemDivider()
         }
-    }
-
-    Spacer(modifier = Modifier.height(10.dp))
-    SectionHeader("AI Engine Provider")
-
-    val providers = listOf(
-        Pair("BUILTIN", "Built-in Neural Model (Offline & Fast)"),
-        Pair("WHISPER_CLOUD", "Cloud Whisper Engine (High Precision)"),
-        Pair("OPENROUTER", "OpenRouter / Custom BYO LLM Key")
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF1E1522))
-            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
-    ) {
-        providers.forEachIndexed { idx, (id, label) ->
-            val isSelected = settings.aiProvider == id
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { prefs.updateAiProvider(id) }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                    ),
-                    color = Color.White,
-                    modifier = Modifier.weight(1f)
-                )
-                if (isSelected) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color(0xFFF2AEC7),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-            if (idx < providers.size - 1) SettingsItemDivider()
-        }
-    }
-
-    if (settings.aiProvider == "OPENROUTER") {
-        Spacer(modifier = Modifier.height(10.dp))
-        var apiKeyText by remember { mutableStateOf(settings.aiApiKey) }
-        OutlinedTextField(
-            value = apiKeyText,
-            onValueChange = {
-                apiKeyText = it
-                prefs.updateAiApiKey(it)
-            },
-            label = { Text("OpenRouter / Custom API Key") },
-            placeholder = { Text("sk-or-v1-...") },
-            modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFFF2AEC7),
-                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
-            )
-        )
     }
 }
 
@@ -1186,7 +1622,7 @@ private fun AppearanceSettingsSection(
                 }
                 Column {
                     Text(
-                        text = "Liquid Glass (Beta)",
+                        text = "Liquid Glass & Optics",
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 15.sp
@@ -1195,7 +1631,7 @@ private fun AppearanceSettingsSection(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (settings.liquidGlassGlobalEnabled) "Enabled • AGSL shaders, lens refraction & blur" else "Disabled • Tap to configure",
+                        text = "Permanent • AGSL shaders, miniplayer & navigation optics",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                         color = Color.White.copy(alpha = 0.60f)
                     )
@@ -1632,9 +2068,48 @@ private fun AppearanceSettingsSection(
                     )
                 }
             }
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = currentAccent.copy(alpha = 0.2f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, currentAccent.copy(alpha = 0.4f))
+            ) {
+                Text(
+                    text = "Permanent",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                    color = currentAccent,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        SettingsItemDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Hide volume slider",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Hide the on-screen volume slider on Apple Music player",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.60f)
+                )
+            }
             Switch(
-                checked = settings.appleMusicPlayerEnabled,
-                onCheckedChange = { prefs.updateAppleMusicPlayer(it) },
+                checked = settings.hideVolumeSlider,
+                onCheckedChange = { prefs.updateHideVolumeSlider(it) },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = currentAccent,
@@ -1642,45 +2117,6 @@ private fun AppearanceSettingsSection(
                     uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
                 )
             )
-        }
-
-        if (settings.appleMusicPlayerEnabled) {
-            Spacer(modifier = Modifier.height(12.dp))
-            SettingsItemDivider()
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Hide volume slider",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp
-                        ),
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Hide the on-screen volume slider on Apple Music player",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = Color.White.copy(alpha = 0.60f)
-                    )
-                }
-                Switch(
-                    checked = settings.hideVolumeSlider,
-                    onCheckedChange = { prefs.updateHideVolumeSlider(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = currentAccent,
-                        uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
-                        uncheckedTrackColor = Color.White.copy(alpha = 0.12f)
-                    )
-                )
-            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))

@@ -120,6 +120,8 @@ class PlaybackManager private constructor(private val context: Context) {
     private var crossfadeJob: Job? = null
     private var isCrossfading = false
     private var currentSpeed: Float = 1.0f
+    private var lastListeningSamplePosMs: Long = 0L
+    private var lastListeningTrackId: String? = null
 
     fun ensureServiceStarted() {
         try {
@@ -244,8 +246,12 @@ class PlaybackManager private constructor(private val context: Context) {
                 if (isPlaying) {
                     startProgressTracker()
                     _state.value.currentTrack?.let { track ->
-                        scope.launch(Dispatchers.IO) {
-                            localDatabase.recordHistory(track)
+                        if (lastListeningTrackId != track.id) {
+                            lastListeningTrackId = track.id
+                            lastListeningSamplePosMs = primaryPlayerInstance.currentPosition.coerceAtLeast(0L)
+                            scope.launch(Dispatchers.IO) {
+                                localDatabase.recordHistory(track)
+                            }
                         }
                     }
                 } else {
@@ -341,6 +347,27 @@ class PlaybackManager private constructor(private val context: Context) {
                     // Save queue position periodically for persistence
                     if (currentPos > 0 && currentPos % 5000 < 150) {
                         savePersistentQueuePosition(currentPos)
+                    }
+
+                    // Real-time accurate listening duration accumulation
+                    val currentTrack = _state.value.currentTrack
+                    if (currentTrack != null) {
+                        if (lastListeningTrackId != currentTrack.id) {
+                            lastListeningTrackId = currentTrack.id
+                            lastListeningSamplePosMs = currentPos
+                        } else {
+                            val deltaMs = currentPos - lastListeningSamplePosMs
+                            if (deltaMs >= 15_000L && deltaMs < 60_000L) {
+                                lastListeningSamplePosMs = currentPos
+                                val deltaSec = (deltaMs / 1000L).toInt()
+                                scope.launch(Dispatchers.IO) {
+                                    localDatabase.recordListeningTime(currentTrack, deltaSec)
+                                }
+                            } else if (deltaMs < 0 || deltaMs >= 60_000L) {
+                                // Seek occurred
+                                lastListeningSamplePosMs = currentPos
+                            }
+                        }
                     }
 
                     // Check for Standby Crossfade Trigger

@@ -307,13 +307,13 @@ fun MiniPlayer(
     val context = LocalContext.current
     val userPrefs = remember { UserPreferences.getInstance(context) }
     val settings by userPrefs.settingsFlow.collectAsState()
-    val isPureBlack = settings.pureBlackMiniPlayer || settings.pureBlack
+    val isPureBlack = settings.pureBlack
 
     val glassConfig = LocalGlassEffectConfig.current
     val miniPlayerBackground = settings.miniplayerBackgroundStyle
     val isGlassSelected = miniPlayerBackground == "LIQUID_GLASS" || glassConfig.isEnabledFor(GlassComponent.MINI_PLAYER)
     val useGlass = isGlassSelected && isGlassSupported() && !isPureBlack
-    val isDynamicBackground = !useGlass && miniPlayerBackground in listOf("BLUR", "GLOW_ANIMATED", "LIVE_MESH")
+    val isDynamicBackground = !useGlass && miniPlayerBackground in listOf("BLUR", "GLOW_ANIMATED", "LIVE_MESH", "ACRYLIC_BLUR")
 
     val adaptiveTextColor =
         if (glassConfig.textColor.isSpecified) {
@@ -601,35 +601,79 @@ fun MiniPlayer(
                     }
                 }
 
-                // Thin progress track at bottom edge of pill
+                // Progress track at bottom edge of pill
                 val progress = if (playerState.durationMs > 0) {
                     (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
                 } else 0f
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .background(Color.White.copy(alpha = 0.08f))
-                ) {
+                val progressStyle = settings.miniplayerProgressStyle
+                if (progressStyle != "HIDDEN") {
+                    val trackHeight = if (progressStyle == "WAVE") 3.dp else 2.dp
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(fraction = progress)
-                            .height(2.dp)
-                            .background(
-                                when {
-                                    useGlass -> Brush.horizontalGradient(
-                                        colors = listOf(adaptiveTextColor, adaptiveTextColor.copy(alpha = 0.35f))
-                                    )
-                                    isDynamicBackground -> Brush.horizontalGradient(
-                                        colors = listOf(Color.White, Color.White.copy(alpha = 0.45f))
-                                    )
-                                    else -> Brush.horizontalGradient(
-                                        colors = listOf(BlushRose, ElectricViolet)
-                                    )
-                                }
+                            .fillMaxWidth()
+                            .height(trackHeight)
+                            .background(Color.White.copy(alpha = 0.08f))
+                    ) {
+                        val progressBrush = when {
+                            progressStyle == "NEON_TRACK" -> Brush.horizontalGradient(
+                                colors = listOf(ElectricViolet, BlushRose)
                             )
-                    )
+                            useGlass -> Brush.horizontalGradient(
+                                colors = listOf(adaptiveTextColor, adaptiveTextColor.copy(alpha = 0.35f))
+                            )
+                            isDynamicBackground -> Brush.horizontalGradient(
+                                colors = listOf(Color.White, Color.White.copy(alpha = 0.45f))
+                            )
+                            else -> Brush.horizontalGradient(
+                                colors = listOf(BlushRose, ElectricViolet)
+                            )
+                        }
+
+                        if (progressStyle == "WAVE" && playerState.isPlaying) {
+                            // Animated mini waveform track
+                            val wavePhase by infiniteTransition.animateFloat(
+                                initialValue = 0f,
+                                targetValue = (2 * Math.PI).toFloat(),
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(1200, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Restart
+                                ),
+                                label = "MiniWaveProgress"
+                            )
+                            val accentClr = if (useGlass) adaptiveTextColor else BlushRose
+                            androidx.compose.foundation.Canvas(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction = progress)
+                                    .height(trackHeight)
+                            ) {
+                                val w = size.width
+                                val h = size.height
+                                val midY = h / 2f
+                                val path = androidx.compose.ui.graphics.Path()
+                                val step = 4f
+                                var x = 0f
+                                path.moveTo(0f, midY)
+                                while (x <= w) {
+                                    val y = midY + kotlin.math.sin(x * 0.15f + wavePhase) * (h * 0.4f)
+                                    path.lineTo(x, y)
+                                    x += step
+                                }
+                                drawPath(
+                                    path = path,
+                                    color = accentClr,
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f)
+                                )
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction = progress)
+                                    .height(trackHeight)
+                                    .background(progressBrush)
+                            )
+                        }
+                    }
                 }
             }
         }

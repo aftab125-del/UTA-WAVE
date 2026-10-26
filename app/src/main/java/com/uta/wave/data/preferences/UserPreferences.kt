@@ -19,9 +19,15 @@ data class AppSettings(
     val accentColorHex: String = "#F2AEC7",        // Blush Pink (#F2AEC7), Violet (#A855F7), Sky Blue (#38BDF8), Emerald (#10B981), Amber (#F59E0B)
     val fontScale: Float = 1.0f,                   // 0.9f, 1.0f, 1.15f
     val miniplayerStyle: String = "FLOATING",      // FLOATING, BOTTOM_ATTACHED
-    val miniplayerBackgroundStyle: String = "DEFAULT", // DEFAULT (Follow theme), BLUR, GLOW_ANIMATED, LIVE_MESH, LIQUID_GLASS
-    val playerStyle: String = "APPLE_MUSIC",       // APPLE_MUSIC, WAVE (Squiggly), CLASSIC
-    val appleMusicPlayerEnabled: Boolean = true,   // Apple Music inspired fullscreen player layout
+    val miniplayerBackgroundStyle: String = "LIQUID_GLASS", // LIQUID_GLASS, GLOW_ANIMATED, ACRYLIC_BLUR, SOLID_ELEVATED, DEFAULT
+    val miniplayerProgressStyle: String = "WAVE",  // WAVE, LINEAR, NEON_TRACK, HIDDEN
+    val miniplayerGlowIntensity: Float = 0.8f,     // 0.0f .. 1.0f
+    val navBarPillCompact: Boolean = false,        // false = Stadium Full Bar, true = Compact Dynamic Capsule
+    val navBarGlassOpacity: Float = 0.85f,         // 0.40f .. 1.00f
+    val navBarAutoHideOnScroll: Boolean = true,    // Auto-hide navigation on feed scroll
+    val navBarBlurRadius: Float = 24.0f,           // 10dp .. 40dp
+    val playerStyle: String = "APPLE_MUSIC",       // APPLE_MUSIC (Permanent)
+    val appleMusicPlayerEnabled: Boolean = true,   // Apple Music inspired fullscreen player layout (Permanent)
     val hideVolumeSlider: Boolean = false,         // Hide volume slider on Apple Music player
     val sliderStyle: String = "SQUIGGLY",          // BAR, WAVY, SLIM, SQUIGGLY
     val wavyPlayPause: Boolean = true,             // 9-sided rotating wavy cookie play/pause button
@@ -116,9 +122,10 @@ data class AppSettings(
     // AI Hub
     val aiTranslationEnabled: Boolean = false,
     val aiRomanizationEnabled: Boolean = false,
-    val aiProvider: String = "BUILTIN",            // BUILTIN, WHISPER_CLOUD, OPENROUTER, CUSTOM
+    val aiProvider: String = "GEMINI",             // GEMINI (Google 2.0 Flash), OPENROUTER, BUILTIN
     val aiTargetLanguage: String = "English",      // English, Spanish, French, Japanese, Hindi, German
     val aiApiKey: String = "",
+    val geminiApiKey: String = "",
 
     // Listen Together
     val listenTogetherRoomCode: String = "",
@@ -158,8 +165,8 @@ data class AppSettings(
     val selectedFont: String = "GOOGLE_SANS",      // SYSTEM, GOOGLE_SANS, SANS_FLEX, OUTFIT, PLUS_JAKARTA_SANS, CUSTOM
     val customFontPath: String? = null,
 
-    // Liquid Glass (Beta)
-    val liquidGlassGlobalEnabled: Boolean = false,
+    // Liquid Glass & Optics (Permanent)
+    val liquidGlassGlobalEnabled: Boolean = true,
     val liquidGlassVibrancy: Float = 1.0f,
     val liquidGlassBlurRadius: Float = 8.0f,
     val liquidGlassLensHeight: Float = 0.5f,
@@ -211,9 +218,15 @@ class UserPreferences private constructor(context: Context) {
             accentColorHex = prefs.getString("accent_color_hex", "#F2AEC7") ?: "#F2AEC7",
             fontScale = prefs.getFloat("font_scale", 1.0f),
             miniplayerStyle = prefs.getString("miniplayer_style", "FLOATING") ?: "FLOATING",
-            miniplayerBackgroundStyle = prefs.getString("miniplayer_background_style", "DEFAULT") ?: "DEFAULT",
-            playerStyle = prefs.getString("player_style", "APPLE_MUSIC") ?: "APPLE_MUSIC",
-            appleMusicPlayerEnabled = prefs.getBoolean("apple_music_player_enabled", true),
+            miniplayerBackgroundStyle = prefs.getString("miniplayer_background_style", "LIQUID_GLASS") ?: "LIQUID_GLASS",
+            miniplayerProgressStyle = prefs.getString("miniplayer_progress_style", "WAVE") ?: "WAVE",
+            miniplayerGlowIntensity = prefs.getFloat("miniplayer_glow_intensity", 0.8f),
+            navBarPillCompact = prefs.getBoolean("navbar_pill_compact", false),
+            navBarGlassOpacity = prefs.getFloat("navbar_glass_opacity", 0.85f),
+            navBarAutoHideOnScroll = prefs.getBoolean("navbar_autohide_on_scroll", true),
+            navBarBlurRadius = prefs.getFloat("navbar_blur_radius", 24.0f),
+            playerStyle = "APPLE_MUSIC",
+            appleMusicPlayerEnabled = true,
             hideVolumeSlider = prefs.getBoolean("hide_volume_slider", false),
             sliderStyle = prefs.getString("slider_style", "SQUIGGLY") ?: "SQUIGGLY",
             wavyPlayPause = prefs.getBoolean("wavy_play_pause", true),
@@ -301,9 +314,10 @@ class UserPreferences private constructor(context: Context) {
 
             aiTranslationEnabled = prefs.getBoolean("ai_translation_enabled", false),
             aiRomanizationEnabled = prefs.getBoolean("ai_romanization_enabled", false),
-            aiProvider = prefs.getString("ai_provider", "BUILTIN") ?: "BUILTIN",
+            aiProvider = prefs.getString("ai_provider", "GEMINI") ?: "GEMINI",
             aiTargetLanguage = prefs.getString("ai_target_language", "English") ?: "English",
             aiApiKey = prefs.getString("ai_api_key", "") ?: "",
+            geminiApiKey = prefs.getString("gemini_api_key", "") ?: "",
 
             listenTogetherRoomCode = prefs.getString("listen_together_room_code", "") ?: "",
             listenTogetherSyncMode = prefs.getString("listen_together_sync_mode", "HOST_SYNC") ?: "HOST_SYNC",
@@ -337,7 +351,7 @@ class UserPreferences private constructor(context: Context) {
             selectedFont = prefs.getString("selected_font", "GOOGLE_SANS") ?: "GOOGLE_SANS",
             customFontPath = prefs.getString("custom_font_path", null),
 
-            liquidGlassGlobalEnabled = prefs.getBoolean("liquid_glass_global_enabled", false),
+            liquidGlassGlobalEnabled = prefs.getBoolean("liquid_glass_global_enabled", true),
             liquidGlassVibrancy = prefs.getFloat("liquid_glass_vibrancy", 1.0f),
             liquidGlassBlurRadius = prefs.getFloat("liquid_glass_blur_radius", 8.0f),
             liquidGlassLensHeight = prefs.getFloat("liquid_glass_lens_height", 0.5f),
@@ -426,14 +440,45 @@ class UserPreferences private constructor(context: Context) {
         _settingsFlow.update { it.copy(miniplayerBackgroundStyle = style) }
     }
 
-    fun updatePlayerStyle(style: String) {
-        prefs.edit().putString("player_style", style).apply()
-        _settingsFlow.update { it.copy(playerStyle = style) }
+    fun updateMiniplayerProgressStyle(style: String) {
+        prefs.edit().putString("miniplayer_progress_style", style).apply()
+        _settingsFlow.update { it.copy(miniplayerProgressStyle = style) }
     }
 
-    fun updateAppleMusicPlayer(enabled: Boolean) {
-        prefs.edit().putBoolean("apple_music_player_enabled", enabled).apply()
-        _settingsFlow.update { it.copy(appleMusicPlayerEnabled = enabled, playerStyle = if (enabled) "APPLE_MUSIC" else "WAVE") }
+    fun updateMiniplayerGlowIntensity(intensity: Float) {
+        prefs.edit().putFloat("miniplayer_glow_intensity", intensity).apply()
+        _settingsFlow.update { it.copy(miniplayerGlowIntensity = intensity) }
+    }
+
+    fun updateNavBarPillCompact(compact: Boolean) {
+        prefs.edit().putBoolean("navbar_pill_compact", compact).apply()
+        _settingsFlow.update { it.copy(navBarPillCompact = compact) }
+    }
+
+    fun updateNavBarGlassOpacity(opacity: Float) {
+        prefs.edit().putFloat("navbar_glass_opacity", opacity).apply()
+        _settingsFlow.update { it.copy(navBarGlassOpacity = opacity) }
+    }
+
+    fun updateNavBarAutoHideOnScroll(autoHide: Boolean) {
+        prefs.edit().putBoolean("navbar_autohide_on_scroll", autoHide).apply()
+        _settingsFlow.update { it.copy(navBarAutoHideOnScroll = autoHide) }
+    }
+
+    fun updateNavBarBlurRadius(radius: Float) {
+        prefs.edit().putFloat("navbar_blur_radius", radius).apply()
+        _settingsFlow.update { it.copy(navBarBlurRadius = radius) }
+    }
+
+    fun updatePlayerStyle(style: String) {
+        prefs.edit().putString("player_style", "APPLE_MUSIC").apply()
+        _settingsFlow.update { it.copy(playerStyle = "APPLE_MUSIC") }
+    }
+
+    fun updateAppleMusicPlayer(enabled: Boolean = true) {
+        // Apple Music player is locked permanent
+        prefs.edit().putBoolean("apple_music_player_enabled", true).putString("player_style", "APPLE_MUSIC").apply()
+        _settingsFlow.update { it.copy(appleMusicPlayerEnabled = true, playerStyle = "APPLE_MUSIC") }
     }
 
     fun updateHideVolumeSlider(hidden: Boolean) {
@@ -894,6 +939,11 @@ class UserPreferences private constructor(context: Context) {
         _settingsFlow.update { it.copy(aiApiKey = key) }
     }
 
+    fun updateGeminiApiKey(key: String) {
+        prefs.edit().putString("gemini_api_key", key).apply()
+        _settingsFlow.update { it.copy(geminiApiKey = key) }
+    }
+
     // Listen Together Updates
     fun updateListenTogetherRoomCode(code: String) {
         prefs.edit().putString("listen_together_room_code", code).apply()
@@ -1014,10 +1064,10 @@ class UserPreferences private constructor(context: Context) {
         _settingsFlow.update { it.copy(autoBackupSchedule = schedule) }
     }
 
-    // Liquid Glass Updates
-    fun updateLiquidGlassGlobalEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean("liquid_glass_global_enabled", enabled).apply()
-        _settingsFlow.update { it.copy(liquidGlassGlobalEnabled = enabled) }
+    // Liquid Glass & Optics Updates (Permanent)
+    fun updateLiquidGlassGlobalEnabled(enabled: Boolean = true) {
+        prefs.edit().putBoolean("liquid_glass_global_enabled", true).apply()
+        _settingsFlow.update { it.copy(liquidGlassGlobalEnabled = true) }
     }
 
     fun updateLiquidGlassVibrancy(vibrancy: Float) {
