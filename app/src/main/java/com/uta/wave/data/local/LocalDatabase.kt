@@ -63,10 +63,18 @@ class LocalDatabase private constructor(context: Context) :
     private val _weeklySummaryFlow = MutableStateFlow<WeeklyListeningSummary?>(null)
     val weeklySummaryFlow: StateFlow<WeeklyListeningSummary?> = _weeklySummaryFlow.asStateFlow()
 
+    private val _hiddenTrackIdsFlow = MutableStateFlow<Set<String>>(emptySet())
+    val hiddenTrackIdsFlow: StateFlow<Set<String>> = _hiddenTrackIdsFlow.asStateFlow()
+
+    private val _speedDialFlow = MutableStateFlow<List<TrackItem>>(emptyList())
+    val speedDialFlow: StateFlow<List<TrackItem>> = _speedDialFlow.asStateFlow()
+
     init {
         ensureRecognizedTable()
         ensureDownloadsTable()
         ensureListeningLogsTable()
+        ensureHiddenSongsTable()
+        ensureSpeedDialTable()
         refreshAllFlows()
         CoroutineScope(Dispatchers.IO).launch {
             if (restoreAutoBackupIfEmpty()) {
@@ -155,6 +163,26 @@ class LocalDatabase private constructor(context: Context) :
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_listening_logs_time ON listening_logs (timestamp DESC)")
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS hidden_songs (
+                track_id TEXT PRIMARY KEY NOT NULL,
+                hidden_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS speed_dial (
+                track_id TEXT PRIMARY KEY NOT NULL,
+                pinned_at INTEGER NOT NULL,
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_speed_dial_time ON speed_dial (pinned_at DESC)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -225,6 +253,40 @@ class LocalDatabase private constructor(context: Context) :
         }
     }
 
+    private fun ensureHiddenSongsTable() {
+        try {
+            val db = writableDatabase
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS hidden_songs (
+                    track_id TEXT PRIMARY KEY NOT NULL,
+                    hidden_at INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
+    private fun ensureSpeedDialTable() {
+        try {
+            val db = writableDatabase
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS speed_dial (
+                    track_id TEXT PRIMARY KEY NOT NULL,
+                    pinned_at INTEGER NOT NULL,
+                    FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_speed_dial_time ON speed_dial (pinned_at DESC)")
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
     private fun refreshAllFlows() {
         try {
             _favoritesFlow.value = queryFavoritesSync()
@@ -233,6 +295,8 @@ class LocalDatabase private constructor(context: Context) :
             _recognizedFlow.value = queryRecognizedSync()
             _downloadsFlow.value = queryDownloadsSync()
             _weeklySummaryFlow.value = queryWeeklyListeningSummarySync()
+            _hiddenTrackIdsFlow.value = queryHiddenTrackIdsSync()
+            _speedDialFlow.value = querySpeedDialTracksSync()
         } catch (e: Exception) {
             // ignore
         }
@@ -484,6 +548,124 @@ class LocalDatabase private constructor(context: Context) :
             values,
             SQLiteDatabase.CONFLICT_REPLACE
         )
+    }
+
+    suspend fun updateTrackMetadata(
+        trackId: String,
+        title: String,
+        artist: String,
+        album: String?
+    ) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("title", title.trim())
+            put("artist", artist.trim())
+            put("album", album?.trim()?.ifEmpty { null })
+        }
+        db.update("tracks", values, "id = ?", arrayOf(trackId))
+        refreshAllFlows()
+    }
+
+    fun queryHiddenTrackIdsSync(): Set<String> {
+        val set = mutableSetOf<String>()
+        val db = readableDatabase
+        try {
+            db.rawQuery("SELECT track_id FROM hidden_songs", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    set.add(cursor.getString(0))
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return set
+    }
+
+    suspend fun hideSongFromHome(trackId: String) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("track_id", trackId)
+            put("hidden_at", System.currentTimeMillis())
+        }
+        db.insertWithOnConflict("hidden_songs", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        _hiddenTrackIdsFlow.value = queryHiddenTrackIdsSync()
+    }
+
+    suspend fun unhideSongFromHome(trackId: String) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.delete("hidden_songs", "track_id = ?", arrayOf(trackId))
+        _hiddenTrackIdsFlow.value = queryHiddenTrackIdsSync()
+    }
+
+    fun isSongHiddenSync(trackId: String): Boolean {
+        val db = readableDatabase
+        try {
+            db.rawQuery("SELECT 1 FROM hidden_songs WHERE track_id = ?", arrayOf(trackId)).use { cursor ->
+                return cursor.moveToFirst()
+            }
+        } catch (e: Exception) {
+            return false
+        }
+    }
+
+    fun querySpeedDialTracksSync(): List<TrackItem> {
+        val tracks = mutableListOf<TrackItem>()
+        val db = readableDatabase
+        val sql = """
+            SELECT t.id, t.video_id, t.title, t.artist, t.album, t.artwork_url, t.duration_seconds, t.is_synced_lyrics
+            FROM tracks t
+            INNER JOIN speed_dial s ON t.id = s.track_id
+            ORDER BY s.pinned_at DESC
+        """.trimIndent()
+        try {
+            db.rawQuery(sql, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    tracks.add(
+                        TrackItem(
+                            id = cursor.getString(0),
+                            videoId = cursor.getString(1),
+                            title = cursor.getString(2),
+                            artist = cursor.getString(3),
+                            album = cursor.getString(4),
+                            artworkUrl = cursor.getString(5),
+                            durationSeconds = cursor.getInt(6),
+                            isSynced = cursor.getInt(7) == 1
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return tracks
+    }
+
+    suspend fun pinToSpeedDial(track: TrackItem) = withContext(Dispatchers.IO) {
+        insertTrack(track)
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("track_id", track.id)
+            put("pinned_at", System.currentTimeMillis())
+        }
+        db.insertWithOnConflict("speed_dial", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        _speedDialFlow.value = querySpeedDialTracksSync()
+    }
+
+    suspend fun unpinFromSpeedDial(trackId: String) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.delete("speed_dial", "track_id = ?", arrayOf(trackId))
+        _speedDialFlow.value = querySpeedDialTracksSync()
+    }
+
+    fun isPinnedToSpeedDialSync(trackId: String): Boolean {
+        val db = readableDatabase
+        try {
+            db.rawQuery("SELECT 1 FROM speed_dial WHERE track_id = ?", arrayOf(trackId)).use { cursor ->
+                return cursor.moveToFirst()
+            }
+        } catch (e: Exception) {
+            return false
+        }
     }
 
     suspend fun toggleFavorite(track: TrackItem): Boolean = withContext(Dispatchers.IO) {

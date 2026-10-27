@@ -88,6 +88,8 @@ import com.uta.wave.data.downloads.AudioDownloadManager
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.data.local.PlaylistRecord
+import com.uta.wave.player.PlaybackManager
+import com.uta.wave.ui.components.SongMenuBottomSheet
 import com.uta.wave.ui.components.TrackRow
 import com.uta.wave.ui.recognizer.BlushRose
 import com.uta.wave.ui.recognizer.DarkBlushText
@@ -713,132 +715,28 @@ fun PlaylistDetailView(
         )
     }
 
-    // Bottom Sheet: Track Actions Menu (Remove from Playlist, Download/Delete Download, etc.)
+    // Bottom Sheet: Track Actions Menu (Full Screenshot 2 Parity)
     selectedTrackMenu?.let { item ->
-        val isItemDownloaded = downloadedSet.contains(item.id)
-        val isItemDownloading = downloadingIds.contains(item.id)
-
-        ModalBottomSheet(
-            onDismissRequest = { selectedTrackMenu = null },
-            containerColor = Color(0xFF18121E),
-            scrimColor = Color.Black.copy(alpha = 0.65f),
-            dragHandle = null
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 18.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(width = 36.dp, height = 4.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.2f))
-                        .align(Alignment.CenterHorizontally)
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Track header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AsyncImage(
-                        model = item.artworkUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
-                            color = TextPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = item.artist,
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = TextSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+        val playbackManager = remember { PlaybackManager.getInstance(context) }
+        val favoritesList by localDatabase.favoritesFlow.collectAsState(initial = emptyList())
+        SongMenuBottomSheet(
+            track = item,
+            playlistId = playlist.id,
+            isFavorite = favoritesList.any { it.id == item.id },
+            onToggleFavorite = { onToggleFavorite(it) },
+            onPlayNext = { track -> playbackManager.addToQueue(track, insertNext = true) },
+            onAddToQueue = { track -> playbackManager.addToQueue(track, insertNext = false) },
+            onRemoveFromPlaylist = { track ->
+                scope.launch {
+                    localDatabase.removeTrackFromPlaylist(playlist.id, track.id)
+                    refreshTracks()
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Action: Download / Remove Download
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable {
-                            if (isItemDownloaded) {
-                                downloadManager.deleteDownload(item.id)
-                                Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
-                            } else {
-                                downloadManager.downloadTrack(item)
-                                Toast.makeText(context, "Downloading...", Toast.LENGTH_SHORT).show()
-                            }
-                            selectedTrackMenu = null
-                        }
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (isItemDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                        contentDescription = null,
-                        tint = if (isItemDownloaded) ElectricViolet else TextPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Text(
-                        text = if (isItemDownloading) "Downloading..." else if (isItemDownloaded) "Remove Download" else "Download for Offline Play",
-                        color = TextPrimary,
-                        fontSize = 14.sp
-                    )
-                }
-
-                // Action: Remove from Playlist
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable {
-                            scope.launch {
-                                localDatabase.removeTrackFromPlaylist(playlist.id, item.id)
-                                refreshTracks()
-                                selectedTrackMenu = null
-                                Toast.makeText(context, "Removed \"${item.title}\" from playlist", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = null,
-                        tint = Color(0xFFEF5350),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Text(
-                        text = "Remove from Playlist",
-                        color = Color(0xFFEF5350),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-        }
+            },
+            onTrackUpdated = {
+                refreshTracks()
+            },
+            onDismiss = { selectedTrackMenu = null }
+        )
     }
 }
 

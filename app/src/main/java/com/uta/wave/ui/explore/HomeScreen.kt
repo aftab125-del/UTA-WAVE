@@ -120,6 +120,8 @@ fun HomeScreen(
     val localDatabase = remember { LocalDatabase.getInstance(context) }
     val downloadedTracks by localDatabase.downloadsFlow.collectAsState(initial = emptyList())
     val playlists by localDatabase.playlistsFlow.collectAsState(initial = emptyList())
+    val hiddenTrackIds by localDatabase.hiddenTrackIdsFlow.collectAsState(initial = emptySet())
+    val pinnedSpeedDial by localDatabase.speedDialFlow.collectAsState(initial = emptyList())
     val isOnline by NetworkMonitor.observeNetwork(context).collectAsState(initial = NetworkMonitor.isOnline(context))
     val accountManager = remember { com.uta.wave.data.account.AccountManager.getInstance(context) }
     val userProfile by accountManager.profileFlow.collectAsState()
@@ -198,7 +200,8 @@ fun HomeScreen(
         }
     }
 
-    val activeList = if (selectedMood != null && moodTracks.isNotEmpty()) moodTracks else trendingTracks
+    val rawActiveList = if (selectedMood != null && moodTracks.isNotEmpty()) moodTracks else trendingTracks
+    val activeList = rawActiveList.filter { it.id !in hiddenTrackIds }
 
     Box(
         modifier = modifier
@@ -992,7 +995,10 @@ fun HomeScreen(
             // 6. "SPEED DIAL" 3-Column Square Grid with Frosted Center Play Button
             // -------------------------------------------------------------
             item {
-                val speedDialItems = activeList.drop(13).take(9).ifEmpty { activeList.take(9) }
+                val speedDialItems = (pinnedSpeedDial.filter { it.id !in hiddenTrackIds } + activeList.drop(13))
+                    .distinctBy { it.id }
+                    .take(9)
+                    .ifEmpty { activeList.take(9) }
                 if (speedDialItems.isNotEmpty()) {
                     Column(
                         modifier = Modifier
