@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
@@ -36,12 +37,19 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -84,6 +92,9 @@ fun SongMenuBottomSheet(
     onStartRadio: ((TrackItem) -> Unit)? = null,
     onOpenArtist: ((String) -> Unit)? = null,
     onRemoveFromQueue: ((TrackItem) -> Unit)? = null,
+    playlistId: String? = null,
+    onRemoveFromPlaylist: ((TrackItem) -> Unit)? = null,
+    onTrackUpdated: ((TrackItem) -> Unit)? = null,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -93,11 +104,15 @@ fun SongMenuBottomSheet(
     val downloadManager = remember { AudioDownloadManager.getInstance(context) }
 
     val playlists by localDatabase.playlistsFlow.collectAsState(initial = emptyList())
+    val hiddenTrackIds by localDatabase.hiddenTrackIdsFlow.collectAsState(initial = emptySet())
     val isDownloaded = remember(track.id) { downloadManager.isDownloaded(track.id) }
+    val isSongHidden = hiddenTrackIds.contains(track.id)
+    val isPlaylistMode = !playlistId.isNullOrBlank()
 
     var showPlaylistPicker by remember { mutableStateOf(false) }
     var showSongDetails by remember { mutableStateOf(false) }
     var showTrimRingtone by remember { mutableStateOf(false) }
+    var showEditSongDialog by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -178,173 +193,306 @@ fun SongMenuBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 2. Horizontal Quick Action Pills: Start Radio, Add to Playlist, Share
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Start Radio Pill
-                QuickActionPill(
-                    icon = Icons.Default.Radio,
-                    label = "Start radio",
-                    onClick = {
-                        onStartRadio?.invoke(track)
-                        Toast.makeText(context, "Starting radio from ${track.title}", Toast.LENGTH_SHORT).show()
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f)
-                )
+            // 2. Horizontal Quick Action Pills: Start Radio, Add to Playlist, Share (Non-playlist mode)
+            if (!isPlaylistMode) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Start Radio Pill
+                    QuickActionPill(
+                        icon = Icons.Default.Radio,
+                        label = "Start radio",
+                        onClick = {
+                            onStartRadio?.invoke(track)
+                            Toast.makeText(context, "Starting radio from ${track.title}", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
 
-                // Add to Playlist Pill
-                QuickActionPill(
-                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    label = "Add to playlist",
-                    onClick = {
-                        showPlaylistPicker = true
-                    },
-                    modifier = Modifier.weight(1.1f)
-                )
+                    // Add to Playlist Pill
+                    QuickActionPill(
+                        icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                        label = "Add to playlist",
+                        onClick = {
+                            showPlaylistPicker = true
+                        },
+                        modifier = Modifier.weight(1.1f)
+                    )
 
-                // Share Pill
-                QuickActionPill(
-                    icon = Icons.Default.Share,
-                    label = "Share",
-                    onClick = {
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            val streamUrl = "https://music.youtube.com/watch?v=${track.videoId}"
-                            putExtra(Intent.EXTRA_SUBJECT, track.title)
-                            putExtra(Intent.EXTRA_TEXT, "${track.title} by ${track.artist} on UTA-WAVE: $streamUrl")
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share Track"))
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(0.9f)
-                )
+                    // Share Pill
+                    QuickActionPill(
+                        icon = Icons.Default.Share,
+                        label = "Share",
+                        onClick = {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                val streamUrl = "https://music.youtube.com/watch?v=${track.videoId}"
+                                putExtra(Intent.EXTRA_SUBJECT, track.title)
+                                putExtra(Intent.EXTRA_TEXT, "${track.title} by ${track.artist} on UTA-WAVE: $streamUrl")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Track"))
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(0.9f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
             }
-
-            Spacer(modifier = Modifier.height(14.dp))
 
             // 3. Vertical Detailed Action Items
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Play Next
-                ActionMenuItem(
-                    icon = Icons.AutoMirrored.Filled.PlaylistPlay,
-                    title = "Play next",
-                    subtitle = "Add to the top of your queue",
-                    onClick = {
-                        onPlayNext?.invoke(track)
-                        Toast.makeText(context, "Playing next: ${track.title}", Toast.LENGTH_SHORT).show()
-                        onDismiss()
-                    }
-                )
-
-                // Add to Queue
-                ActionMenuItem(
-                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    title = "Add to queue",
-                    subtitle = "Add to the bottom of your queue",
-                    onClick = {
-                        onAddToQueue?.invoke(track)
-                        Toast.makeText(context, "Added to queue", Toast.LENGTH_SHORT).show()
-                        onDismiss()
-                    }
-                )
-
-                // Pin to Speed Dial
-                ActionMenuItem(
-                    icon = Icons.Default.PushPin,
-                    title = "Pin to Speed dial",
-                    subtitle = "Pin for instant one-tap playback",
-                    onClick = {
-                        scope.launch {
-                            localDatabase.insertTrack(track)
-                            Toast.makeText(context, "Pinned to speed dial", Toast.LENGTH_SHORT).show()
-                            onDismiss()
-                        }
-                    }
-                )
-
-                // Add to Library
-                ActionMenuItem(
-                    icon = Icons.Default.BookmarkAdd,
-                    title = "Add to library",
-                    subtitle = "Save to your library tracks",
-                    onClick = {
-                        scope.launch {
-                            localDatabase.insertTrack(track)
-                            Toast.makeText(context, "Saved to library", Toast.LENGTH_SHORT).show()
-                            onDismiss()
-                        }
-                    }
-                )
-
-                // Download
-                ActionMenuItem(
-                    icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                    title = if (isDownloaded) "Downloaded" else "Download",
-                    subtitle = if (isDownloaded) "Downloaded for offline playback" else "Make available for offline playback",
-                    iconTint = if (isDownloaded) ElectricViolet else TextPrimary,
-                    onClick = {
-                        if (isDownloaded) {
-                            downloadManager.deleteDownload(track.id)
-                            Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
-                        } else {
-                            downloadManager.downloadTrack(track)
-                            Toast.makeText(context, "Downloading track...", Toast.LENGTH_SHORT).show()
-                        }
-                        onDismiss()
-                    }
-                )
-
-                // Set as Ringtone
-                ActionMenuItem(
-                    icon = Icons.Default.Notifications,
-                    title = "Set as Ringtone",
-                    subtitle = "Trim and set as device ringtone",
-                    onClick = {
-                        showTrimRingtone = true
-                    }
-                )
-
-                // View Artist
-                ActionMenuItem(
-                    icon = Icons.Default.Person,
-                    title = "View artist",
-                    subtitle = track.artist,
-                    onClick = {
-                        onOpenArtist?.invoke(track.artist)
-                        onDismiss()
-                    }
-                )
-
-                // Details
-                ActionMenuItem(
-                    icon = Icons.Default.Info,
-                    title = "Details",
-                    subtitle = "View the song's information",
-                    onClick = {
-                        showSongDetails = true
-                    }
-                )
-
-                // Remove from Queue (Optional Context Action)
-                if (onRemoveFromQueue != null) {
+                if (isPlaylistMode) {
+                    // 1. Edit Song
                     ActionMenuItem(
-                        icon = Icons.Default.Delete,
-                        title = "Remove from queue",
-                        subtitle = "Remove this song from active playback",
-                        iconTint = Color(0xFFEF5350),
-                        titleColor = Color(0xFFEF5350),
+                        icon = Icons.Default.Edit,
+                        title = "Edit",
+                        subtitle = "Edit song",
                         onClick = {
-                            onRemoveFromQueue(track)
-                            Toast.makeText(context, "Removed from queue", Toast.LENGTH_SHORT).show()
+                            showEditSongDialog = true
+                        }
+                    )
+
+                    // 2. Play next
+                    ActionMenuItem(
+                        icon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                        title = "Play next",
+                        subtitle = "Add to the top of your queue",
+                        onClick = {
+                            onPlayNext?.invoke(track)
+                            Toast.makeText(context, "Playing next: ${track.title}", Toast.LENGTH_SHORT).show()
                             onDismiss()
                         }
                     )
+
+                    // 3. Add to queue
+                    ActionMenuItem(
+                        icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                        title = "Add to queue",
+                        subtitle = "Add to the bottom of your queue",
+                        onClick = {
+                            onAddToQueue?.invoke(track)
+                            Toast.makeText(context, "Added to queue", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }
+                    )
+
+                    // 4. Pin to Speed dial
+                    ActionMenuItem(
+                        icon = Icons.Default.PushPin,
+                        title = "Pin to Speed dial",
+                        subtitle = "Pin for instant one-tap playback",
+                        onClick = {
+                            scope.launch {
+                                localDatabase.pinToSpeedDial(track)
+                                Toast.makeText(context, "Pinned to speed dial", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                        }
+                    )
+
+                    // 5. Add to library
+                    ActionMenuItem(
+                        icon = Icons.Default.BookmarkAdd,
+                        title = "Add to library",
+                        subtitle = "Save to your library tracks",
+                        onClick = {
+                            scope.launch {
+                                localDatabase.insertTrack(track)
+                                Toast.makeText(context, "Saved to library", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                        }
+                    )
+
+                    // 6. Hide from Home
+                    ActionMenuItem(
+                        icon = Icons.Default.VisibilityOff,
+                        title = if (isSongHidden) "Unhide from Home" else "Hide from Home",
+                        subtitle = if (isSongHidden) "Allow this song in recommendations" else "Keep this song out of Quick Picks and Keep Listening",
+                        onClick = {
+                            scope.launch {
+                                if (isSongHidden) {
+                                    localDatabase.unhideSongFromHome(track.id)
+                                    Toast.makeText(context, "Unhidden from Home", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    localDatabase.hideSongFromHome(track.id)
+                                    Toast.makeText(context, "Hidden from Home", Toast.LENGTH_SHORT).show()
+                                }
+                                onDismiss()
+                            }
+                        }
+                    )
+
+                    // 7. Remove from playlist
+                    ActionMenuItem(
+                        icon = Icons.Default.Delete,
+                        title = "Remove from playlist",
+                        subtitle = "Remove this song from the current playlist",
+                        iconTint = Color(0xFFEF5350),
+                        titleColor = Color(0xFFEF5350),
+                        onClick = {
+                            scope.launch {
+                                if (onRemoveFromPlaylist != null) {
+                                    onRemoveFromPlaylist(track)
+                                } else {
+                                    localDatabase.removeTrackFromPlaylist(playlistId, track.id)
+                                }
+                                Toast.makeText(context, "Removed from playlist", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                        }
+                    )
+
+                    // 8. Remove download / Download
+                    ActionMenuItem(
+                        icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                        title = if (isDownloaded) "Remove download" else "Download",
+                        subtitle = if (isDownloaded) "Delete downloaded file" else "Make available for offline playback",
+                        iconTint = if (isDownloaded) ElectricViolet else TextPrimary,
+                        onClick = {
+                            if (isDownloaded) {
+                                downloadManager.deleteDownload(track.id)
+                                Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
+                            } else {
+                                downloadManager.downloadTrack(track)
+                                Toast.makeText(context, "Downloading track...", Toast.LENGTH_SHORT).show()
+                            }
+                            onDismiss()
+                        }
+                    )
+
+                    // 9. Set as Ringtone
+                    ActionMenuItem(
+                        icon = Icons.Default.Notifications,
+                        title = "Set as Ringtone",
+                        subtitle = "Trim and set as device ringtone",
+                        onClick = {
+                            showTrimRingtone = true
+                        }
+                    )
+                } else {
+                    // Play Next
+                    ActionMenuItem(
+                        icon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                        title = "Play next",
+                        subtitle = "Add to the top of your queue",
+                        onClick = {
+                            onPlayNext?.invoke(track)
+                            Toast.makeText(context, "Playing next: ${track.title}", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }
+                    )
+
+                    // Add to Queue
+                    ActionMenuItem(
+                        icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                        title = "Add to queue",
+                        subtitle = "Add to the bottom of your queue",
+                        onClick = {
+                            onAddToQueue?.invoke(track)
+                            Toast.makeText(context, "Added to queue", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }
+                    )
+
+                    // Pin to Speed Dial
+                    ActionMenuItem(
+                        icon = Icons.Default.PushPin,
+                        title = "Pin to Speed dial",
+                        subtitle = "Pin for instant one-tap playback",
+                        onClick = {
+                            scope.launch {
+                                localDatabase.pinToSpeedDial(track)
+                                Toast.makeText(context, "Pinned to speed dial", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                        }
+                    )
+
+                    // Add to Library
+                    ActionMenuItem(
+                        icon = Icons.Default.BookmarkAdd,
+                        title = "Add to library",
+                        subtitle = "Save to your library tracks",
+                        onClick = {
+                            scope.launch {
+                                localDatabase.insertTrack(track)
+                                Toast.makeText(context, "Saved to library", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                        }
+                    )
+
+                    // Download
+                    ActionMenuItem(
+                        icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                        title = if (isDownloaded) "Downloaded" else "Download",
+                        subtitle = if (isDownloaded) "Downloaded for offline playback" else "Make available for offline playback",
+                        iconTint = if (isDownloaded) ElectricViolet else TextPrimary,
+                        onClick = {
+                            if (isDownloaded) {
+                                downloadManager.deleteDownload(track.id)
+                                Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
+                            } else {
+                                downloadManager.downloadTrack(track)
+                                Toast.makeText(context, "Downloading track...", Toast.LENGTH_SHORT).show()
+                            }
+                            onDismiss()
+                        }
+                    )
+
+                    // Set as Ringtone
+                    ActionMenuItem(
+                        icon = Icons.Default.Notifications,
+                        title = "Set as Ringtone",
+                        subtitle = "Trim and set as device ringtone",
+                        onClick = {
+                            showTrimRingtone = true
+                        }
+                    )
+
+                    // View Artist
+                    ActionMenuItem(
+                        icon = Icons.Default.Person,
+                        title = "View artist",
+                        subtitle = track.artist,
+                        onClick = {
+                            onOpenArtist?.invoke(track.artist)
+                            onDismiss()
+                        }
+                    )
+
+                    // Details
+                    ActionMenuItem(
+                        icon = Icons.Default.Info,
+                        title = "Details",
+                        subtitle = "View the song's information",
+                        onClick = {
+                            showSongDetails = true
+                        }
+                    )
+
+                    // Remove from Queue (Optional Context Action)
+                    if (onRemoveFromQueue != null) {
+                        ActionMenuItem(
+                            icon = Icons.Default.Delete,
+                            title = "Remove from queue",
+                            subtitle = "Remove this song from active playback",
+                            iconTint = Color(0xFFEF5350),
+                            titleColor = Color(0xFFEF5350),
+                            onClick = {
+                                onRemoveFromQueue(track)
+                                Toast.makeText(context, "Removed from queue", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            }
+                        )
+                    }
                 }
             }
 
@@ -402,6 +550,24 @@ fun SongMenuBottomSheet(
                 showTrimRingtone = false
                 onDismiss()
             }
+        )
+    }
+
+    // Sub-Dialog 4: Edit Song Dialog
+    if (showEditSongDialog) {
+        EditSongDialog(
+            track = track,
+            onSave = { updatedTitle, updatedArtist, updatedAlbum ->
+                scope.launch {
+                    localDatabase.updateTrackMetadata(track.id, updatedTitle, updatedArtist, updatedAlbum)
+                    val updated = track.copy(title = updatedTitle, artist = updatedArtist, album = updatedAlbum)
+                    onTrackUpdated?.invoke(updated)
+                    Toast.makeText(context, "Song updated", Toast.LENGTH_SHORT).show()
+                    showEditSongDialog = false
+                    onDismiss()
+                }
+            },
+            onDismiss = { showEditSongDialog = false }
         )
     }
 }
@@ -497,4 +663,91 @@ private fun ActionMenuItem(
             )
         }
     }
+}
+
+@Composable
+private fun EditSongDialog(
+    track: TrackItem,
+    onSave: (title: String, artist: String, album: String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var editTitle by remember { mutableStateOf(track.title) }
+    var editArtist by remember { mutableStateOf(track.artist) }
+    var editAlbum by remember { mutableStateOf(track.album ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E1724),
+        title = {
+            Text(
+                text = "Edit Song",
+                color = TextPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = editTitle,
+                    onValueChange = { editTitle = it },
+                    label = { Text("Title", color = TextSecondary) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFF140E18),
+                        unfocusedContainerColor = Color(0xFF140E18),
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedIndicatorColor = BlushRose
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = editArtist,
+                    onValueChange = { editArtist = it },
+                    label = { Text("Artist", color = TextSecondary) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFF140E18),
+                        unfocusedContainerColor = Color(0xFF140E18),
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedIndicatorColor = BlushRose
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = editAlbum,
+                    onValueChange = { editAlbum = it },
+                    label = { Text("Album (Optional)", color = TextSecondary) },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color(0xFF140E18),
+                        unfocusedContainerColor = Color(0xFF140E18),
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedIndicatorColor = BlushRose
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (editTitle.isNotBlank() && editArtist.isNotBlank()) {
+                        onSave(editTitle.trim(), editArtist.trim(), editAlbum.trim().ifEmpty { null })
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = BlushRose)
+            ) {
+                Text("Save", color = Color(0xFF140E18), fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextSecondary)
+            }
+        }
+    )
 }

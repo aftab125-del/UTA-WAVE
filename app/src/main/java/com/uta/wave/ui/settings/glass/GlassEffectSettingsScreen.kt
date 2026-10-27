@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,6 +73,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.uta.wave.data.preferences.AppSettings
@@ -217,11 +219,11 @@ fun GlassEffectSettingsScreen(
             GlassSectionHeader("Mini Player Optics & Styling")
             GlassSettingsCard {
                 val bgLabel = when (settings.miniplayerBackgroundStyle) {
-                    "LIQUID_GLASS" -> "Liquid Glass Refraction"
-                    "GLOW_ANIMATED" -> "Breathing Neon Mesh"
-                    "ACRYLIC_BLUR" -> "Frosted Acrylic Blur"
-                    "SOLID_ELEVATED" -> "Solid Elevated Glass"
-                    else -> "Liquid Glass Refraction"
+                    "LIQUID_GLASS" -> "Liquid Glass"
+                    "GLOW_ANIMATED" -> "Neon Mesh"
+                    "ACRYLIC_BLUR" -> "Acrylic Blur"
+                    "SOLID_ELEVATED" -> "Elevated"
+                    else -> "Liquid Glass"
                 }
                 GlassValueClickItem(
                     title = "Background Material",
@@ -235,11 +237,11 @@ fun GlassEffectSettingsScreen(
                 GlassDivider()
 
                 val progLabel = when (settings.miniplayerProgressStyle) {
-                    "WAVE" -> "Live Waveform"
-                    "LINEAR" -> "Continuous Line"
-                    "NEON_TRACK" -> "Glowing Neon"
+                    "WAVE" -> "Waveform"
+                    "LINEAR" -> "Linear"
+                    "NEON_TRACK" -> "Neon Track"
                     "HIDDEN" -> "Hidden"
-                    else -> "Live Waveform"
+                    else -> "Waveform"
                 }
                 GlassValueClickItem(
                     title = "Progress Indicator",
@@ -903,48 +905,45 @@ private fun GlassValueClickItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(accentColor.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp
-                    ),
-                    color = Color.White
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    color = Color.White.copy(alpha = 0.60f)
-                )
-            }
-        }
         Box(
             modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(accentColor.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                ),
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = Color.White.copy(alpha = 0.60f)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Box(
+            modifier = Modifier
+                .widthIn(max = 140.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color.White.copy(alpha = 0.08f))
                 .padding(horizontal = 10.dp, vertical = 6.dp)
@@ -953,9 +952,11 @@ private fun GlassValueClickItem(
                 text = valueText,
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
+                    fontSize = 12.5.sp
                 ),
-                color = accentColor
+                color = accentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -973,49 +974,45 @@ private fun GlassColorItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(color)
+                .border(1.5.dp, Color.White.copy(alpha = 0.35f), CircleShape),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(color)
-                    .border(1.5.dp, Color.White.copy(alpha = 0.35f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isAdaptive) {
-                    Icon(
-                        imageVector = Icons.Default.Contrast,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp
-                    ),
-                    color = Color.White
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    color = Color.White.copy(alpha = 0.60f)
+            if (isAdaptive) {
+                Icon(
+                    imageVector = Icons.Default.Contrast,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                ),
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = Color.White.copy(alpha = 0.60f)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
@@ -1026,7 +1023,7 @@ private fun GlassColorItem(
                 text = if (isAdaptive) "Adaptive" else "Custom",
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
+                    fontSize = 12.5.sp
                 ),
                 color = accentColor
             )

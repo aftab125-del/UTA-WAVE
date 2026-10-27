@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -52,6 +53,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.uta.wave.data.innertube.InnerTubeClient
 import com.uta.wave.data.innertube.TrackItem
+import com.uta.wave.player.PlaybackManager
+import com.uta.wave.ui.components.SongMenuBottomSheet
 import com.uta.wave.ui.components.TrackRow
 import com.uta.wave.ui.theme.ElectricViolet
 import com.uta.wave.ui.theme.ObsidianBackground
@@ -76,7 +79,10 @@ fun SearchScreen(
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var results by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
+    var selectedTrackForMenu by remember { mutableStateOf<TrackItem?>(null) }
 
+    val context = LocalContext.current
+    val playbackManager = remember { PlaybackManager.getInstance(context) }
     val innerTubeClient = remember { InnerTubeClient() }
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -280,12 +286,28 @@ fun SearchScreen(
                                 isPlaying = isPlaying && track.id == currentTrackId,
                                 isFavorite = isFavorite,
                                 onTrackClick = { onPlayTrack(track, results) },
-                                onToggleFavorite = { onToggleFavorite(track) }
+                                onToggleFavorite = { onToggleFavorite(track) },
+                                onMoreClick = { selectedTrackForMenu = track }
                             )
                         }
                     }
                 }
             }
+        }
+
+        selectedTrackForMenu?.let { menuTrack ->
+            SongMenuBottomSheet(
+                track = menuTrack,
+                isFavorite = favoritesList.any { it.id == menuTrack.id },
+                onToggleFavorite = { onToggleFavorite(it) },
+                onPlayNext = { track -> playbackManager.addToQueue(track, insertNext = true) },
+                onAddToQueue = { track -> playbackManager.addToQueue(track, insertNext = false) },
+                onStartRadio = { track -> playbackManager.playRadio(track) },
+                onOpenArtist = { artistName ->
+                    executeSearch(artistName)
+                },
+                onDismiss = { selectedTrackForMenu = null }
+            )
         }
     }
 }
