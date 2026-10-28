@@ -32,7 +32,9 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import com.uta.wave.ui.components.PlaylistSelectionSheet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Checklist
@@ -148,6 +150,8 @@ fun QueueSheet(
     val localDatabase = remember { LocalDatabase.getInstance(context) }
     val playerState by playbackManager.state.collectAsState()
     val favoritesList by localDatabase.favoritesFlow.collectAsState(initial = emptyList())
+    val playlists by localDatabase.playlistsFlow.collectAsState(initial = emptyList())
+    var playlistPickerTrack by remember { mutableStateOf<TrackItem?>(null) }
 
     var isLocked by remember { mutableStateOf(false) }
     var inSelectMode by remember { mutableStateOf(false) }
@@ -698,6 +702,7 @@ fun QueueSheet(
                     AutomixSection(
                         automixTracks = automixTracks,
                         isLoading = isLoadingAutomix,
+                        activePlaylistTitle = playerState.activePlaylistTitle,
                         onPlayNext = { track ->
                             onInsertTrackNext?.invoke(track)
                             automixTracks = automixTracks.filter { it.id != track.id }
@@ -707,6 +712,21 @@ fun QueueSheet(
                             onAddToQueue?.invoke(track)
                             automixTracks = automixTracks.filter { it.id != track.id }
                             Toast.makeText(context, "Added \"${track.title}\" to queue", Toast.LENGTH_SHORT).show()
+                        },
+                        onAddToPlaylist = { track ->
+                            val activeId = playerState.activePlaylistId
+                            val activeTitle = playerState.activePlaylistTitle
+                            if (!activeId.isNullOrBlank()) {
+                                coroutineScope.launch {
+                                    localDatabase.addTrackToPlaylist(activeId, track)
+                                    if (activeId.startsWith("PL") || activeId.length >= 24) {
+                                        com.uta.wave.data.innertube.InnerTubeClient().addTracksToRemotePlaylist(activeId, listOf(track.videoId))
+                                    }
+                                    Toast.makeText(context, "Added to \"$activeTitle\"", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                playlistPickerTrack = track
+                            }
                         }
                     )
                 }
@@ -750,6 +770,38 @@ fun QueueSheet(
                 onRemoveFromQueue?.invoke(trackToRemove.id)
             },
             onDismiss = { selectedTrackForMenu = null }
+        )
+    }
+
+    // Modal: Playlist Selection Sheet (when adding AI suggestion to a playlist)
+    if (playlistPickerTrack != null) {
+        val targetTrack = playlistPickerTrack!!
+        PlaylistSelectionSheet(
+            track = targetTrack,
+            playlists = playlists,
+            onAddToPlaylist = { playlistId ->
+                coroutineScope.launch {
+                    localDatabase.addTrackToPlaylist(playlistId, targetTrack)
+                    if (playlistId.startsWith("PL") || playlistId.length >= 24) {
+                        com.uta.wave.data.innertube.InnerTubeClient().addTracksToRemotePlaylist(playlistId, listOf(targetTrack.videoId))
+                    }
+                    val playlistName = playlists.find { it.id == playlistId }?.name ?: "playlist"
+                    Toast.makeText(context, "Added to \"$playlistName\"", Toast.LENGTH_SHORT).show()
+                }
+                playlistPickerTrack = null
+            },
+            onCreatePlaylist = { playlistName ->
+                coroutineScope.launch {
+                    val newId = com.uta.wave.data.account.AccountSyncManager.getInstance(context).createPlaylist(playlistName)
+                    localDatabase.addTrackToPlaylist(newId, targetTrack)
+                    if (newId.startsWith("PL") || newId.length >= 24) {
+                        com.uta.wave.data.innertube.InnerTubeClient().addTracksToRemotePlaylist(newId, listOf(targetTrack.videoId))
+                    }
+                    Toast.makeText(context, "Created and added to \"$playlistName\"", Toast.LENGTH_SHORT).show()
+                }
+                playlistPickerTrack = null
+            },
+            onDismiss = { playlistPickerTrack = null }
         )
     }
 }
@@ -898,8 +950,10 @@ fun DragDropQueueRow(
 fun AutomixSection(
     automixTracks: List<TrackItem>,
     isLoading: Boolean,
+    activePlaylistTitle: String? = null,
     onPlayNext: (TrackItem) -> Unit,
     onAddToQueue: (TrackItem) -> Unit,
+    onAddToPlaylist: (TrackItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(false) }
@@ -1020,6 +1074,19 @@ fun AutomixSection(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Add to Playlist (Quick 1-tap add to current playlist or open picker)
+                            IconButton(
+                                onClick = { onAddToPlaylist(track) },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                                    contentDescription = if (activePlaylistTitle != null) "Add to $activePlaylistTitle" else "Add to Playlist",
+                                    tint = BlushRose,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+
                             IconButton(
                                 onClick = { onPlayNext(track) },
                                 modifier = Modifier.size(30.dp)

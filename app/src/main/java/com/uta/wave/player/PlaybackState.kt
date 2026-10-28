@@ -21,5 +21,7 @@ data class WavePlayerState(
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val queueTitle: String? = null,
     val isRadioActive: Boolean = false,
+    val activePlaylistId: String? = null,
+    val activePlaylistTitle: String? = null,
     val error: String? = null
 )

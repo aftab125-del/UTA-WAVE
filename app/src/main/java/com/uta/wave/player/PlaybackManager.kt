@@ -523,7 +523,9 @@ class PlaybackManager private constructor(private val context: Context) {
         _state.update {
             it.copy(
                 queueTitle = "${track.title} Radio",
-                isRadioActive = true
+                isRadioActive = true,
+                activePlaylistId = null,
+                activePlaylistTitle = null
             )
         }
 
@@ -558,7 +560,12 @@ class PlaybackManager private constructor(private val context: Context) {
         playRadio(current)
     }
 
-    fun playQueue(queueProvider: WaveQueue, startTrack: TrackItem? = null) {
+    fun playQueue(
+        queueProvider: WaveQueue,
+        startTrack: TrackItem? = null,
+        playlistId: String? = null,
+        playlistTitle: String? = null
+    ) {
         currentQueueProvider = queueProvider
         scope.launch(Dispatchers.IO) {
             try {
@@ -568,11 +575,13 @@ class PlaybackManager private constructor(private val context: Context) {
                     withContext(Dispatchers.Main) {
                         _state.update {
                             it.copy(
-                                queueTitle = queueProvider.title,
-                                isRadioActive = queueProvider is YouTubeRadioQueue
+                                queueTitle = playlistTitle ?: queueProvider.title,
+                                isRadioActive = queueProvider is YouTubeRadioQueue,
+                                activePlaylistId = playlistId,
+                                activePlaylistTitle = playlistTitle ?: queueProvider.title
                             )
                         }
-                        playTrack(target, tracks)
+                        playTrack(target, tracks, playlistId, playlistTitle ?: queueProvider.title)
                     }
                 }
             } catch (e: Exception) {
@@ -581,10 +590,15 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
-    fun playTrack(track: TrackItem, queue: List<TrackItem> = listOf(track)) {
+    fun playTrack(
+        track: TrackItem,
+        queue: List<TrackItem> = listOf(track),
+        playlistId: String? = null,
+        playlistTitle: String? = null
+    ) {
         ensureServiceStarted()
         if (queue.size > 1 && currentQueueProvider !is YouTubeRadioQueue) {
-            currentQueueProvider = ListQueue(queue, _state.value.queueTitle ?: "Queue")
+            currentQueueProvider = ListQueue(queue, playlistTitle ?: _state.value.queueTitle ?: "Queue")
         }
         val sync = waveSyncManager
         if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
@@ -620,6 +634,9 @@ class PlaybackManager private constructor(private val context: Context) {
                 currentTrack = track,
                 queue = processedQueue,
                 queueIndex = targetIndex,
+                queueTitle = playlistTitle ?: if (queue.size > 1) it.queueTitle else null,
+                activePlaylistId = playlistId ?: if (queue.size > 1) it.activePlaylistId else null,
+                activePlaylistTitle = playlistTitle ?: if (queue.size > 1) it.activePlaylistTitle else null,
                 isResolving = true,
                 isBuffering = true,
                 error = null,

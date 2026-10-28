@@ -284,6 +284,49 @@ class InnerTubeClient(
                         val tracks = mutableListOf<TrackItem>()
                         parseTracksRecursively(root, tracks)
 
+                        // Follow InnerTube continuation tokens to fetch all pages (100, 200, 500+ tracks)
+                        var nextContinuation = extractBrowseContinuationToken(root)
+                        var pagesFetched = 0
+                        val maxContinuationPages = 60 // Allows up to 6,000 tracks per playlist
+
+                        while (!nextContinuation.isNullOrBlank() && pagesFetched < maxContinuationPages) {
+                            pagesFetched++
+                            AppLogger.i("Fetching playlist continuation page $pagesFetched (current: ${tracks.size} tracks)...")
+                            try {
+                                val contPayload = JSONObject().apply {
+                                    put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                                    put("continuation", nextContinuation)
+                                }
+                                val contRequest = Request.Builder()
+                                    .url("$INNERTUBE_BASE_URL/browse?continuation=$nextContinuation")
+                                    .apply {
+                                        commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                                        addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                                        applyAuthHeaders(this)
+                                    }
+                                    .post(contPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                                    .build()
+
+                                val contResponse = client.newCall(contRequest).execute()
+                                if (!contResponse.isSuccessful) {
+                                    AppLogger.w("Playlist continuation page $pagesFetched failed: HTTP ${contResponse.code}")
+                                    break
+                                }
+                                val contBody = contResponse.body?.string() ?: break
+                                val contJson = JSONObject(contBody)
+                                val initialCount = tracks.size
+                                parseTracksRecursively(contJson, tracks)
+                                val addedCount = tracks.size - initialCount
+                                AppLogger.i("Playlist continuation page $pagesFetched added $addedCount tracks (total: ${tracks.size})")
+
+                                nextContinuation = extractBrowseContinuationToken(contJson)
+                                if (addedCount == 0) break
+                            } catch (e: Exception) {
+                                AppLogger.w("Playlist continuation error on page $pagesFetched: ${e.message}")
+                                break
+                            }
+                        }
+
                         // Extract playlist title
                         var title = ""
                         try {
@@ -366,6 +409,43 @@ class InnerTubeClient(
                         val webRoot = JSONObject(webBody)
                         val webTracks = mutableListOf<TrackItem>()
                         parseTracksRecursively(webRoot, webTracks)
+
+                        // Follow WEB client continuations
+                        var webCont = extractBrowseContinuationToken(webRoot)
+                        var webPages = 0
+                        while (!webCont.isNullOrBlank() && webPages < 60) {
+                            webPages++
+                            try {
+                                val cPayload = JSONObject().apply {
+                                    val clientObj = JSONObject().apply {
+                                        put("clientName", "WEB")
+                                        put("clientVersion", "2.20240101.01.00")
+                                        put("hl", "en")
+                                        put("gl", "US")
+                                    }
+                                    put("context", JSONObject().put("client", clientObj))
+                                    put("continuation", webCont)
+                                }
+                                val cReq = Request.Builder()
+                                    .url("https://www.youtube.com/youtubei/v1/browse?continuation=$webCont")
+                                    .header("Content-Type", "application/json")
+                                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                                    .post(cPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                                    .build()
+                                val cResp = client.newCall(cReq).execute()
+                                if (!cResp.isSuccessful) break
+                                val cBody = cResp.body?.string() ?: break
+                                val cJson = JSONObject(cBody)
+                                val initial = webTracks.size
+                                parseTracksRecursively(cJson, webTracks)
+                                val added = webTracks.size - initial
+                                webCont = extractBrowseContinuationToken(cJson)
+                                if (added == 0) break
+                            } catch (e: Exception) {
+                                break
+                            }
+                        }
+
                         val webTitle = webRoot.optJSONObject("metadata")
                             ?.optJSONObject("playlistMetadataRenderer")
                             ?.optString("title", "YouTube Playlist")
@@ -993,6 +1073,72 @@ class InnerTubeClient(
             AppLogger.e("InnerTube getNext failed: ${e.message}", e)
             null
         }
+    }
+
+    private fun extractBrowseContinuationToken(json: Any?): String? {
+        when (json) {
+            is JSONObject -> {
+                // 1. Direct continuationItemRenderer
+                if (json.has("continuationItemRenderer")) {
+                    val contItem = json.optJSONObject("continuationItemRenderer")
+                    val token = contItem?.optJSONObject("continuationEndpoint")
+                        ?.optJSONObject("continuationCommand")
+                        ?.optString("token")
+                    if (!token.isNullOrBlank()) return token
+                }
+                // 2. nextContinuationData (in continuations array)
+                if (json.has("nextContinuationData")) {
+                    val token = json.optJSONObject("nextContinuationData")?.optString("continuation")
+                    if (!token.isNullOrBlank()) return token
+                }
+                // 3. nextRadioContinuationData
+                if (json.has("nextRadioContinuationData")) {
+                    val token = json.optJSONObject("nextRadioContinuationData")?.optString("continuation")
+                    if (!token.isNullOrBlank()) return token
+                }
+                // 4. continuationContents -> musicPlaylistShelfContinuation -> continuations
+                if (json.has("musicPlaylistShelfContinuation")) {
+                    val shelfCont = json.optJSONObject("musicPlaylistShelfContinuation")
+                    val contArr = shelfCont?.optJSONArray("continuations")
+                    if (contArr != null && contArr.length() > 0) {
+                        val token = contArr.optJSONObject(0)
+                            ?.optJSONObject("nextContinuationData")
+                            ?.optString("continuation")
+                        if (!token.isNullOrBlank()) return token
+                    }
+                }
+                // 5. SectionListContinuation
+                if (json.has("sectionListContinuation")) {
+                    val secCont = json.optJSONObject("sectionListContinuation")
+                    val contArr = secCont?.optJSONArray("continuations")
+                    if (contArr != null && contArr.length() > 0) {
+                        val token = contArr.optJSONObject(0)
+                            ?.optJSONObject("nextContinuationData")
+                            ?.optString("continuation")
+                        if (!token.isNullOrBlank()) return token
+                    }
+                }
+
+                // Recursively check keys, skipping track renderers for speed
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    if (key == "musicResponsiveListItemRenderer" || key == "playlistVideoRenderer" || key == "playlistPanelVideoRenderer") {
+                        continue
+                    }
+                    val found = extractBrowseContinuationToken(json.opt(key))
+                    if (!found.isNullOrBlank()) return found
+                }
+            }
+            is JSONArray -> {
+                // Check from end of array because continuation items are at the tail
+                for (i in (json.length() - 1) downTo 0) {
+                    val found = extractBrowseContinuationToken(json.opt(i))
+                    if (!found.isNullOrBlank()) return found
+                }
+            }
+        }
+        return null
     }
 
     private fun parseTracksRecursively(json: Any?, outTracks: MutableList<TrackItem>) {
@@ -1655,8 +1801,26 @@ class InnerTubeClient(
                         val browseId = navEndpoint?.optJSONObject("browseEndpoint")?.optString("browseId")
                             ?: navEndpoint?.optJSONObject("watchPlaylistEndpoint")?.optString("playlistId")
 
-                        if (!browseId.isNullOrBlank() && title.isNotBlank() && browseId != "SE" && browseId != "LM") {
-                            val cleanId = extractYouTubePlaylistId(browseId)
+                        val cleanId = if (!browseId.isNullOrBlank()) extractYouTubePlaylistId(browseId) else ""
+                        val ignoredSystemIds = setOf("LM", "VLLM", "LL", "VLLL", "SE", "VLSE", "WL", "VLWL", "RDPN")
+                        val lowerTitle = title.lowercase().trim()
+                        val isIgnoredSystemTitle = lowerTitle.contains("liked songs") ||
+                                lowerTitle.contains("liked music") ||
+                                lowerTitle.contains("liked videos") ||
+                                lowerTitle.contains("your likes") ||
+                                lowerTitle.contains("sounds from shorts") ||
+                                lowerTitle.contains("sounds from short") ||
+                                lowerTitle.contains("sound from shorts") ||
+                                lowerTitle.contains("episode for later") ||
+                                lowerTitle.contains("episodes for later") ||
+                                lowerTitle.contains("episodes") ||
+                                lowerTitle.contains("watch later")
+
+                        if (!browseId.isNullOrBlank() && title.isNotBlank() &&
+                            !ignoredSystemIds.contains(browseId.uppercase()) &&
+                            !ignoredSystemIds.contains(cleanId.uppercase()) &&
+                            !isIgnoredSystemTitle
+                        ) {
                             val thumbUrl = renderer.optJSONObject("thumbnailRenderer")
                                 ?.optJSONObject("musicThumbnailRenderer")
                                 ?.optJSONObject("thumbnail")

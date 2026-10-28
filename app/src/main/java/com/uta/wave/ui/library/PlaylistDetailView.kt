@@ -124,6 +124,7 @@ fun PlaylistDetailView(
     val scope = rememberCoroutineScope()
     val localDatabase = remember { LocalDatabase.getInstance(context) }
     val downloadManager = remember { AudioDownloadManager.getInstance(context) }
+    val playbackManager = remember { PlaybackManager.getInstance(context) }
 
     var playlistName by remember { mutableStateOf(playlist.name) }
     var playlistDesc by remember { mutableStateOf(playlist.description) }
@@ -388,7 +389,10 @@ fun PlaylistDetailView(
                     ) {
                         Button(
                             onClick = {
-                                if (filteredTracks.isNotEmpty()) onPlayTrack(filteredTracks.first(), filteredTracks)
+                                if (filteredTracks.isNotEmpty()) {
+                                    playbackManager.playTrack(filteredTracks.first(), filteredTracks, playlist.id, playlistName)
+                                    onPlayTrack(filteredTracks.first(), filteredTracks)
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = BlushRose),
                             shape = RoundedCornerShape(24.dp),
@@ -405,6 +409,7 @@ fun PlaylistDetailView(
                             onClick = {
                                 if (filteredTracks.isNotEmpty()) {
                                     val shuffled = filteredTracks.shuffled()
+                                    playbackManager.playTrack(shuffled.first(), shuffled, playlist.id, playlistName)
                                     onPlayTrack(shuffled.first(), shuffled)
                                 }
                             },
@@ -596,7 +601,10 @@ fun PlaylistDetailView(
                             isCurrent = track.id == currentTrackId,
                             isPlaying = isPlaying && track.id == currentTrackId,
                             isFavorite = true,
-                            onTrackClick = { onPlayTrack(track, filteredTracks) },
+                            onTrackClick = {
+                                playbackManager.playTrack(track, filteredTracks, playlist.id, playlistName)
+                                onPlayTrack(track, filteredTracks)
+                            },
                             onToggleFavorite = { onToggleFavorite(track) },
                             onMoreClick = {
                                 selectedTrackMenu = track
