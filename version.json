@@ -1,8 +1,8 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1.0",
-  "title": "UTA-wave 1.1.0 Update",
-  "changelog": "• Sequential lossless playlist downloads for offline listening\n• Local MP3 extraction from device storage with playlist & playback support\n• Streamlined Spotify import (direct link paste)\n• Seamless in-app update installer\n• Bug fixes and UI refinements",
+  "versionCode": 3,
+  "versionName": "1.1.1",
+  "title": "UTA-wave 1.1.1 Offline Audio Update",
+  "changelog": "• Fixed offline download engine with EchoMusic PlayerClient headers (eliminates HTTP 403)\n• Added background foreground download service with progress notification\n• Fixed Downloaded playlist screen with SQLite LEFT JOIN and dual-ID recovery\n• Direct offline playback via ExoPlayer without network\n• Pre-cached artwork and lyrics for Airplane Mode playback",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }
