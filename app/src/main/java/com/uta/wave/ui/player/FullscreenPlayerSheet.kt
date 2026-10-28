@@ -227,7 +227,7 @@ fun FullscreenPlayerSheet(
     val downloadManager = remember { AudioDownloadManager.getInstance(context) }
     val downloadingIds by downloadManager.downloadingIds.collectAsState()
     val isDownloading = downloadingIds.contains(track.id)
-    var isDownloaded by remember(track.id) { mutableStateOf(downloadManager.isDownloaded(track.id)) }
+    var isDownloaded by remember(track.id, track.videoId) { mutableStateOf(downloadManager.isDownloaded(track.id) || downloadManager.isDownloaded(track.videoId)) }
 
     // Synchronized Lyrics Cache for single-line live preview
     val lyricsClient = remember { LyricsClient() }
@@ -236,7 +236,7 @@ fun FullscreenPlayerSheet(
 
     LaunchedEffect(track.id) {
         isLyricsLoading = true
-        isDownloaded = downloadManager.isDownloaded(track.id)
+        isDownloaded = downloadManager.isDownloaded(track.id) || downloadManager.isDownloaded(track.videoId)
         val result = lyricsClient.getLyrics(track.title, track.artist, track.durationSeconds)
         lyricLines = result.lines
         isLyricsLoading = false

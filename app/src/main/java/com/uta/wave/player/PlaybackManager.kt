@@ -416,7 +416,7 @@ class PlaybackManager private constructor(private val context: Context) {
             AppLogger.i("▶ Starting Equal-Power Crossfade to \"${nextTrack.title}\" (${crossfadeDurationMs}ms)")
             val nextVideoId = nextTrack.videoId
             val localDb = LocalDatabase.getInstance(context)
-            val downloadedPath = localDb.getDownloadPathSync(nextTrack.id)
+            val downloadedPath = localDb.getDownloadPathSync(nextTrack.id) ?: localDb.getDownloadPathSync(nextTrack.videoId)
             val isLocalMedia = nextTrack.videoId.startsWith("content://") || nextTrack.videoId.startsWith("file://")
             val isDownloadedValid = downloadedPath != null && File(downloadedPath).let { it.exists() && it.length() > 0L }
 
@@ -652,7 +652,7 @@ class PlaybackManager private constructor(private val context: Context) {
             AppLogger.i("▶ playTrack requested: title=\"${track.title}\", videoId=$videoId")
 
             val localDb = LocalDatabase.getInstance(context)
-            val downloadedPath = localDb.getDownloadPathSync(track.id)
+            val downloadedPath = localDb.getDownloadPathSync(track.id) ?: localDb.getDownloadPathSync(track.videoId)
             val isLocalMedia = track.videoId.startsWith("content://") || track.videoId.startsWith("file://")
             val isDownloadedValid = downloadedPath != null && File(downloadedPath).let { it.exists() && it.length() > 0L }
 
