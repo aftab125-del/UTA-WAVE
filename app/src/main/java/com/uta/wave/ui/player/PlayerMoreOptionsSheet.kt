@@ -81,7 +81,7 @@ fun PlayerMoreOptionsSheet(
     onSetRingtone: () -> Unit,
     onListenTogether: () -> Unit,
     onShowDetails: () -> Unit,
-    onRadio: () -> Unit,
+    onRadio: (() -> Unit)? = null,
     onAddToPlaylist: () -> Unit,
     onOpenEqualizer: (() -> Unit)? = null,
     onOpenAudioDevices: (() -> Unit)? = null,
@@ -116,26 +116,15 @@ fun PlayerMoreOptionsSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. Top Quick Pill Action Buttons Row: Radio, Add, Share
+            // 1. Top Quick Pill Action Buttons Row: Add to Playlist & Share
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Radio Pill
-                QuickActionPill(
-                    icon = Icons.Default.Radio,
-                    text = "Radio...",
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        onDismiss()
-                        onRadio()
-                    }
-                )
-
                 // Add to Playlist Pill
                 QuickActionPill(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    text = "Add",
+                    text = "Add to playlist",
                     modifier = Modifier.weight(1f),
                     onClick = {
                         onDismiss()
@@ -146,15 +135,16 @@ fun PlayerMoreOptionsSheet(
                 // Share Pill
                 QuickActionPill(
                     icon = Icons.Default.Share,
-                    text = "Share...",
+                    text = "Share",
                     modifier = Modifier.weight(1f),
                     onClick = {
                         onDismiss()
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
+                            val shareUrl = if (track.videoId.startsWith("http")) track.videoId else "https://youtu.be/${track.videoId}"
                             putExtra(
                                 Intent.EXTRA_TEXT,
-                                "Listening to \"${track.title}\" by ${track.artist} on UTA-wave 🎵\nhttps://youtu.be/${track.videoId}"
+                                "Listening to \"${track.title}\" by ${track.artist} on UTA-wave 🎵\n$shareUrl"
                             )
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Share song"))

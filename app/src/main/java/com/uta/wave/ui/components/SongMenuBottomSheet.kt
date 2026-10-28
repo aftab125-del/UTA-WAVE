@@ -85,7 +85,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SongMenuBottomSheet(
     track: TrackItem,
-    isFavorite: Boolean,
+    isFavorite: Boolean = false,
     onToggleFavorite: (TrackItem) -> Unit,
     onPlayNext: ((TrackItem) -> Unit)? = null,
     onAddToQueue: ((TrackItem) -> Unit)? = null,
@@ -108,6 +108,7 @@ fun SongMenuBottomSheet(
     val isDownloaded = remember(track.id) { downloadManager.isDownloaded(track.id) }
     val isSongHidden = hiddenTrackIds.contains(track.id)
     val isPlaylistMode = !playlistId.isNullOrBlank()
+    val isLocal = track.videoId.startsWith("content://") || track.videoId.startsWith("file://") || track.id.startsWith("local")
 
     var showPlaylistPicker by remember { mutableStateOf(false) }
     var showSongDetails by remember { mutableStateOf(false) }
@@ -193,24 +194,12 @@ fun SongMenuBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 2. Horizontal Quick Action Pills: Start Radio, Add to Playlist, Share (Non-playlist mode)
+            // 2. Horizontal Quick Action Pills: Add to Playlist, Share (Non-playlist mode)
             if (!isPlaylistMode) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Start Radio Pill
-                    QuickActionPill(
-                        icon = Icons.Default.Radio,
-                        label = "Start radio",
-                        onClick = {
-                            onStartRadio?.invoke(track)
-                            Toast.makeText(context, "Starting radio from ${track.title}", Toast.LENGTH_SHORT).show()
-                            onDismiss()
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-
                     // Add to Playlist Pill
                     QuickActionPill(
                         icon = Icons.AutoMirrored.Filled.PlaylistAdd,
@@ -218,7 +207,7 @@ fun SongMenuBottomSheet(
                         onClick = {
                             showPlaylistPicker = true
                         },
-                        modifier = Modifier.weight(1.1f)
+                        modifier = Modifier.weight(1f)
                     )
 
                     // Share Pill
@@ -228,14 +217,14 @@ fun SongMenuBottomSheet(
                         onClick = {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                val streamUrl = "https://music.youtube.com/watch?v=${track.videoId}"
+                                val streamUrl = if (track.videoId.startsWith("http")) track.videoId else "https://music.youtube.com/watch?v=${track.videoId}"
                                 putExtra(Intent.EXTRA_SUBJECT, track.title)
                                 putExtra(Intent.EXTRA_TEXT, "${track.title} by ${track.artist} on UTA-WAVE: $streamUrl")
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share Track"))
                             onDismiss()
                         },
-                        modifier = Modifier.weight(0.9f)
+                        modifier = Modifier.weight(1f)
                     )
                 }
 
@@ -349,23 +338,25 @@ fun SongMenuBottomSheet(
                         }
                     )
 
-                    // 8. Remove download / Download
-                    ActionMenuItem(
-                        icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                        title = if (isDownloaded) "Remove download" else "Download",
-                        subtitle = if (isDownloaded) "Delete downloaded file" else "Make available for offline playback",
-                        iconTint = if (isDownloaded) ElectricViolet else TextPrimary,
-                        onClick = {
-                            if (isDownloaded) {
-                                downloadManager.deleteDownload(track.id)
-                                Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
-                            } else {
-                                downloadManager.downloadTrack(track)
-                                Toast.makeText(context, "Downloading track in Lossless quality...", Toast.LENGTH_SHORT).show()
+                    // 8. Remove download / Download (Not applicable for local audio)
+                    if (!isLocal) {
+                        ActionMenuItem(
+                            icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                            title = if (isDownloaded) "Remove download" else "Download",
+                            subtitle = if (isDownloaded) "Delete downloaded file" else "Make available for offline playback",
+                            iconTint = if (isDownloaded) ElectricViolet else TextPrimary,
+                            onClick = {
+                                if (isDownloaded) {
+                                    downloadManager.deleteDownload(track.id)
+                                    Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    downloadManager.downloadTrack(track)
+                                    Toast.makeText(context, "Downloading track in Lossless quality...", Toast.LENGTH_SHORT).show()
+                                }
+                                onDismiss()
                             }
-                            onDismiss()
-                        }
-                    )
+                        )
+                    }
 
                     // 9. Set as Ringtone
                     ActionMenuItem(
@@ -429,23 +420,25 @@ fun SongMenuBottomSheet(
                         }
                     )
 
-                    // Download
-                    ActionMenuItem(
-                        icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-                        title = if (isDownloaded) "Downloaded" else "Download",
-                        subtitle = if (isDownloaded) "Downloaded for offline playback" else "Make available for offline playback",
-                        iconTint = if (isDownloaded) ElectricViolet else TextPrimary,
-                        onClick = {
-                            if (isDownloaded) {
-                                downloadManager.deleteDownload(track.id)
-                                Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
-                            } else {
-                                downloadManager.downloadTrack(track)
-                                Toast.makeText(context, "Downloading track in Lossless quality...", Toast.LENGTH_SHORT).show()
+                    // Download (Not applicable for local audio)
+                    if (!isLocal) {
+                        ActionMenuItem(
+                            icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+                            title = if (isDownloaded) "Downloaded" else "Download",
+                            subtitle = if (isDownloaded) "Downloaded for offline playback" else "Make available for offline playback",
+                            iconTint = if (isDownloaded) ElectricViolet else TextPrimary,
+                            onClick = {
+                                if (isDownloaded) {
+                                    downloadManager.deleteDownload(track.id)
+                                    Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    downloadManager.downloadTrack(track)
+                                    Toast.makeText(context, "Downloading track in Lossless quality...", Toast.LENGTH_SHORT).show()
+                                }
+                                onDismiss()
                             }
-                            onDismiss()
-                        }
-                    )
+                        )
+                    }
 
                     // Set as Ringtone
                     ActionMenuItem(

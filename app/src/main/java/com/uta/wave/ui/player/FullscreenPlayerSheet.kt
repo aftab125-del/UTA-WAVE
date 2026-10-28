@@ -1594,9 +1594,6 @@ fun FullscreenPlayerSheet(
             onShowDetails = {
                 showSongDetails = true
             },
-            onRadio = {
-                Toast.makeText(context, "Starting radio station for ${track.title}...", Toast.LENGTH_SHORT).show()
-            },
             onAddToPlaylist = {
                 showPlaylistPicker = true
             },
@@ -1635,9 +1632,6 @@ fun FullscreenPlayerSheet(
             },
             onAddToQueue = { trackItem ->
                 playbackManager.addToQueue(trackItem, insertNext = false)
-            },
-            onStartRadio = {
-                playbackManager.startRadioFromCurrentTrack()
             },
             onClearQueue = {
                 onClearQueue?.invoke()
