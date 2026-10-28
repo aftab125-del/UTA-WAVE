@@ -33,13 +33,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -139,7 +139,7 @@ fun FloatingNavBar(
 
     val tabs = listOf(
         NavTab(0, "Home", Icons.Filled.Home, Icons.Outlined.Home),
-        NavTab(1, "Radio", Icons.Filled.Radio, Icons.Outlined.Radio),
+        NavTab(1, "Recognize", Icons.Filled.GraphicEq, Icons.Outlined.GraphicEq),
         NavTab(2, "Library", Icons.AutoMirrored.Filled.QueueMusic, Icons.AutoMirrored.Outlined.QueueMusic)
     )
 
@@ -180,7 +180,7 @@ fun FloatingNavBar(
                 ) {
                     // 1. Left Active Tab Circular FAB
                     val activeIcon = when (selectedTab) {
-                        1 -> Icons.Filled.Radio
+                        1 -> Icons.Filled.GraphicEq
                         2 -> Icons.AutoMirrored.Filled.QueueMusic
                         3 -> Icons.Filled.Search
                         else -> Icons.Filled.Home

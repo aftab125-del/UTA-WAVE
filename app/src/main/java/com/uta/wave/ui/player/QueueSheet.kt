@@ -428,39 +428,6 @@ fun QueueSheet(
                             color = if (playerState.repeatMode != RepeatMode.OFF) BlushRose else TextPrimary
                         )
                     }
-
-                    // Radio Pill
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (isRadioActive) BlushRose.copy(alpha = 0.22f) else Color(0xFF221727))
-                            .border(
-                                1.dp,
-                                if (isRadioActive) BlushRose else CardBorder,
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable {
-                                onStartRadio?.invoke()
-                                    ?: playbackManager.startRadioFromCurrentTrack()
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Radio,
-                            contentDescription = "Radio",
-                            tint = if (isRadioActive) BlushRose else TextPrimary,
-                            modifier = Modifier.size(17.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Radio",
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 12.sp),
-                            color = if (isRadioActive) BlushRose else TextPrimary
-                        )
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))

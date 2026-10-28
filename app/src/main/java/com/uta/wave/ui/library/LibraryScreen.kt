@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,7 +38,6 @@ import androidx.compose.material.icons.filled.AddLink
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentPaste
@@ -101,6 +102,8 @@ import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.data.local.LocalMediaScanner
 import com.uta.wave.data.local.PlaylistRecord
+import com.uta.wave.player.PlaybackManager
+import com.uta.wave.ui.components.SongMenuBottomSheet
 import com.uta.wave.ui.components.TrackRow
 import com.uta.wave.ui.recognizer.BlushRose
 import com.uta.wave.ui.recognizer.DarkBlushText
@@ -142,6 +145,7 @@ fun LibraryScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val localDatabase = remember { LocalDatabase.getInstance(context) }
+    val playbackManager = remember { PlaybackManager.getInstance(context) }
     val accountManager = remember { AccountManager.getInstance(context) }
     val userProfile by accountManager.profileFlow.collectAsState()
     val downloadManager = remember { AudioDownloadManager.getInstance(context) }
@@ -152,6 +156,27 @@ fun LibraryScreen(
     var selectedPlaylist by remember { mutableStateOf<PlaylistRecord?>(null) }
     var showSpotifyImport by remember { mutableStateOf(false) }
     var selectedCategoryView by remember { mutableStateOf<String?>(null) }
+    var selectedTrackMenu by remember { mutableStateOf<TrackItem?>(null) }
+
+    // Data for feature cards
+    var top50Tracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
+    var bottom50Tracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
+    var localTracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
+    var allLibraryTracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
+
+    // Storage permission state & launcher for local music extraction
+    var hasStoragePermission by remember { mutableStateOf(LocalMediaScanner.hasAudioPermission(context)) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasStoragePermission = isGranted
+        if (isGranted) {
+            scope.launch {
+                localTracks = LocalMediaScanner.scanAndPersistLocalTracks(context)
+                Toast.makeText(context, "Discovered ${localTracks.size} local songs", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     // Bottom Sheet states
     var showAddBottomSheet by remember { mutableStateOf(false) }
@@ -172,20 +197,17 @@ fun LibraryScreen(
     var sortAscending by remember { mutableStateOf(true) }
     var sortCriteria by remember { mutableStateOf("Date added") }
 
-    // Data for feature cards
-    var top50Tracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
-    var bottom50Tracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
-    var localTracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
-    var allLibraryTracks by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
-
     LaunchedEffect(Unit) {
         top50Tracks = localDatabase.getTop50()
         bottom50Tracks = localDatabase.getBottom50()
-        localTracks = LocalMediaScanner.scanLocalTracks(context)
+        localTracks = LocalMediaScanner.scanAndPersistLocalTracks(context)
         allLibraryTracks = localDatabase.getAllTracks()
     }
 
     // Modal & Sub-Screen Back Handlers
+    BackHandler(enabled = selectedTrackMenu != null) {
+        selectedTrackMenu = null
+    }
     BackHandler(enabled = showSpotifyImport) {
         showSpotifyImport = false
     }
@@ -280,16 +302,36 @@ fun LibraryScreen(
                             )
                         }
 
-                        if (activeTracks.isNotEmpty()) {
-                            Button(
-                                onClick = { onPlayTrack(activeTracks.first(), activeTracks) },
-                                colors = ButtonDefaults.buttonColors(containerColor = BlushRose),
-                                shape = RoundedCornerShape(18.dp),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = DarkBlushText, modifier = Modifier.size(16.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (categoryName == "Local") {
+                                IconButton(
+                                    onClick = {
+                                        if (!hasStoragePermission) {
+                                            permissionLauncher.launch(LocalMediaScanner.getRequiredPermission())
+                                        } else {
+                                            scope.launch {
+                                                localTracks = LocalMediaScanner.scanAndPersistLocalTracks(context)
+                                                Toast.makeText(context, "Discovered ${localTracks.size} local songs", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Rescan", tint = BlushRose, modifier = Modifier.size(20.dp))
+                                }
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Play all", color = DarkBlushText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+
+                            if (activeTracks.isNotEmpty()) {
+                                Button(
+                                    onClick = { onPlayTrack(activeTracks.first(), activeTracks) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BlushRose),
+                                    shape = RoundedCornerShape(18.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = DarkBlushText, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Play all", color = DarkBlushText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
                             }
                         }
                     }
@@ -320,7 +362,40 @@ fun LibraryScreen(
                     }
                 }
 
-                if (activeTracks.isEmpty()) {
+                if (categoryName == "Local" && !hasStoragePermission) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 40.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null, tint = BlushRose, modifier = Modifier.size(54.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                "Storage Permission Needed",
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                fontSize = 17.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "Grant access to your device's audio files to discover and play your local MP3s and add them to playlists.",
+                                color = TextSecondary,
+                                fontSize = 13.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(18.dp))
+                            Button(
+                                onClick = { permissionLauncher.launch(LocalMediaScanner.getRequiredPermission()) },
+                                colors = ButtonDefaults.buttonColors(containerColor = BlushRose),
+                                shape = RoundedCornerShape(22.dp)
+                            ) {
+                                Text("Grant Permission", color = DarkBlushText, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                } else if (activeTracks.isEmpty()) {
                     item {
                         Box(
                             modifier = Modifier
@@ -339,10 +414,28 @@ fun LibraryScreen(
                             isPlaying = isPlaying && track.id == currentTrackId,
                             isFavorite = favoritesList.any { it.id == track.id },
                             onTrackClick = { onPlayTrack(track, activeTracks) },
-                            onToggleFavorite = { onToggleFavorite(track) }
+                            onToggleFavorite = { onToggleFavorite(track) },
+                            onMoreClick = { selectedTrackMenu = track }
                         )
                     }
                 }
+            }
+
+            selectedTrackMenu?.let { menuTrack ->
+                SongMenuBottomSheet(
+                    track = menuTrack,
+                    isFavorite = favoritesList.any { it.id == menuTrack.id },
+                    onToggleFavorite = { onToggleFavorite(it) },
+                    onPlayNext = { track ->
+                        playbackManager.addToQueue(track, insertNext = true)
+                        selectedTrackMenu = null
+                    },
+                    onAddToQueue = { track ->
+                        playbackManager.addToQueue(track)
+                        selectedTrackMenu = null
+                    },
+                    onDismiss = { selectedTrackMenu = null }
+                )
             }
         }
         return
@@ -352,7 +445,6 @@ fun LibraryScreen(
     val featureCards = listOf(
         QuickFeatureCard("Liked", "Liked", Icons.Default.Favorite, "${favoritesList.size}"),
         QuickFeatureCard("Downloaded", "Downloaded", Icons.Default.CheckCircle, "${downloadedTracks.size}"),
-        QuickFeatureCard("Exported", "Exported", Icons.Default.Download, "Backup"),
         QuickFeatureCard("Cached", "Cached", Icons.Default.Sync, "${allLibraryTracks.size}"),
         QuickFeatureCard("My top 50", "My top 50", Icons.Default.TrendingUp, "${top50Tracks.size}"),
         QuickFeatureCard("My bottom 50", "My bottom 50", Icons.Default.TrendingDown, "${bottom50Tracks.size}"),
@@ -536,11 +628,7 @@ fun LibraryScreen(
                                         .background(Color(0xFF1E1624))
                                         .border(1.dp, CardBorder.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
                                         .clickable {
-                                            if (card.id == "Exported") {
-                                                onExportJson()
-                                            } else {
-                                                selectedCategoryView = card.id
-                                            }
+                                            selectedCategoryView = card.id
                                         }
                                         .padding(horizontal = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically

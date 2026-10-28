@@ -324,28 +324,6 @@ fun ArtistScreen(
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
-
-                                // Radio Button
-                                Box(
-                                    modifier = Modifier
-                                        .size(46.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF261D2B))
-                                        .clickable {
-                                            Toast.makeText(context, "Artist radio station started", Toast.LENGTH_SHORT).show()
-                                            if (page.topSongs.isNotEmpty()) {
-                                                onPlayTrack(page.topSongs[0], page.topSongs)
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Radio,
-                                        contentDescription = "Radio",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
                             }
 
                             // Bio Preview
