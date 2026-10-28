@@ -30,7 +30,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudOff
@@ -45,7 +44,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Settings

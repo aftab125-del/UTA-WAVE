@@ -393,9 +393,6 @@ fun LibraryScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        IconButton(onClick = onOpenDiagnostics) {
-                            Icon(Icons.Default.BugReport, contentDescription = "Diagnostics", tint = ElectricViolet, modifier = Modifier.size(22.dp))
-                        }
                         IconButton(onClick = onOpenListeningSummary) {
                             Icon(Icons.Outlined.History, contentDescription = "Listening Summary & History", tint = TextSecondary, modifier = Modifier.size(22.dp))
                         }

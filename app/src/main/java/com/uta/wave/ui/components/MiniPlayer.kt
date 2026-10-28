@@ -450,11 +450,10 @@ fun MiniPlayer(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color(0xFFE53935))
-                            .clickable(onClick = onOpenDiagnostics)
                             .padding(horizontal = 12.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "⚠️ ${playerState.error} • Tap for details",
+                            text = "⚠️ ${playerState.error}",
                             color = Color.White,
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
                             maxLines = 1,
