@@ -80,6 +80,7 @@ class LocalDatabase private constructor(context: Context) :
             if (restoreAutoBackupIfEmpty()) {
                 refreshAllFlows()
             }
+            purgeSystemPlaylists()
         }
     }
 
@@ -756,6 +757,47 @@ class LocalDatabase private constructor(context: Context) :
         val db = writableDatabase
         db.delete("playlist_tracks", "playlist_id = ?", arrayOf(playlistId))
         db.delete("playlists", "id = ?", arrayOf(playlistId))
+        _playlistsFlow.value = queryPlaylistsSync()
+    }
+
+    suspend fun purgeSystemPlaylists() = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val cursor = db.rawQuery(
+                """
+                SELECT id FROM playlists
+                WHERE id IN ('LM', 'VLLM', 'LL', 'VLLL', 'SE', 'VLSE', 'WL', 'VLWL', 'RDPN')
+                   OR LOWER(name) LIKE '%liked songs%'
+                   OR LOWER(name) LIKE '%liked music%'
+                   OR LOWER(name) LIKE '%liked videos%'
+                   OR LOWER(name) LIKE '%sounds from short%'
+                   OR LOWER(name) LIKE '%episode for later%'
+                   OR LOWER(name) LIKE '%episodes for later%'
+                   OR LOWER(name) = 'episodes'
+                   OR LOWER(name) LIKE '%watch later%'
+                """.trimIndent(),
+                null
+            )
+            val idsToDelete = mutableListOf<String>()
+            cursor.use {
+                while (it.moveToNext()) {
+                    idsToDelete.add(it.getString(0))
+                }
+            }
+            for (pid in idsToDelete) {
+                db.delete("playlist_tracks", "playlist_id = ?", arrayOf(pid))
+                db.delete("playlists", "id = ?", arrayOf(pid))
+            }
+            db.setTransactionSuccessful()
+            if (idsToDelete.isNotEmpty()) {
+                com.uta.wave.player.AppLogger.i("Purged ${idsToDelete.size} unwanted system playlists from database")
+            }
+        } catch (e: Exception) {
+            com.uta.wave.player.AppLogger.w("purgeSystemPlaylists error: ${e.message}")
+        } finally {
+            db.endTransaction()
+        }
         _playlistsFlow.value = queryPlaylistsSync()
     }
 

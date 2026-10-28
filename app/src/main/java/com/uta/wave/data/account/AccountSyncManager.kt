@@ -77,23 +77,19 @@ class AccountSyncManager private constructor(private val appContext: Context) {
         var playlistsCount = 0
 
         try {
-            // 1. Sync Liked Music ("LM")
-            _syncState.value = AccountSyncState.Syncing("Syncing Liked Music...")
-            try {
-                val (_, likedTracks) = innerTube.getPlaylist("LM")
-                if (likedTracks.isNotEmpty()) {
-                    localDatabase.addFavorites(likedTracks)
-                    likedCount = likedTracks.size
-                    AppLogger.i("AccountSyncManager: Synced $likedCount liked songs into favorites")
-                }
-            } catch (e: Exception) {
-                AppLogger.w("AccountSyncManager: Liked songs sync warning: ${e.message}")
-            }
+            // Purge any unwanted YouTube system playlists (Shorts, Episodes, Liked Songs)
+            localDatabase.purgeSystemPlaylists()
+
+            // 1. Liked Music sync is intentionally excluded per user instruction
+            // (We strictly only keep imported or user-created playlists).
 
             // 2. Upload Phase: Scan for local & imported playlists that are not yet on YouTube Music
             _syncState.value = AccountSyncState.Syncing("Uploading imported & local playlists to account...")
             val localPlaylists = localDatabase.getPlaylists()
             for (localPlaylist in localPlaylists) {
+                if (isIgnoredSystemPlaylist(localPlaylist.id, localPlaylist.name)) {
+                    continue
+                }
                 val isCloudPlaylist = localPlaylist.id.startsWith("PL") ||
                         localPlaylist.id.startsWith("VL") ||
                         localPlaylist.id.startsWith("RD") ||
@@ -124,6 +120,10 @@ class AccountSyncManager private constructor(private val appContext: Context) {
             _syncState.value = AccountSyncState.Syncing("Syncing Playlists from Google Account...")
             val remotePlaylists = innerTube.fetchUserPlaylists()
             for (remotePlaylist in remotePlaylists) {
+                if (isIgnoredSystemPlaylist(remotePlaylist.id, remotePlaylist.title)) {
+                    AppLogger.i("AccountSyncManager: Skipping YouTube system playlist: ${remotePlaylist.title}")
+                    continue
+                }
                 try {
                     // Create/update playlist in local database
                     localDatabase.createPlaylist(
@@ -132,7 +132,7 @@ class AccountSyncManager private constructor(private val appContext: Context) {
                         customId = remotePlaylist.id
                     )
 
-                    // Fetch tracks for this playlist and populate
+                    // Fetch tracks for this playlist with full pagination (all pages) and populate
                     val (_, tracks) = innerTube.getPlaylist(remotePlaylist.id)
                     if (tracks.isNotEmpty()) {
                         localDatabase.addTracksToPlaylist(remotePlaylist.id, tracks)
@@ -161,6 +161,28 @@ class AccountSyncManager private constructor(private val appContext: Context) {
             _syncState.value = AccountSyncState.Error(e.message ?: "Failed to sync with account")
             Result.failure(e)
         }
+    }
+
+    private fun isIgnoredSystemPlaylist(id: String, title: String): Boolean {
+        val lowerId = id.uppercase()
+        val lowerTitle = title.lowercase().trim()
+        val ignoredIds = setOf("LM", "VLLM", "LL", "VLLL", "SE", "VLSE", "WL", "VLWL", "RDPN")
+        if (ignoredIds.contains(lowerId)) return true
+
+        val ignoredKeywords = listOf(
+            "liked songs",
+            "liked music",
+            "liked videos",
+            "your likes",
+            "sounds from shorts",
+            "sound from shorts",
+            "sounds from short",
+            "episode for later",
+            "episodes for later",
+            "episodes",
+            "watch later"
+        )
+        return ignoredKeywords.any { lowerTitle.contains(it) }
     }
 
     /**
