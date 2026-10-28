@@ -154,25 +154,10 @@ object PlaylistImporter {
 
         val accountManager = AccountManager.getInstance(context)
         val profile = accountManager.currentProfile
-        var remotePlaylistId: String? = null
-
-        if (profile.isLoggedIn && !profile.cookie.isNullOrBlank()) {
-            try {
-                InnerTubeClient.authCookie = profile.cookie
-                InnerTubeClient.authSapisid = profile.sapisid
-                remotePlaylistId = innerTubeClient.createRemotePlaylist(playlistTitle)
-                if (remotePlaylistId != null) {
-                    AppLogger.i("Created remote cloud playlist for Spotify import: '$playlistTitle' -> $remotePlaylistId")
-                }
-            } catch (e: Exception) {
-                AppLogger.w("Failed to create remote playlist for Spotify import: ${e.message}")
-            }
-        }
 
         val createdPlaylistId = localDatabase.createPlaylist(
             name = playlistTitle,
-            description = "Imported from Spotify",
-            customId = remotePlaylistId
+            description = "Imported from Spotify"
         )
         var addedCount = 0
         val videoIdsToSync = mutableListOf<String>()
@@ -212,11 +197,19 @@ object PlaylistImporter {
             }
         }
 
-        // Upload tracks to YouTube Music Google account if remote playlist was created
-        if (!remotePlaylistId.isNullOrBlank() && videoIdsToSync.isNotEmpty()) {
+        // Upload tracks to YouTube Music Google account if user is signed in
+        if (profile.isLoggedIn && !profile.cookie.isNullOrBlank() && videoIdsToSync.isNotEmpty()) {
             try {
-                innerTubeClient.addTracksToRemotePlaylist(remotePlaylistId, videoIdsToSync)
-                AppLogger.i("Synced ${videoIdsToSync.size} imported Spotify tracks to Google account cloud playlist")
+                InnerTubeClient.authCookie = profile.cookie
+                InnerTubeClient.authSapisid = profile.sapisid
+                val remoteId = innerTubeClient.createRemotePlaylist(playlistTitle, "PRIVATE", videoIdsToSync)
+                if (!remoteId.isNullOrBlank()) {
+                    if (videoIdsToSync.size > 50) {
+                        innerTubeClient.addTracksToRemotePlaylist(remoteId, videoIdsToSync.drop(50))
+                    }
+                    localDatabase.updatePlaylistId(createdPlaylistId, remoteId)
+                    AppLogger.i("Synced ${videoIdsToSync.size} imported Spotify tracks to Google account cloud playlist: $remoteId")
+                }
             } catch (e: Exception) {
                 AppLogger.e("Failed to sync Spotify tracks to remote playlist", e)
             }
