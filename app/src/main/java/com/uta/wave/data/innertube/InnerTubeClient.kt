@@ -282,10 +282,9 @@ class InnerTubeClient(
                     if (body != null) {
                         val root = JSONObject(body)
                         val tracks = mutableListOf<TrackItem>()
-                        parseTracksRecursively(root, tracks)
+                        var nextContinuation = parsePlaylistTracksScoped(root, tracks)
 
                         // Follow InnerTube continuation tokens to fetch all pages (100, 200, 500+ tracks)
-                        var nextContinuation = extractBrowseContinuationToken(root)
                         var pagesFetched = 0
                         val maxContinuationPages = 60 // Allows up to 6,000 tracks per playlist
 
@@ -315,11 +314,10 @@ class InnerTubeClient(
                                 val contBody = contResponse.body?.string() ?: break
                                 val contJson = JSONObject(contBody)
                                 val initialCount = tracks.size
-                                parseTracksRecursively(contJson, tracks)
+                                nextContinuation = parsePlaylistTracksScoped(contJson, tracks)
                                 val addedCount = tracks.size - initialCount
                                 AppLogger.i("Playlist continuation page $pagesFetched added $addedCount tracks (total: ${tracks.size})")
 
-                                nextContinuation = extractBrowseContinuationToken(contJson)
                                 if (addedCount == 0) break
                             } catch (e: Exception) {
                                 AppLogger.w("Playlist continuation error on page $pagesFetched: ${e.message}")
@@ -408,10 +406,9 @@ class InnerTubeClient(
                     if (webBody != null) {
                         val webRoot = JSONObject(webBody)
                         val webTracks = mutableListOf<TrackItem>()
-                        parseTracksRecursively(webRoot, webTracks)
+                        var webCont = parsePlaylistTracksScoped(webRoot, webTracks)
 
                         // Follow WEB client continuations
-                        var webCont = extractBrowseContinuationToken(webRoot)
                         var webPages = 0
                         while (!webCont.isNullOrBlank() && webPages < 60) {
                             webPages++
@@ -437,9 +434,8 @@ class InnerTubeClient(
                                 val cBody = cResp.body?.string() ?: break
                                 val cJson = JSONObject(cBody)
                                 val initial = webTracks.size
-                                parseTracksRecursively(cJson, webTracks)
+                                webCont = parsePlaylistTracksScoped(cJson, webTracks)
                                 val added = webTracks.size - initial
-                                webCont = extractBrowseContinuationToken(cJson)
                                 if (added == 0) break
                             } catch (e: Exception) {
                                 break
@@ -1138,6 +1134,125 @@ class InnerTubeClient(
                 }
             }
         }
+        return null
+    }
+
+    /**
+     * Parses tracks strictly from the playlist shelf and extracts the continuation token
+     * solely belonging to that playlist shelf, preventing recommended/suggested carousels
+     * from polluting user playlists.
+     */
+    private fun parsePlaylistTracksScoped(json: JSONObject, outTracks: MutableList<TrackItem>): String? {
+        // 1. Check for continuationContents -> musicPlaylistShelfContinuation / playlistVideoListContinuation
+        val contShelf = json.optJSONObject("continuationContents")?.optJSONObject("musicPlaylistShelfContinuation")
+            ?: json.optJSONObject("continuationContents")?.optJSONObject("playlistVideoListContinuation")
+            ?: json.optJSONObject("musicPlaylistShelfContinuation")
+            ?: json.optJSONObject("playlistVideoListContinuation")
+
+        val shelf = contShelf ?: findPlaylistShelf(json)
+
+        if (shelf != null) {
+            val contents = shelf.optJSONArray("contents")
+            var contToken: String? = null
+
+            if (contents != null) {
+                for (i in 0 until contents.length()) {
+                    val item = contents.optJSONObject(i) ?: continue
+
+                    // Check if item is a track
+                    val track = item.optJSONObject("musicResponsiveListItemRenderer")?.let { parseTrackRenderer(it) }
+                        ?: item.optJSONObject("playlistVideoRenderer")?.let { parsePlaylistVideoRenderer(it) }
+                        ?: item.optJSONObject("playlistPanelVideoRenderer")?.let { parsePlaylistPanelVideoRenderer(it) }
+
+                    if (track != null) {
+                        if (outTracks.none { it.videoId == track.videoId }) {
+                            outTracks.add(track)
+                        }
+                    }
+
+                    // Check if item is a continuationItemRenderer
+                    val contItem = item.optJSONObject("continuationItemRenderer")
+                    if (contItem != null) {
+                        val token = contItem.optJSONObject("continuationEndpoint")
+                            ?.optJSONObject("continuationCommand")
+                            ?.optString("token")
+                        if (!token.isNullOrBlank()) {
+                            contToken = token
+                        }
+                    }
+                }
+            }
+
+            // Also check shelf continuations array
+            if (contToken.isNullOrBlank()) {
+                val contArr = shelf.optJSONArray("continuations")
+                if (contArr != null && contArr.length() > 0) {
+                    val token = contArr.optJSONObject(0)
+                        ?.optJSONObject("nextContinuationData")
+                        ?.optString("continuation")
+                    if (!token.isNullOrBlank()) {
+                        contToken = token
+                    }
+                }
+            }
+
+            return contToken
+        }
+
+        // Fallback for non-standard structures: parse only if no shelf could be identified
+        val initialSize = outTracks.size
+        parseTracksRecursively(json, outTracks)
+        return if (outTracks.size > initialSize) extractBrowseContinuationToken(json) else null
+    }
+
+    private fun findPlaylistShelf(obj: JSONObject): JSONObject? {
+        if (obj.has("musicPlaylistShelfRenderer")) return obj.optJSONObject("musicPlaylistShelfRenderer")
+        if (obj.has("playlistVideoListRenderer")) return obj.optJSONObject("playlistVideoListRenderer")
+
+        // Look specifically in twoColumnBrowseResultsRenderer -> secondaryContents or tabs
+        val twoCol = obj.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
+        if (twoCol != null) {
+            val secContents = twoCol.optJSONObject("secondaryContents")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents")
+            if (secContents != null) {
+                for (i in 0 until secContents.length()) {
+                    val item = secContents.optJSONObject(i) ?: continue
+                    if (item.has("musicPlaylistShelfRenderer")) {
+                        return item.optJSONObject("musicPlaylistShelfRenderer")
+                    }
+                }
+            }
+
+            val tabs = twoCol.optJSONArray("tabs")
+            if (tabs != null && tabs.length() > 0) {
+                val tabContents = tabs.optJSONObject(0)
+                    ?.optJSONObject("tabRenderer")
+                    ?.optJSONObject("content")
+                    ?.optJSONObject("sectionListRenderer")
+                    ?.optJSONArray("contents")
+                if (tabContents != null) {
+                    for (i in 0 until tabContents.length()) {
+                        val item = tabContents.optJSONObject(i) ?: continue
+                        if (item.has("musicPlaylistShelfRenderer")) {
+                            return item.optJSONObject("musicPlaylistShelfRenderer")
+                        }
+                        if (item.has("itemSectionRenderer")) {
+                            val isrContents = item.optJSONObject("itemSectionRenderer")?.optJSONArray("contents")
+                            if (isrContents != null) {
+                                for (j in 0 until isrContents.length()) {
+                                    val isrItem = isrContents.optJSONObject(j) ?: continue
+                                    if (isrItem.has("playlistVideoListRenderer")) {
+                                        return isrItem.optJSONObject("playlistVideoListRenderer")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         return null
     }
 
@@ -1864,15 +1979,26 @@ class InnerTubeClient(
 
     /**
      * Creates a new playlist on the authenticated user's YouTube Music / Google account.
+     * Optionally attaches initial video IDs directly upon creation to ensure atomic persistence.
      * Returns the created remote playlistId (e.g. "PL...").
      */
-    suspend fun createRemotePlaylist(title: String, privacyStatus: String = "PRIVATE"): String? = withContext(Dispatchers.IO) {
+    suspend fun createRemotePlaylist(
+        title: String,
+        privacyStatus: String = "PRIVATE",
+        initialVideoIds: List<String> = emptyList()
+    ): String? = withContext(Dispatchers.IO) {
         refreshVisitorDataIfNeeded()
         try {
             val payload = JSONObject().apply {
                 put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
                 put("title", title.trim())
                 put("privacyStatus", privacyStatus)
+                val validIds = initialVideoIds.filter { it.isNotBlank() }.take(50)
+                if (validIds.isNotEmpty()) {
+                    val arr = JSONArray()
+                    validIds.forEach { arr.put(it) }
+                    put("videoIds", arr)
+                }
             }
 
             val request = Request.Builder()
@@ -1890,7 +2016,7 @@ class InnerTubeClient(
                     val body = response.body?.string() ?: return@withContext null
                     val root = JSONObject(body)
                     val playlistId = root.optString("playlistId").takeIf { it.isNotBlank() }
-                    AppLogger.i("createRemotePlaylist succeeded: '$title' -> ID: $playlistId")
+                    AppLogger.i("createRemotePlaylist succeeded: '$title' (initial ${initialVideoIds.size} tracks) -> ID: $playlistId")
                     playlistId
                 } else {
                     AppLogger.w("createRemotePlaylist failed: HTTP ${response.code}")
@@ -1907,40 +2033,7 @@ class InnerTubeClient(
      * Adds a track video ID to an existing YouTube Music playlist on the user's account.
      */
     suspend fun addTrackToRemotePlaylist(playlistId: String, videoId: String): Boolean = withContext(Dispatchers.IO) {
-        refreshVisitorDataIfNeeded()
-        try {
-            val cleanPlaylistId = extractYouTubePlaylistId(playlistId)
-            val payload = JSONObject().apply {
-                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
-                put("playlistId", cleanPlaylistId)
-                val actions = JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("action", "ACTION_ADD_VIDEO")
-                        put("addedVideoId", videoId)
-                    })
-                }
-                put("actions", actions)
-            }
-
-            val request = Request.Builder()
-                .url("$INNERTUBE_BASE_URL/browse/edit_playlist")
-                .apply {
-                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
-                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
-                    applyAuthHeaders(this)
-                }
-                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val ok = response.isSuccessful
-                AppLogger.i("addTrackToRemotePlaylist: $videoId -> $cleanPlaylistId (success=$ok)")
-                ok
-            }
-        } catch (e: Exception) {
-            AppLogger.e("addTrackToRemotePlaylist network error", e)
-            false
-        }
+        addTracksToRemotePlaylist(playlistId, listOf(videoId))
     }
 
     /**
@@ -1969,6 +2062,7 @@ class InnerTubeClient(
                     put("actions", actions)
                 }
 
+                // 1. Primary: YouTube Music endpoint
                 val request = Request.Builder()
                     .url("$INNERTUBE_BASE_URL/browse/edit_playlist")
                     .apply {
@@ -1979,12 +2073,61 @@ class InnerTubeClient(
                     .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                     .build()
 
+                var chunkSuccess = false
                 client.newCall(request).execute().use { response ->
-                    val ok = response.isSuccessful
-                    if (!ok) {
-                        overallSuccess = false
-                        AppLogger.w("addTracksToRemotePlaylist chunk failed: HTTP ${response.code} for $cleanPlaylistId")
+                    if (response.isSuccessful) {
+                        chunkSuccess = true
+                    } else {
+                        AppLogger.w("addTracksToRemotePlaylist primary failed: HTTP ${response.code}")
                     }
+                }
+
+                // 2. Secondary fallback: YouTube Web endpoint
+                if (!chunkSuccess) {
+                    try {
+                        val webPayload = JSONObject().apply {
+                            val clientObj = JSONObject().apply {
+                                put("clientName", "WEB")
+                                put("clientVersion", "2.20240101.01.00")
+                                put("hl", "en")
+                                put("gl", "US")
+                            }
+                            put("context", JSONObject().put("client", clientObj))
+                            put("playlistId", cleanPlaylistId)
+                            val actions = JSONArray().apply {
+                                chunk.forEach { videoId ->
+                                    put(JSONObject().apply {
+                                        put("action", "ACTION_ADD_VIDEO")
+                                        put("addedVideoId", videoId)
+                                    })
+                                }
+                            }
+                            put("actions", actions)
+                        }
+                        val webReq = Request.Builder()
+                            .url("https://www.youtube.com/youtubei/v1/browse/edit_playlist")
+                            .apply {
+                                commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                                addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                                applyAuthHeaders(this)
+                            }
+                            .post(webPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                            .build()
+
+                        client.newCall(webReq).execute().use { webResp ->
+                            if (webResp.isSuccessful) {
+                                chunkSuccess = true
+                            } else {
+                                AppLogger.w("addTracksToRemotePlaylist fallback failed: HTTP ${webResp.code}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        AppLogger.w("addTracksToRemotePlaylist fallback error: ${e.message}")
+                    }
+                }
+
+                if (!chunkSuccess) {
+                    overallSuccess = false
                 }
             }
             AppLogger.i("addTracksToRemotePlaylist: ${videoIds.size} tracks -> $cleanPlaylistId (success=$overallSuccess)")

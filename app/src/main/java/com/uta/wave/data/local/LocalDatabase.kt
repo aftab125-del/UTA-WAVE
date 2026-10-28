@@ -874,6 +874,35 @@ class LocalDatabase private constructor(context: Context) :
         _playlistsFlow.value = queryPlaylistsSync()
     }
 
+    /**
+     * Atomically replaces all tracks in a playlist with a fresh, ordered set of tracks.
+     * Prevents stale, duplicate, or ghost tracks from persisting across cloud sync.
+     */
+    suspend fun replacePlaylistTracks(playlistId: String, tracks: List<TrackItem>) = withContext(Dispatchers.IO) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("playlist_tracks", "playlist_id = ?", arrayOf(playlistId))
+            var pos = 0
+            for (track in tracks) {
+                insertTrack(track)
+                val values = ContentValues().apply {
+                    put("playlist_id", playlistId)
+                    put("track_id", track.id)
+                    put("position", pos++)
+                    put("added_at", System.currentTimeMillis())
+                }
+                db.insertWithOnConflict("playlist_tracks", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            val updateTime = ContentValues().apply { put("updated_at", System.currentTimeMillis()) }
+            db.update("playlists", updateTime, "id = ?", arrayOf(playlistId))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        _playlistsFlow.value = queryPlaylistsSync()
+    }
+
     suspend fun renamePlaylist(playlistId: String, newName: String, newDescription: String? = null) = withContext(Dispatchers.IO) {
         val db = writableDatabase
         val values = ContentValues().apply {

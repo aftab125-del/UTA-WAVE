@@ -100,11 +100,12 @@ class AccountSyncManager private constructor(private val appContext: Context) {
                         val tracks = localDatabase.getPlaylistTracks(localPlaylist.id)
                         if (tracks.isNotEmpty()) {
                             AppLogger.i("AccountSyncManager: Uploading local/imported playlist '${localPlaylist.name}' to Google Account...")
-                            val remoteId = innerTube.createRemotePlaylist(localPlaylist.name)
+                            val videoIds = tracks.mapNotNull { it.videoId.takeIf { vid -> vid.isNotBlank() } }
+                            val remoteId = innerTube.createRemotePlaylist(localPlaylist.name, "PRIVATE", videoIds)
                             if (!remoteId.isNullOrBlank()) {
-                                val videoIds = tracks.mapNotNull { it.videoId.takeIf { vid -> vid.isNotBlank() } }
-                                if (videoIds.isNotEmpty()) {
-                                    innerTube.addTracksToRemotePlaylist(remoteId, videoIds)
+                                if (videoIds.size > 50) {
+                                    val remaining = videoIds.drop(50)
+                                    innerTube.addTracksToRemotePlaylist(remoteId, remaining)
                                 }
                                 localDatabase.updatePlaylistId(localPlaylist.id, remoteId)
                                 AppLogger.i("AccountSyncManager: Successfully uploaded '${localPlaylist.name}' -> $remoteId with ${videoIds.size} tracks")
@@ -125,17 +126,40 @@ class AccountSyncManager private constructor(private val appContext: Context) {
                     continue
                 }
                 try {
-                    // Create/update playlist in local database
+                    // Create/update playlist metadata in local database
                     localDatabase.createPlaylist(
                         name = remotePlaylist.title,
                         description = remotePlaylist.description ?: "Synced from YouTube Music",
                         customId = remotePlaylist.id
                     )
 
-                    // Fetch tracks for this playlist with full pagination (all pages) and populate
-                    val (_, tracks) = innerTube.getPlaylist(remotePlaylist.id)
-                    if (tracks.isNotEmpty()) {
-                        localDatabase.addTracksToPlaylist(remotePlaylist.id, tracks)
+                    // Fetch tracks for this playlist with scoped pagination
+                    val (_, cloudTracks) = innerTube.getPlaylist(remotePlaylist.id)
+                    val localTracks = localDatabase.getPlaylistTracks(remotePlaylist.id)
+
+                    if (cloudTracks.isNotEmpty()) {
+                        if (localTracks.isNotEmpty() && localTracks.size > cloudTracks.size) {
+                            // Local has more tracks than cloud (e.g. tracks added offline or imported from Spotify)
+                            val missingOnCloud = localTracks.filter { lt -> cloudTracks.none { ct -> ct.videoId == lt.videoId } }
+                            val mergedTracks = cloudTracks.toMutableList().apply { addAll(missingOnCloud) }
+                            localDatabase.replacePlaylistTracks(remotePlaylist.id, mergedTracks)
+
+                            // Push the missing tracks to YouTube Music so cloud gets updated
+                            val missingVideoIds = missingOnCloud.mapNotNull { it.videoId.takeIf { v -> v.isNotBlank() } }
+                            if (missingVideoIds.isNotEmpty()) {
+                                innerTube.addTracksToRemotePlaylist(remotePlaylist.id, missingVideoIds)
+                            }
+                        } else {
+                            // Standard clean replace with properly sequenced cloud tracks
+                            localDatabase.replacePlaylistTracks(remotePlaylist.id, cloudTracks)
+                        }
+                    } else if (localTracks.isNotEmpty()) {
+                        // Cloud returned 0 tracks (temporary network/API glitch) - DO NOT wipe local tracks!
+                        AppLogger.w("AccountSyncManager: Cloud returned 0 tracks for ${remotePlaylist.title}; preserving ${localTracks.size} local tracks")
+                        val missingVideoIds = localTracks.mapNotNull { it.videoId.takeIf { v -> v.isNotBlank() } }
+                        if (missingVideoIds.isNotEmpty()) {
+                            innerTube.addTracksToRemotePlaylist(remotePlaylist.id, missingVideoIds)
+                        }
                     }
                     playlistsCount++
                 } catch (e: Exception) {
