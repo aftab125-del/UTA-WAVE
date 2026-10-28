@@ -1,9 +1,14 @@
 package com.uta.wave.data.downloads
 
 import android.content.Context
+import coil.Coil
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.uta.wave.data.innertube.InnerTubeClient
+import com.uta.wave.data.innertube.PlayerClient
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
+import com.uta.wave.data.lyrics.LyricsClient
 import com.uta.wave.player.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,8 +58,8 @@ class AudioDownloadManager private constructor(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.IO)
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(25, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
@@ -89,9 +94,14 @@ class AudioDownloadManager private constructor(private val context: Context) {
 
     suspend fun downloadTrackSuspend(
         track: TrackItem,
-        quality: AudioQuality = AudioQuality.LOSSLESS
+        quality: AudioQuality = AudioQuality.LOSSLESS,
+        trackIndex: Int = 1,
+        totalCount: Int = 1
     ): Boolean = withContext(Dispatchers.IO) {
-        if (isDownloaded(track.id)) return@withContext true
+        if (isDownloaded(track.id) || isDownloaded(track.videoId)) {
+            AppLogger.i("Track already downloaded: ${track.title}")
+            return@withContext true
+        }
 
         _downloadingIds.update { it + track.id }
         _downloadProgress.update { it + (track.id to 0f) }
@@ -107,26 +117,35 @@ class AudioDownloadManager private constructor(private val context: Context) {
             }
 
             val safeId = track.id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+            val tempFile = File(downloadsDir, "$safeId.tmp")
             val outputFile = File(downloadsDir, "$safeId.m4a")
 
-            val request = Request.Builder()
+            // Dress the request with exact matching client User-Agent and headers
+            // (fixes HTTP 403 Forbidden on Google Video CDN, identical to EchoMusic PlayerClient)
+            val playerClient = PlayerClient.forStreamUrl(streamUrl)
+            val mediaHeaders = playerClient.mediaHeaders()
+
+            val requestBuilder = Request.Builder()
                 .url(streamUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                .header("Accept", "*/*")
-                .header("Accept-Encoding", "identity")
-                .build()
+                .header("Range", "bytes=0-")
+
+            for ((headerKey, headerVal) in mediaHeaders) {
+                requestBuilder.header(headerKey, headerVal)
+            }
+
+            val request = requestBuilder.build()
 
             httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    AppLogger.e("Download HTTP failed: ${response.code} ${response.message}")
-                    if (outputFile.exists()) outputFile.delete()
+                if (!response.isSuccessful && response.code != 206) {
+                    AppLogger.e("Download HTTP failed (${playerClient.clientName}): ${response.code} ${response.message}")
+                    if (tempFile.exists()) tempFile.delete()
                     _downloadingIds.update { it - track.id }
                     _downloadProgress.update { it - track.id }
                     return@withContext false
                 }
 
                 val body = response.body ?: run {
-                    if (outputFile.exists()) outputFile.delete()
+                    if (tempFile.exists()) tempFile.delete()
                     _downloadingIds.update { it - track.id }
                     _downloadProgress.update { it - track.id }
                     return@withContext false
@@ -134,11 +153,12 @@ class AudioDownloadManager private constructor(private val context: Context) {
 
                 val contentLength = body.contentLength()
                 val inputStream = body.byteStream()
-                val outputStream = FileOutputStream(outputFile)
+                val outputStream = FileOutputStream(tempFile)
 
-                val buffer = ByteArray(16384)
+                val buffer = ByteArray(32768) // 32KB buffer for optimal I/O throughput
                 var bytesRead: Int
                 var totalRead = 0L
+                var lastProgressUpdateMs = 0L
 
                 try {
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
@@ -148,6 +168,18 @@ class AudioDownloadManager private constructor(private val context: Context) {
                             val progress = (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
                             _downloadProgress.update { it + (track.id to progress) }
                             _batchProgress.update { it.copy(currentTrackProgress = progress) }
+
+                            val now = System.currentTimeMillis()
+                            if (now - lastProgressUpdateMs > 750) {
+                                lastProgressUpdateMs = now
+                                AudioDownloadService.updateProgress(
+                                    context = context,
+                                    title = track.title,
+                                    progressPercent = (progress * 100).toInt(),
+                                    index = trackIndex,
+                                    total = totalCount
+                                )
+                            }
                         }
                     }
                     outputStream.flush()
@@ -156,16 +188,41 @@ class AudioDownloadManager private constructor(private val context: Context) {
                     try { inputStream.close() } catch (e: Exception) { /* ignore */ }
                 }
 
-                if (outputFile.exists() && outputFile.length() > 0L) {
-                    localDatabase.insertDownload(track, outputFile.absolutePath, outputFile.length(), quality.badge)
-                    AppLogger.i("Lossless download complete (${quality.badge}) for: ${track.title} (${outputFile.length() / 1024} KB)")
+                if (tempFile.exists() && tempFile.length() > 0L) {
+                    if (outputFile.exists()) outputFile.delete()
+                    val renamed = tempFile.renameTo(outputFile)
+                    val finalFile = if (renamed) outputFile else tempFile
+
+                    localDatabase.insertDownload(track, finalFile.absolutePath, finalFile.length(), quality.badge)
+                    AppLogger.i("Lossless download complete (${quality.badge}) for: ${track.title} (${finalFile.length() / 1024} KB)")
+
+                    // Pre-cache artwork for offline viewing in Airplane Mode
+                    if (track.artworkUrl.isNotBlank()) {
+                        try {
+                            val imageRequest = ImageRequest.Builder(context)
+                                .data(track.artworkUrl)
+                                .diskCachePolicy(CachePolicy.ENABLED)
+                                .memoryCachePolicy(CachePolicy.ENABLED)
+                                .build()
+                            Coil.imageLoader(context).enqueue(imageRequest)
+                        } catch (e: Exception) {
+                            AppLogger.w("Artwork pre-cache failed for ${track.title}: ${e.message}")
+                        }
+                    }
+
+                    // Pre-fetch lyrics in background for offline synced lyrics
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            LyricsClient().getLyrics(track.title, track.artist, track.durationSeconds)
+                        } catch (e: Exception) { /* ignore */ }
+                    }
 
                     _downloadingIds.update { it - track.id }
                     _downloadProgress.update { it - track.id }
                     return@withContext true
                 } else {
-                    if (outputFile.exists()) outputFile.delete()
-                    AppLogger.e("Downloaded file is empty or missing: ${outputFile.absolutePath}")
+                    if (tempFile.exists()) tempFile.delete()
+                    AppLogger.e("Downloaded temp file is empty or missing: ${tempFile.absolutePath}")
                     _downloadingIds.update { it - track.id }
                     _downloadProgress.update { it - track.id }
                     return@withContext false
@@ -175,8 +232,8 @@ class AudioDownloadManager private constructor(private val context: Context) {
             AppLogger.e("Download error for: ${track.title}: ${e.message}", e)
             try {
                 val safeId = track.id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
-                val outputFile = File(downloadsDir, "$safeId.m4a")
-                if (outputFile.exists()) outputFile.delete()
+                val tempFile = File(downloadsDir, "$safeId.tmp")
+                if (tempFile.exists()) tempFile.delete()
             } catch (ex: Exception) { /* ignore */ }
             _downloadingIds.update { it - track.id }
             _downloadProgress.update { it - track.id }
@@ -189,13 +246,18 @@ class AudioDownloadManager private constructor(private val context: Context) {
         quality: AudioQuality = AudioQuality.LOSSLESS,
         onComplete: (Boolean) -> Unit = {}
     ) {
-        if (_downloadingIds.value.contains(track.id) || isDownloaded(track.id)) {
+        if (_downloadingIds.value.contains(track.id) || isDownloaded(track.id) || isDownloaded(track.videoId)) {
             onComplete(true)
             return
         }
 
+        AudioDownloadService.start(context, track.title, track.artist)
+
         scope.launch {
-            val success = downloadTrackSuspend(track, quality)
+            val success = downloadTrackSuspend(track, quality, trackIndex = 1, totalCount = 1)
+            if (_downloadingIds.value.isEmpty() && !_batchProgress.value.isDownloading) {
+                AudioDownloadService.stop(context)
+            }
             withContext(Dispatchers.Main) { onComplete(success) }
         }
     }
@@ -207,6 +269,12 @@ class AudioDownloadManager private constructor(private val context: Context) {
                 val file = File(path)
                 if (file.exists()) file.delete()
             }
+            try {
+                val safeId = trackId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+                val tempFile = File(downloadsDir, "$safeId.tmp")
+                if (tempFile.exists()) tempFile.delete()
+            } catch (e: Exception) { /* ignore */ }
+
             localDatabase.deleteDownload(trackId)
             AppLogger.i("Deleted download for trackId: $trackId")
         }
@@ -215,6 +283,7 @@ class AudioDownloadManager private constructor(private val context: Context) {
     /**
      * Downloads playlist songs sequentially (one-by-one) in Lossless quality,
      * maintaining device memory and preventing mobile data network throttling.
+     * Keeps foreground download notification active until complete.
      */
     fun downloadTracks(
         tracks: List<TrackItem>,
@@ -222,11 +291,14 @@ class AudioDownloadManager private constructor(private val context: Context) {
     ) {
         batchJob?.cancel()
         batchJob = scope.launch {
-            val pending = tracks.filter { !isDownloaded(it.id) }
+            val pending = tracks.filter { !isDownloaded(it.id) && !isDownloaded(it.videoId) }
             if (pending.isEmpty()) {
                 _batchProgress.value = BatchDownloadProgress(isDownloading = false)
+                AudioDownloadService.stop(context)
                 return@launch
             }
+
+            AudioDownloadService.start(context, pending.first().title, pending.first().artist)
 
             _batchProgress.value = BatchDownloadProgress(
                 isDownloading = true,
@@ -249,8 +321,16 @@ class AudioDownloadManager private constructor(private val context: Context) {
                     currentTrackProgress = 0f
                 )
 
+                AudioDownloadService.updateProgress(
+                    context = context,
+                    title = track.title,
+                    progressPercent = 0,
+                    index = index + 1,
+                    total = pending.size
+                )
+
                 AppLogger.i("Processing playlist track ${index + 1}/${pending.size} (Lossless): ${track.title}")
-                val success = downloadTrackSuspend(track, quality)
+                val success = downloadTrackSuspend(track, quality, trackIndex = index + 1, totalCount = pending.size)
                 if (success) {
                     successCount++
                 } else {
@@ -262,6 +342,7 @@ class AudioDownloadManager private constructor(private val context: Context) {
             }
 
             _batchProgress.value = BatchDownloadProgress(isDownloading = false)
+            AudioDownloadService.stop(context)
             AppLogger.i("Sequential playlist download finished: $successCount downloaded, $failCount failed")
         }
     }
@@ -269,26 +350,28 @@ class AudioDownloadManager private constructor(private val context: Context) {
     fun cancelBatchDownload() {
         batchJob?.cancel()
         _batchProgress.value = BatchDownloadProgress(isDownloading = false)
+        AudioDownloadService.stop(context)
     }
 
     fun deleteTracks(tracks: List<TrackItem>) {
         cancelBatchDownload()
         tracks.forEach { track ->
             deleteDownload(track.id)
+            deleteDownload(track.videoId)
         }
     }
 
     fun areAllTracksDownloaded(tracks: List<TrackItem>): Boolean {
         if (tracks.isEmpty()) return false
-        return tracks.all { isDownloaded(it.id) }
+        return tracks.all { isDownloaded(it.id) || isDownloaded(it.videoId) }
     }
 
     fun isAnyTrackDownloading(tracks: List<TrackItem>): Boolean {
         val downloading = _downloadingIds.value
-        return tracks.any { downloading.contains(it.id) } || _batchProgress.value.isDownloading
+        return tracks.any { downloading.contains(it.id) || downloading.contains(it.videoId) } || _batchProgress.value.isDownloading
     }
 
     fun countDownloadedTracks(tracks: List<TrackItem>): Int {
-        return tracks.count { isDownloaded(it.id) }
+        return tracks.count { isDownloaded(it.id) || isDownloaded(it.videoId) }
     }
 }

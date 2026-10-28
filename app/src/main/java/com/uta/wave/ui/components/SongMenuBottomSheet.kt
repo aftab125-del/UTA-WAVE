@@ -105,7 +105,11 @@ fun SongMenuBottomSheet(
 
     val playlists by localDatabase.playlistsFlow.collectAsState(initial = emptyList())
     val hiddenTrackIds by localDatabase.hiddenTrackIdsFlow.collectAsState(initial = emptySet())
-    val isDownloaded = remember(track.id) { downloadManager.isDownloaded(track.id) }
+    val downloadedTracks by localDatabase.downloadsFlow.collectAsState(initial = emptyList())
+    val isDownloaded = remember(track.id, track.videoId, downloadedTracks) {
+        downloadManager.isDownloaded(track.id) || downloadManager.isDownloaded(track.videoId) ||
+        downloadedTracks.any { it.id == track.id || it.videoId == track.videoId }
+    }
     val isSongHidden = hiddenTrackIds.contains(track.id)
     val isPlaylistMode = !playlistId.isNullOrBlank()
     val isLocal = track.videoId.startsWith("content://") || track.videoId.startsWith("file://") || track.id.startsWith("local")

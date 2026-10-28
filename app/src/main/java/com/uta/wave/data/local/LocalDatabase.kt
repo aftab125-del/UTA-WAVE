@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.uta.wave.data.innertube.TrackItem
+import com.uta.wave.player.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -323,8 +324,10 @@ class LocalDatabase private constructor(context: Context) :
     }
 
     suspend fun deleteDownload(trackId: String) = withContext(Dispatchers.IO) {
+        val cleanId = trackId.removePrefix("youtube:")
+        val altId = if (trackId.startsWith("youtube:")) cleanId else "youtube:$trackId"
         val db = writableDatabase
-        db.delete("downloads", "track_id = ?", arrayOf(trackId))
+        db.delete("downloads", "track_id = ? OR track_id = ? OR track_id = ?", arrayOf(trackId, cleanId, altId))
         refreshAllFlows()
     }
 
@@ -334,14 +337,23 @@ class LocalDatabase private constructor(context: Context) :
     }
 
     fun getDownloadPathSync(trackId: String): String? {
+        val cleanId = trackId.removePrefix("youtube:")
+        val altId = if (trackId.startsWith("youtube:")) cleanId else "youtube:$trackId"
         val db = readableDatabase
-        db.rawQuery("SELECT file_path FROM downloads WHERE track_id = ?", arrayOf(trackId)).use { cursor ->
-            if (cursor.moveToFirst()) {
-                val path = cursor.getString(0)
-                if (!path.isNullOrBlank() && File(path).let { it.exists() && it.length() > 0L }) {
-                    return path
+        try {
+            db.rawQuery(
+                "SELECT file_path FROM downloads WHERE track_id = ? OR track_id = ? OR track_id = ?",
+                arrayOf(trackId, cleanId, altId)
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val path = cursor.getString(0)
+                    if (!path.isNullOrBlank() && File(path).let { it.exists() && it.length() > 0L }) {
+                        return path
+                    }
                 }
             }
+        } catch (e: Exception) {
+            AppLogger.e("getDownloadPathSync error: ${e.message}")
         }
         return null
     }
@@ -350,33 +362,60 @@ class LocalDatabase private constructor(context: Context) :
         val tracks = mutableListOf<TrackItem>()
         val db = readableDatabase
         val sql = """
-            SELECT t.id, t.video_id, t.title, t.artist, t.album, t.artwork_url, t.duration_seconds, t.is_synced_lyrics, d.file_path
-            FROM tracks t
-            INNER JOIN downloads d ON t.id = d.track_id
+            SELECT 
+                COALESCE(t.id, d.track_id),
+                COALESCE(t.video_id, REPLACE(d.track_id, 'youtube:', '')),
+                COALESCE(t.title, 'Downloaded Song'),
+                COALESCE(t.artist, 'Unknown Artist'),
+                t.album,
+                t.artwork_url,
+                COALESCE(t.duration_seconds, 0),
+                COALESCE(t.is_synced_lyrics, 0),
+                d.file_path,
+                d.track_id
+            FROM downloads d
+            LEFT JOIN tracks t ON (
+                t.id = d.track_id OR 
+                t.video_id = d.track_id OR 
+                d.track_id = 'youtube:' || t.id OR 
+                d.track_id = 'youtube:' || t.video_id
+            )
             ORDER BY d.downloaded_at DESC
         """.trimIndent()
+        val missingFiles = mutableListOf<String>()
         try {
             db.rawQuery(sql, null).use { cursor ->
                 while (cursor.moveToNext()) {
                     val filePath = cursor.getString(8)
+                    val downloadTrackId = cursor.getString(9)
                     if (!filePath.isNullOrBlank() && File(filePath).let { it.exists() && it.length() > 0L }) {
                         tracks.add(
                             TrackItem(
-                                id = cursor.getString(0),
-                                videoId = cursor.getString(1),
-                                title = cursor.getString(2),
-                                artist = cursor.getString(3),
+                                id = cursor.getString(0) ?: downloadTrackId,
+                                videoId = cursor.getString(1) ?: downloadTrackId.removePrefix("youtube:"),
+                                title = cursor.getString(2) ?: "Downloaded Song",
+                                artist = cursor.getString(3) ?: "Unknown Artist",
                                 album = cursor.getString(4),
-                                artworkUrl = cursor.getString(5),
+                                artworkUrl = cursor.getString(5) ?: "",
                                 durationSeconds = cursor.getInt(6),
                                 isSynced = cursor.getInt(7) == 1
                             )
                         )
+                    } else if (!downloadTrackId.isNullOrBlank()) {
+                        missingFiles.add(downloadTrackId)
                     }
                 }
             }
         } catch (e: Exception) {
-            // ignore
+            AppLogger.e("queryDownloadsSync error: ${e.message}")
+        }
+        if (missingFiles.isNotEmpty()) {
+            try {
+                val writeDb = writableDatabase
+                for (id in missingFiles) {
+                    writeDb.delete("downloads", "track_id = ?", arrayOf(id))
+                }
+            } catch (e: Exception) { /* ignore */ }
         }
         return tracks
     }

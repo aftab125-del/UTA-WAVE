@@ -145,7 +145,9 @@ fun PlaylistDetailView(
     val downloadingIds by downloadManager.downloadingIds.collectAsState()
     val batchProgress by downloadManager.batchProgress.collectAsState()
     val downloadedTracks by localDatabase.downloadsFlow.collectAsState(initial = emptyList())
-    val downloadedSet = remember(downloadedTracks) { downloadedTracks.map { it.id }.toSet() }
+    val downloadedSet = remember(downloadedTracks) {
+        downloadedTracks.flatMap { listOf(it.id, it.videoId, "youtube:${it.videoId}", it.id.removePrefix("youtube:")) }.toSet()
+    }
 
     fun refreshTracks() {
         scope.launch {
@@ -200,10 +202,10 @@ fun PlaylistDetailView(
         }
     }
 
-    val allDownloaded = tracks.isNotEmpty() && tracks.all { downloadedSet.contains(it.id) }
+    val allDownloaded = tracks.isNotEmpty() && tracks.all { downloadedSet.contains(it.id) || downloadedSet.contains(it.videoId) }
     val isBatchActive = batchProgress.isDownloading
-    val isAnyDownloading = isBatchActive || tracks.any { downloadingIds.contains(it.id) }
-    val downloadedCount = tracks.count { downloadedSet.contains(it.id) }
+    val isAnyDownloading = isBatchActive || tracks.any { downloadingIds.contains(it.id) || downloadingIds.contains(it.videoId) }
+    val downloadedCount = tracks.count { downloadedSet.contains(it.id) || downloadedSet.contains(it.videoId) }
 
     Box(
         modifier = modifier
