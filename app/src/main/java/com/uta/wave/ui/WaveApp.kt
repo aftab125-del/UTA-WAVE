@@ -48,11 +48,13 @@ import com.uta.wave.ui.components.backdrop.backdrops.layerBackdrop
 import com.uta.wave.ui.components.backdrop.backdrops.rememberLayerBackdrop
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
+import com.uta.wave.data.update.AppUpdateManager
 import com.uta.wave.player.PlaybackManager
 import com.uta.wave.ui.account.AccountBottomSheet
 import com.uta.wave.ui.account.AccountScreen
 import com.uta.wave.ui.album.AlbumScreen
 import com.uta.wave.ui.artist.ArtistScreen
+import com.uta.wave.ui.components.AppUpdateDialog
 import com.uta.wave.ui.components.DiagnosticSheet
 import com.uta.wave.ui.components.FloatingNavBar
 import com.uta.wave.ui.components.MiniPlayer
@@ -80,6 +82,9 @@ fun WaveApp(
     val playbackManager = remember { PlaybackManager.getInstance(context) }
     val localDatabase = remember { LocalDatabase.getInstance(context) }
     val accountManager = remember { com.uta.wave.data.account.AccountManager.getInstance(context) }
+    val appUpdateManager = remember { AppUpdateManager.getInstance(context) }
+    val availableUpdate by appUpdateManager.availableUpdate.collectAsState()
+    var showUpdateDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
 
@@ -127,6 +132,13 @@ fun WaveApp(
             com.uta.wave.data.innertube.InnerTubeClient.authSapisid = profile.sapisid
             if (profile.autoSyncEnabled && NetworkMonitor.isOnline(context)) {
                 com.uta.wave.data.account.AccountSyncManager.getInstance(context).triggerSync()
+            }
+        }
+        if (NetworkMonitor.isOnline(context)) {
+            appUpdateManager.checkForUpdate(silent = true) { update ->
+                if (update != null) {
+                    showUpdateDialog = true
+                }
             }
         }
     }
@@ -596,6 +608,22 @@ fun WaveApp(
         ListeningSummaryScreen(
             onBack = { isListeningSummaryOpen = false },
             onPlayTrack = { track, queue -> playbackManager.playTrack(track, queue) }
+        )
+    }
+
+    // In-App Update Dialog
+    val currentUpdate = availableUpdate
+    if (showUpdateDialog && currentUpdate != null) {
+        AppUpdateDialog(
+            updateInfo = currentUpdate,
+            onDownloadNow = {
+                showUpdateDialog = false
+                appUpdateManager.startDownload(currentUpdate)
+            },
+            onLater = {
+                showUpdateDialog = false
+                appUpdateManager.dismissUpdate(currentUpdate.versionCode)
+            }
         )
     }
 

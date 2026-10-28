@@ -1,0 +1,8 @@
+{
+  "versionCode": 2,
+  "versionName": "1.1.0",
+  "title": "UTA-wave 1.1.0 Update",
+  "changelog": "• Sequential lossless playlist downloads for offline listening\n• Local MP3 extraction from device storage with playlist & playback support\n• Streamlined Spotify import (direct link paste)\n• Seamless in-app update installer\n• Bug fixes and UI refinements",
+  "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
+  "mandatory": false
+}
