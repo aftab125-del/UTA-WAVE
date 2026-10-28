@@ -361,7 +361,7 @@ fun SongMenuBottomSheet(
                                 Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
                             } else {
                                 downloadManager.downloadTrack(track)
-                                Toast.makeText(context, "Downloading track...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Downloading track in Lossless quality...", Toast.LENGTH_SHORT).show()
                             }
                             onDismiss()
                         }
@@ -441,7 +441,7 @@ fun SongMenuBottomSheet(
                                 Toast.makeText(context, "Download removed", Toast.LENGTH_SHORT).show()
                             } else {
                                 downloadManager.downloadTrack(track)
-                                Toast.makeText(context, "Downloading track...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Downloading track in Lossless quality...", Toast.LENGTH_SHORT).show()
                             }
                             onDismiss()
                         }

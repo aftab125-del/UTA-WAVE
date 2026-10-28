@@ -85,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.uta.wave.data.downloads.AudioDownloadManager
+import com.uta.wave.data.downloads.AudioQuality
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.data.local.PlaylistRecord
@@ -142,6 +143,7 @@ fun PlaylistDetailView(
     var selectedTrackMenu by remember { mutableStateOf<TrackItem?>(null) }
 
     val downloadingIds by downloadManager.downloadingIds.collectAsState()
+    val batchProgress by downloadManager.batchProgress.collectAsState()
     val downloadedTracks by localDatabase.downloadsFlow.collectAsState(initial = emptyList())
     val downloadedSet = remember(downloadedTracks) { downloadedTracks.map { it.id }.toSet() }
 
@@ -199,7 +201,8 @@ fun PlaylistDetailView(
     }
 
     val allDownloaded = tracks.isNotEmpty() && tracks.all { downloadedSet.contains(it.id) }
-    val isAnyDownloading = tracks.any { downloadingIds.contains(it.id) }
+    val isBatchActive = batchProgress.isDownloading
+    val isAnyDownloading = isBatchActive || tracks.any { downloadingIds.contains(it.id) }
     val downloadedCount = tracks.count { downloadedSet.contains(it.id) }
 
     Box(
@@ -361,7 +364,25 @@ fun PlaylistDetailView(
                         color = TextSecondary
                     )
 
-                    if (downloadedCount > 0) {
+                    if (isBatchActive) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 2.dp,
+                                color = ElectricViolet
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Downloading [${batchProgress.currentTrackIndex}/${batchProgress.totalTracks}]: ${batchProgress.currentTrackTitle} (Lossless)",
+                                color = ElectricViolet,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    } else if (downloadedCount > 0) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -372,7 +393,7 @@ fun PlaylistDetailView(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "$downloadedCount of ${tracks.size} downloaded for offline playback",
+                                text = "$downloadedCount of ${tracks.size} downloaded in Lossless for offline playback",
                                 color = ElectricViolet,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -436,12 +457,16 @@ fun PlaylistDetailView(
                         // Download All / Offline Button
                         TextButton(
                             onClick = {
-                                if (allDownloaded) {
+                                if (isBatchActive) {
+                                    downloadManager.cancelBatchDownload()
+                                    Toast.makeText(context, "Cancelled playlist download", Toast.LENGTH_SHORT).show()
+                                } else if (allDownloaded) {
                                     downloadManager.deleteTracks(tracks)
                                     Toast.makeText(context, "Removed all offline downloads", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    downloadManager.downloadTracks(tracks)
-                                    Toast.makeText(context, "Downloading playlist songs...", Toast.LENGTH_SHORT).show()
+                                    downloadManager.downloadTracks(tracks, AudioQuality.LOSSLESS)
+                                    val remaining = tracks.size - downloadedCount
+                                    Toast.makeText(context, "Downloading $remaining songs sequentially in Lossless quality...", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         ) {
@@ -461,8 +486,18 @@ fun PlaylistDetailView(
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isAnyDownloading) "Downloading..." else if (allDownloaded) "Downloaded" else "Download All",
-                                color = if (allDownloaded) ElectricViolet else TextSecondary,
+                                text = if (isBatchActive) {
+                                    "Downloading ${batchProgress.currentTrackIndex}/${batchProgress.totalTracks} (Lossless)"
+                                } else if (isAnyDownloading) {
+                                    "Downloading..."
+                                } else if (allDownloaded) {
+                                    "Downloaded (${tracks.size})"
+                                } else if (downloadedCount > 0) {
+                                    "Download All (${tracks.size - downloadedCount} left • Lossless)"
+                                } else {
+                                    "Download All (Lossless)"
+                                },
+                                color = if (allDownloaded || isBatchActive) ElectricViolet else TextSecondary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
