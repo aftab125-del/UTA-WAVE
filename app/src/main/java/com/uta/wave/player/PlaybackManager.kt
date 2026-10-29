@@ -119,6 +119,11 @@ class PlaybackManager private constructor(private val context: Context) {
     private var resolveJob: Job? = null
     private var crossfadeJob: Job? = null
     private var isCrossfading = false
+    private val preArmManager = com.uta.wave.player.crossfade.AdaptivePreArmManager()
+    private var preArmedTrackId: String? = null
+    private var isPreArming = false
+    private var isPreArmed = false
+    private var preArmJob: Job? = null
     private var currentSpeed: Float = 1.0f
     private var lastListeningSamplePosMs: Long = 0L
     private var lastListeningTrackId: String? = null
@@ -383,6 +388,23 @@ class PlaybackManager private constructor(private val context: Context) {
         progressJob = null
     }
 
+    fun cancelCrossfade() {
+        crossfadeJob?.cancel()
+        crossfadeJob = null
+        preArmJob?.cancel()
+        preArmJob = null
+        isCrossfading = false
+        isPreArming = false
+        isPreArmed = false
+        preArmedTrackId = null
+        try {
+            standbyPlayerInstance.stop()
+            standbyPlayerInstance.clearMediaItems()
+            standbyPlayerInstance.volume = 0f
+        } catch (_: Exception) {}
+        primaryPlayerInstance.volume = getTargetNormalizationVolume()
+    }
+
     private fun checkAndTriggerCrossfade(currentPos: Long, duration: Long) {
         val settings = userPrefs.settingsFlow.value
         if (!settings.crossfadeEnabled || isCrossfading || duration <= 10_000L) return
@@ -390,86 +412,218 @@ class PlaybackManager private constructor(private val context: Context) {
         val crossfadeDurationMs = (settings.crossfadeDuration * 1000f).toLong().coerceIn(1000L, 15_000L)
         val remainingMs = duration - currentPos
 
-        if (remainingMs in 1..crossfadeDurationMs) {
-            val q = _state.value.queue
-            val qIdx = _state.value.queueIndex
-            val nextIdx = getNextIndex(qIdx, q.size, _state.value.repeatMode, _state.value.isShuffle)
-            if (nextIdx != null && nextIdx != qIdx) {
-                val currentTrack = _state.value.currentTrack
-                val nextTrack = q[nextIdx]
+        val q = _state.value.queue
+        val qIdx = _state.value.queueIndex
+        val nextIdx = getNextIndex(qIdx, q.size, _state.value.repeatMode, _state.value.isShuffle) ?: return
+        if (nextIdx == qIdx && _state.value.repeatMode != RepeatMode.ONE) return
+        val currentTrack = _state.value.currentTrack
+        val nextTrack = q.getOrNull(nextIdx) ?: return
 
-                // Gapless album check: don't crossfade if same album
-                if (settings.crossfadeGapless && currentTrack?.album != null && currentTrack.album.isNotBlank() && currentTrack.album == nextTrack.album) {
-                    AppLogger.i("▶ Gapless album detected (${currentTrack.album}), bypassing crossfade.")
-                    return
+        // Gapless album check: don't crossfade if same album (EchoMusic standard)
+        if (settings.crossfadeGapless && currentTrack?.album != null && currentTrack.album.isNotBlank() && currentTrack.album.equals(nextTrack.album, ignoreCase = true)) {
+            return
+        }
+
+        // 1. Adaptive Pre-Arm Phase: Pre-buffer next track on standbyPlayerInstance ahead of time
+        val leadTimeMs = preArmManager.currentLeadTimeMs
+        if (remainingMs in (crossfadeDurationMs + 100L)..leadTimeMs) {
+            if (!isPreArming && (!isPreArmed || preArmedTrackId != nextTrack.id)) {
+                preArmStandbyPlayer(nextTrack, nextIdx)
+            }
+        }
+
+        // 2. Trigger Crossfade Phase: Start equal-power ramp when remaining playback reaches duration
+        if (remainingMs in 1..crossfadeDurationMs) {
+            startCrossfade(nextTrack, nextIdx, crossfadeDurationMs)
+        }
+    }
+
+    private fun preArmStandbyPlayer(nextTrack: TrackItem, nextIndex: Int) {
+        if (isPreArming || isCrossfading) return
+        isPreArming = true
+        preArmJob?.cancel()
+        preArmJob = scope.launch(Dispatchers.IO) {
+            try {
+                AppLogger.i("▶ Pre-arming standby player for \"${nextTrack.title}\" (lead time: ${preArmManager.currentLeadTimeMs}ms)")
+                val startPrepMs = System.currentTimeMillis()
+                val nextVideoId = nextTrack.videoId
+                val localDb = LocalDatabase.getInstance(context)
+                val downloadedPath = localDb.getDownloadPathSync(nextTrack.id) ?: localDb.getDownloadPathSync(nextTrack.videoId)
+                val isLocalMedia = nextTrack.videoId.startsWith("content://") || nextTrack.videoId.startsWith("file://")
+                val isDownloadedValid = downloadedPath != null && File(downloadedPath).let { it.exists() && it.length() > 0L }
+
+                val streamUrl = when {
+                    isLocalMedia -> nextTrack.videoId
+                    isDownloadedValid -> {
+                        AppLogger.i("Pre-arm: Using downloaded file: $downloadedPath")
+                        android.net.Uri.fromFile(File(downloadedPath)).toString()
+                    }
+                    else -> getCachedStreamUrl(nextVideoId) ?: innerTubeClient.resolveStreamUrl(nextVideoId)?.also {
+                        setCachedStreamUrl(nextVideoId, it)
+                    }
                 }
 
-                startCrossfade(nextTrack, nextIdx, crossfadeDurationMs)
+                if (streamUrl == null) {
+                    AppLogger.w("Pre-arm: Failed to resolve streamUrl for ${nextTrack.title}")
+                    isPreArming = false
+                    return@launch
+                }
+
+                withContext(Dispatchers.Main) {
+                    val mediaMetadata = MediaMetadata.Builder()
+                        .setTitle(nextTrack.title)
+                        .setArtist(nextTrack.artist)
+                        .setAlbumTitle(nextTrack.album ?: "")
+                        .setArtworkUri(android.net.Uri.parse(nextTrack.artworkUrl))
+                        .setIsPlayable(true)
+                        .build()
+
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(streamUrl)
+                        .setMediaId(nextTrack.id)
+                        .setMediaMetadata(mediaMetadata)
+                        .build()
+
+                    standbyPlayerInstance.volume = 0f
+                    standbyPlayerInstance.playWhenReady = false
+                    standbyPlayerInstance.setMediaItem(mediaItem)
+
+                    var readyListener: Player.Listener? = null
+                    readyListener = object : Player.Listener {
+                        override fun onPlaybackStateChanged(state: Int) {
+                            if (state == Player.STATE_READY) {
+                                val prepDuration = System.currentTimeMillis() - startPrepMs
+                                if (prepDuration > 0) {
+                                    preArmManager.recordPreparationDuration(prepDuration)
+                                }
+                                isPreArmed = true
+                                isPreArming = false
+                                preArmedTrackId = nextTrack.id
+                                AppLogger.i("▶ Standby player pre-armed and ready for \"${nextTrack.title}\" in ${prepDuration}ms")
+                                readyListener?.let { standbyPlayerInstance.removeListener(it) }
+                            } else if (state == Player.STATE_IDLE) {
+                                isPreArming = false
+                                readyListener?.let { standbyPlayerInstance.removeListener(it) }
+                            }
+                        }
+                    }
+                    standbyPlayerInstance.addListener(readyListener)
+                    standbyPlayerInstance.prepare()
+                }
+            } catch (e: Exception) {
+                AppLogger.e("Pre-arm failed for ${nextTrack.title}", e)
+                isPreArming = false
             }
         }
     }
 
     private fun startCrossfade(nextTrack: TrackItem, nextIndex: Int, crossfadeDurationMs: Long) {
+        if (isCrossfading) return
         isCrossfading = true
         crossfadeJob?.cancel()
-        crossfadeJob = scope.launch {
+        crossfadeJob = scope.launch(Dispatchers.Main) {
             AppLogger.i("▶ Starting Equal-Power Crossfade to \"${nextTrack.title}\" (${crossfadeDurationMs}ms)")
-            val nextVideoId = nextTrack.videoId
-            val localDb = LocalDatabase.getInstance(context)
-            val downloadedPath = localDb.getDownloadPathSync(nextTrack.id) ?: localDb.getDownloadPathSync(nextTrack.videoId)
-            val isLocalMedia = nextTrack.videoId.startsWith("content://") || nextTrack.videoId.startsWith("file://")
-            val isDownloadedValid = downloadedPath != null && File(downloadedPath).let { it.exists() && it.length() > 0L }
 
-            val streamUrl = when {
-                isLocalMedia -> nextTrack.videoId
-                isDownloadedValid -> android.net.Uri.fromFile(File(downloadedPath)).toString()
-                else -> getCachedStreamUrl(nextVideoId) ?: innerTubeClient.resolveStreamUrl(nextVideoId)?.also {
-                    setCachedStreamUrl(nextVideoId, it)
+            // If not yet pre-armed (e.g. user scrubbed near track end), prepare immediately
+            if (!isPreArmed || preArmedTrackId != nextTrack.id) {
+                AppLogger.i("Crossfade: Standby not pre-armed, resolving stream immediately...")
+                val nextVideoId = nextTrack.videoId
+                val localDb = LocalDatabase.getInstance(context)
+                val downloadedPath = localDb.getDownloadPathSync(nextTrack.id) ?: localDb.getDownloadPathSync(nextTrack.videoId)
+                val isLocalMedia = nextTrack.videoId.startsWith("content://") || nextTrack.videoId.startsWith("file://")
+                val isDownloadedValid = downloadedPath != null && File(downloadedPath).let { it.exists() && it.length() > 0L }
+
+                val streamUrl = withContext(Dispatchers.IO) {
+                    when {
+                        isLocalMedia -> nextTrack.videoId
+                        isDownloadedValid -> android.net.Uri.fromFile(File(downloadedPath)).toString()
+                        else -> getCachedStreamUrl(nextVideoId) ?: innerTubeClient.resolveStreamUrl(nextVideoId)?.also {
+                            setCachedStreamUrl(nextVideoId, it)
+                        }
+                    }
                 }
+
+                if (streamUrl == null) {
+                    AppLogger.w("Crossfade pre-resolve failed for ${nextTrack.title}")
+                    isCrossfading = false
+                    return@launch
+                }
+
+                val mediaMetadata = MediaMetadata.Builder()
+                    .setTitle(nextTrack.title)
+                    .setArtist(nextTrack.artist)
+                    .setAlbumTitle(nextTrack.album ?: "")
+                    .setArtworkUri(android.net.Uri.parse(nextTrack.artworkUrl))
+                    .setIsPlayable(true)
+                    .build()
+
+                val mediaItem = MediaItem.Builder()
+                    .setUri(streamUrl)
+                    .setMediaId(nextTrack.id)
+                    .setMediaMetadata(mediaMetadata)
+                    .build()
+
+                standbyPlayerInstance.volume = 0f
+                standbyPlayerInstance.playWhenReady = false
+                standbyPlayerInstance.setMediaItem(mediaItem)
+                standbyPlayerInstance.prepare()
             }
 
-            if (streamUrl == null) {
-                AppLogger.w("Crossfade pre-resolve failed for ${nextTrack.title}")
-                isCrossfading = false
-                return@launch
-            }
-
-            val mediaMetadata = MediaMetadata.Builder()
-                .setTitle(nextTrack.title)
-                .setArtist(nextTrack.artist)
-                .setAlbumTitle(nextTrack.album ?: "")
-                .setArtworkUri(android.net.Uri.parse(nextTrack.artworkUrl))
-                .setIsPlayable(true)
-                .build()
-
-            val mediaItem = MediaItem.Builder()
-                .setUri(streamUrl)
-                .setMediaId(nextTrack.id)
-                .setMediaMetadata(mediaMetadata)
-                .build()
-
+            // Start playing the incoming track
             standbyPlayerInstance.volume = 0f
-            standbyPlayerInstance.setMediaItem(mediaItem)
-            standbyPlayerInstance.prepare()
+            standbyPlayerInstance.playWhenReady = true
             standbyPlayerInstance.play()
 
             val baseNormVolume = getTargetNormalizationVolume()
-            val steps = (crossfadeDurationMs / 25L).toInt().coerceAtLeast(10)
+            // 15ms step granularity (1:1 with EchoMusic) to eliminate audible zipper/click noise
+            val steps = (crossfadeDurationMs / 15L).toInt().coerceIn(40, 800)
+            val stepTime = crossfadeDurationMs / steps
 
-            for (i in 0..steps) {
-                val progress = i.toFloat() / steps.toFloat()
-                val gains = EqualPowerCurve.calculateGains(progress)
+            try {
+                for (i in 0..steps) {
+                    if (!isActive || !isCrossfading) break
 
-                try {
-                    primaryPlayerInstance.volume = gains.outgoingGain * baseNormVolume
-                    standbyPlayerInstance.volume = gains.incomingGain * baseNormVolume
-                } catch (e: Exception) {
-                    // ignore volume update exceptions
+                    // Sync pause state: if primary paused, pause standby player as well
+                    while (!primaryPlayerInstance.isPlaying && isActive && isCrossfading &&
+                           primaryPlayerInstance.playbackState != Player.STATE_ENDED) {
+                        if (standbyPlayerInstance.isPlaying) {
+                            standbyPlayerInstance.pause()
+                        }
+                        delay(20L)
+                    }
+
+                    if (primaryPlayerInstance.isPlaying && !standbyPlayerInstance.isPlaying && isCrossfading) {
+                        standbyPlayerInstance.play()
+                    }
+
+                    // If outgoing player ended or reached idle, snap incoming player to full volume
+                    if (primaryPlayerInstance.playbackState == Player.STATE_ENDED ||
+                        primaryPlayerInstance.playbackState == Player.STATE_IDLE) {
+                        standbyPlayerInstance.volume = baseNormVolume
+                        break
+                    }
+
+                    val progress = (i / steps.toFloat()).coerceIn(0f, 1f)
+                    val gains = EqualPowerCurve.calculateGains(progress)
+
+                    try {
+                        primaryPlayerInstance.volume = gains.outgoingGain * baseNormVolume
+                        standbyPlayerInstance.volume = gains.incomingGain * baseNormVolume
+                    } catch (_: Exception) {
+                        break
+                    }
+
+                    delay(stepTime)
                 }
-                delay(25L)
+            } finally {
+                // Ensure proper volumes
+                try {
+                    primaryPlayerInstance.volume = 0f
+                    standbyPlayerInstance.volume = baseNormVolume
+                } catch (_: Exception) {}
             }
 
-            // Crossfade complete: Swap players
+            // Crossfade complete: Atomically swap players
             val oldPrimary = primaryPlayerInstance
             primaryPlayerInstance = standbyPlayerInstance
             standbyPlayerInstance = oldPrimary
@@ -477,11 +631,12 @@ class PlaybackManager private constructor(private val context: Context) {
             try {
                 standbyPlayerInstance.stop()
                 standbyPlayerInstance.clearMediaItems()
-            } catch (e: Exception) {}
+                standbyPlayerInstance.volume = 0f
+            } catch (_: Exception) {}
 
             primaryPlayerInstance.volume = baseNormVolume
-            standbyPlayerInstance.volume = 0f
 
+            // Re-attach hardware audio session & notify MediaLibraryService
             WaveEqualizer.attachAudioSession(primaryPlayerInstance.audioSessionId)
             onPlayerSwapped?.invoke(primaryPlayerInstance)
 
@@ -496,13 +651,17 @@ class PlaybackManager private constructor(private val context: Context) {
                     isResolving = false
                 )
             }
+
             if (primaryPlayerInstance.isPlaying) {
                 startProgressTracker()
             }
 
             savePersistentQueue()
             isCrossfading = false
-            AppLogger.i("▶ Equal-Power Crossfade swapped successfully")
+            isPreArmed = false
+            isPreArming = false
+            preArmedTrackId = null
+            AppLogger.i("▶ Equal-Power Crossfade swapped successfully to \"${nextTrack.title}\"")
         }
     }
 
@@ -608,14 +767,8 @@ class PlaybackManager private constructor(private val context: Context) {
 
         val settings = userPrefs.settingsFlow.value
 
-        // Cancel any active crossfade
-        if (isCrossfading) {
-            crossfadeJob?.cancel()
-            isCrossfading = false
-            standbyPlayerInstance.stop()
-            standbyPlayerInstance.clearMediaItems()
-            primaryPlayerInstance.volume = getTargetNormalizationVolume(settings)
-        }
+        // Cancel any active crossfade or pre-arm
+        cancelCrossfade()
 
         // Prevent duplicates in queue if enabled
         val processedQueue = if (settings.preventDuplicateTracksInQueue && queue.size > 1) {
@@ -766,6 +919,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
+        cancelCrossfade()
         val sync = waveSyncManager
         if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
             sync.notifyGuestRestricted()
@@ -808,6 +962,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun next() {
+        cancelCrossfade()
         val sync = waveSyncManager
         if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
             sync.notifyGuestRestricted()
@@ -833,6 +988,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun previous() {
+        cancelCrossfade()
         val sync = waveSyncManager
         if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
             sync.notifyGuestRestricted()
@@ -1320,7 +1476,7 @@ class PlaybackManager private constructor(private val context: Context) {
     fun release() {
         stopProgressTracker()
         resolveJob?.cancel()
-        crossfadeJob?.cancel()
+        cancelCrossfade()
         WaveEqualizer.release()
         primaryPlayerInstance.release()
         standbyPlayerInstance.release()

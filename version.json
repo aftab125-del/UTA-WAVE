@@ -1,8 +1,8 @@
 {
-  "versionCode": 4,
-  "versionName": "1.1.2",
-  "title": "UTA-wave 1.1.2 Playlist Deduplication & Sync Update",
-  "changelog": "\u2022 Fixed duplicate playlists appearing on APK reopen\n\u2022 Automated SQLite database deduplication and smart track merging\n\u2022 Pre-upload check prevents duplicate playlist creation on YouTube Music\n\u2022 Mutex synchronization prevents concurrent sync collisions",
+  "versionCode": 5,
+  "versionName": "1.1.3",
+  "title": "UTA-wave 1.1.3 Seamless Crossfade Update",
+  "changelog": "\u2022 Integrated EchoMusic Dual-ExoPlayer Crossfade engine\n\u2022 Adaptive pre-arming (20s-35s lead time) buffers incoming track for instant transition\n\u2022 Constant acoustic power sine/cosine Equal-Power volume curve (zero loudness dip)\n\u2022 Dynamic pause synchronization & gapless album preservation",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }
