@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 
 sealed class AccountSyncState {
@@ -43,6 +44,7 @@ class AccountSyncManager private constructor(private val appContext: Context) {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val prefs = appContext.getSharedPreferences(PREFS_SYNC, Context.MODE_PRIVATE)
+    private val syncMutex = Mutex()
 
     private val _syncState = MutableStateFlow<AccountSyncState>(AccountSyncState.Idle)
     val syncState: StateFlow<AccountSyncState> = _syncState.asStateFlow()
@@ -65,23 +67,34 @@ class AccountSyncManager private constructor(private val appContext: Context) {
             return@withContext Result.failure(IllegalStateException("User not signed in"))
         }
 
-        // Ensure InnerTubeClient has active auth headers
-        InnerTubeClient.authCookie = profile.cookie
-        InnerTubeClient.authSapisid = profile.sapisid
-
-        _syncState.value = AccountSyncState.Syncing("Connecting to Google Account...")
-        val localDatabase = LocalDatabase.getInstance(appContext)
-        val innerTube = InnerTubeClient()
-
-        var likedCount = 0
-        var playlistsCount = 0
+        if (!syncMutex.tryLock()) {
+            AppLogger.i("AccountSyncManager: syncAll already in progress, skipping duplicate invocation")
+            return@withContext Result.failure(IllegalStateException("Sync already in progress"))
+        }
 
         try {
+            // Ensure InnerTubeClient has active auth headers
+            InnerTubeClient.authCookie = profile.cookie
+            InnerTubeClient.authSapisid = profile.sapisid
+
+            _syncState.value = AccountSyncState.Syncing("Connecting to Google Account...")
+            val localDatabase = LocalDatabase.getInstance(appContext)
+            val innerTube = InnerTubeClient()
+
+            var likedCount = 0
+            var playlistsCount = 0
+
             // Purge any unwanted YouTube system playlists (Shorts, Episodes, Liked Songs)
             localDatabase.purgeSystemPlaylists()
 
-            // 1. Liked Music sync is intentionally excluded per user instruction
-            // (We strictly only keep imported or user-created playlists).
+            // 1. Fetch remote playlists FIRST to know existing cloud playlists
+            _syncState.value = AccountSyncState.Syncing("Fetching remote playlists from Google Account...")
+            val remotePlaylists = try {
+                innerTube.fetchUserPlaylists()
+            } catch (e: Exception) {
+                AppLogger.w("AccountSyncManager: Failed to fetch remote playlists: ${e.message}")
+                emptyList()
+            }
 
             // 2. Upload Phase: Scan for local & imported playlists that are not yet on YouTube Music
             _syncState.value = AccountSyncState.Syncing("Uploading imported & local playlists to account...")
@@ -99,16 +112,26 @@ class AccountSyncManager private constructor(private val appContext: Context) {
                     try {
                         val tracks = localDatabase.getPlaylistTracks(localPlaylist.id)
                         if (tracks.isNotEmpty()) {
-                            AppLogger.i("AccountSyncManager: Uploading local/imported playlist '${localPlaylist.name}' to Google Account...")
-                            val videoIds = tracks.mapNotNull { it.videoId.takeIf { vid -> vid.isNotBlank() } }
-                            val remoteId = innerTube.createRemotePlaylist(localPlaylist.name, "PRIVATE", videoIds)
-                            if (!remoteId.isNullOrBlank()) {
-                                if (videoIds.size > 50) {
-                                    val remaining = videoIds.drop(50)
-                                    innerTube.addTracksToRemotePlaylist(remoteId, remaining)
+                            // Check if a playlist with this title already exists on YouTube Music
+                            val existingRemote = remotePlaylists.find {
+                                it.title.trim().equals(localPlaylist.name.trim(), ignoreCase = true)
+                            }
+
+                            if (existingRemote != null) {
+                                AppLogger.i("AccountSyncManager: Local playlist '${localPlaylist.name}' matches existing remote ${existingRemote.id}, linking instead of creating")
+                                localDatabase.updatePlaylistId(localPlaylist.id, existingRemote.id)
+                            } else {
+                                AppLogger.i("AccountSyncManager: Uploading new playlist '${localPlaylist.name}' to Google Account...")
+                                val videoIds = tracks.mapNotNull { it.videoId.takeIf { vid -> vid.isNotBlank() } }
+                                val remoteId = innerTube.createRemotePlaylist(localPlaylist.name, "PRIVATE", videoIds)
+                                if (!remoteId.isNullOrBlank()) {
+                                    if (videoIds.size > 50) {
+                                        val remaining = videoIds.drop(50)
+                                        innerTube.addTracksToRemotePlaylist(remoteId, remaining)
+                                    }
+                                    localDatabase.updatePlaylistId(localPlaylist.id, remoteId)
+                                    AppLogger.i("AccountSyncManager: Successfully uploaded '${localPlaylist.name}' -> $remoteId with ${videoIds.size} tracks")
                                 }
-                                localDatabase.updatePlaylistId(localPlaylist.id, remoteId)
-                                AppLogger.i("AccountSyncManager: Successfully uploaded '${localPlaylist.name}' -> $remoteId with ${videoIds.size} tracks")
                             }
                         }
                     } catch (e: Exception) {
@@ -119,14 +142,13 @@ class AccountSyncManager private constructor(private val appContext: Context) {
 
             // 3. Download Phase: Sync Google Account Playlists ("FEmusic_liked_playlists")
             _syncState.value = AccountSyncState.Syncing("Syncing Playlists from Google Account...")
-            val remotePlaylists = innerTube.fetchUserPlaylists()
             for (remotePlaylist in remotePlaylists) {
                 if (isIgnoredSystemPlaylist(remotePlaylist.id, remotePlaylist.title)) {
                     AppLogger.i("AccountSyncManager: Skipping YouTube system playlist: ${remotePlaylist.title}")
                     continue
                 }
                 try {
-                    // Create/update playlist metadata in local database
+                    // Create/update playlist metadata in local database (automatically deduplicates and merges)
                     localDatabase.createPlaylist(
                         name = remotePlaylist.title,
                         description = remotePlaylist.description ?: "Synced from YouTube Music",
@@ -167,6 +189,10 @@ class AccountSyncManager private constructor(private val appContext: Context) {
                 }
             }
 
+            // 4. Run automated deduplication cleanup pass
+            localDatabase.cleanupDuplicatePlaylists()
+            localDatabase.refreshAllFlows()
+
             // Automatically persist auto-backup snapshot
             localDatabase.saveAutoBackup()
 
@@ -184,6 +210,8 @@ class AccountSyncManager private constructor(private val appContext: Context) {
             AppLogger.e("AccountSyncManager: Full sync error", e)
             _syncState.value = AccountSyncState.Error(e.message ?: "Failed to sync with account")
             Result.failure(e)
+        } finally {
+            syncMutex.unlock()
         }
     }
 
@@ -223,20 +251,35 @@ class AccountSyncManager private constructor(private val appContext: Context) {
      * Google account first and mirrors it locally so it permanently persists across reinstalls.
      */
     suspend fun createPlaylist(name: String, description: String? = null): String = withContext(Dispatchers.IO) {
+        val cleanName = name.trim()
         val accountManager = AccountManager.getInstance(appContext)
         val profile = accountManager.currentProfile
         val localDatabase = LocalDatabase.getInstance(appContext)
+
+        // Check if playlist already exists locally
+        val existingLocal = localDatabase.getPlaylistByNameSync(cleanName)
+        if (existingLocal != null) {
+            AppLogger.i("AccountSyncManager.createPlaylist: Playlist '$cleanName' already exists locally (${existingLocal.id}), returning existing")
+            return@withContext existingLocal.id
+        }
 
         if (profile.isLoggedIn && !profile.cookie.isNullOrBlank()) {
             try {
                 InnerTubeClient.authCookie = profile.cookie
                 InnerTubeClient.authSapisid = profile.sapisid
 
-                val remoteId = InnerTubeClient().createRemotePlaylist(name)
+                val innerTube = InnerTubeClient()
+                // Check if already exists on YouTube Music
+                val remotePlaylists = innerTube.fetchUserPlaylists()
+                val existingRemote = remotePlaylists.find {
+                    it.title.trim().equals(cleanName, ignoreCase = true)
+                }
+
+                val remoteId = existingRemote?.id ?: innerTube.createRemotePlaylist(cleanName)
                 if (!remoteId.isNullOrBlank()) {
-                    AppLogger.i("Created cloud playlist linked to Google account: $remoteId")
+                    AppLogger.i("Created/linked cloud playlist linked to Google account: $remoteId")
                     val id = localDatabase.createPlaylist(
-                        name = name,
+                        name = cleanName,
                         description = description,
                         customId = remoteId
                     )
@@ -249,7 +292,7 @@ class AccountSyncManager private constructor(private val appContext: Context) {
         }
 
         // Local creation fallback
-        val finalId = localDatabase.createPlaylist(name, description)
+        val finalId = localDatabase.createPlaylist(cleanName, description)
         localDatabase.saveAutoBackup()
         finalId
     }

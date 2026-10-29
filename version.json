@@ -1,8 +1,8 @@
 {
-  "versionCode": 3,
-  "versionName": "1.1.1",
-  "title": "UTA-wave 1.1.1 Offline Audio Update",
-  "changelog": "• Fixed offline download engine with EchoMusic PlayerClient headers (eliminates HTTP 403)\n• Added background foreground download service with progress notification\n• Fixed Downloaded playlist screen with SQLite LEFT JOIN and dual-ID recovery\n• Direct offline playback via ExoPlayer without network\n• Pre-cached artwork and lyrics for Airplane Mode playback",
+  "versionCode": 4,
+  "versionName": "1.1.2",
+  "title": "UTA-wave 1.1.2 Playlist Deduplication & Sync Update",
+  "changelog": "\u2022 Fixed duplicate playlists appearing on APK reopen\n\u2022 Automated SQLite database deduplication and smart track merging\n\u2022 Pre-upload check prevents duplicate playlist creation on YouTube Music\n\u2022 Mutex synchronization prevents concurrent sync collisions",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }
