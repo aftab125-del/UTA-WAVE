@@ -289,7 +289,7 @@ class LocalDatabase private constructor(context: Context) :
         }
     }
 
-    private fun refreshAllFlows() {
+    fun refreshAllFlows() {
         try {
             _favoritesFlow.value = queryFavoritesSync()
             _playlistsFlow.value = queryPlaylistsSync()
@@ -753,12 +753,42 @@ class LocalDatabase private constructor(context: Context) :
     }
 
     suspend fun createPlaylist(name: String, description: String? = null, customId: String? = null): String = withContext(Dispatchers.IO) {
+        val cleanName = name.trim()
+        val db = writableDatabase
+
+        // If customId is null (local creation), check if playlist with same title already exists
+        if (customId == null) {
+            val existingId = db.rawQuery(
+                "SELECT id FROM playlists WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1",
+                arrayOf(cleanName)
+            ).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+            if (existingId != null) {
+                com.uta.wave.player.AppLogger.i("LocalDatabase: Playlist '$cleanName' already exists with ID $existingId, reusing existing")
+                return@withContext existingId
+            }
+        } else {
+            // customId is provided (e.g. from remote sync).
+            // Check if a local playlist with the same name already exists with a different ID (e.g. local UUID).
+            val existingLocalId = db.rawQuery(
+                "SELECT id FROM playlists WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND id != ? LIMIT 1",
+                arrayOf(cleanName, customId)
+            ).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+            if (existingLocalId != null) {
+                com.uta.wave.player.AppLogger.i("LocalDatabase: Found existing local playlist '$cleanName' ($existingLocalId) for incoming ID $customId. Migrating...")
+                updatePlaylistId(existingLocalId, customId)
+                return@withContext customId
+            }
+        }
+
         val id = customId ?: UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        val db = writableDatabase
         val values = ContentValues().apply {
             put("id", id)
-            put("name", name.trim())
+            put("name", cleanName)
             put("description", description?.trim())
             put("created_at", now)
             put("updated_at", now)
@@ -837,10 +867,12 @@ class LocalDatabase private constructor(context: Context) :
         } finally {
             db.endTransaction()
         }
+        cleanupDuplicatePlaylistsSync()
         _playlistsFlow.value = queryPlaylistsSync()
     }
 
     suspend fun updatePlaylistId(oldId: String, newId: String) = withContext(Dispatchers.IO) {
+        if (oldId == newId) return@withContext
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -865,7 +897,21 @@ class LocalDatabase private constructor(context: Context) :
                     put("updated_at", now)
                 }
                 db.insertWithOnConflict("playlists", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+
+                // 1. Delete duplicate tracks in oldId that are already in newId to prevent PRIMARY KEY collision
+                db.execSQL(
+                    """
+                    DELETE FROM playlist_tracks 
+                    WHERE playlist_id = ? 
+                      AND track_id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id = ?)
+                    """.trimIndent(),
+                    arrayOf(oldId, newId)
+                )
+
+                // 2. Safely reassign remaining unique tracks from oldId to newId
                 db.execSQL("UPDATE playlist_tracks SET playlist_id = ? WHERE playlist_id = ?", arrayOf(newId, oldId))
+
+                // 3. Delete the old playlist row
                 db.delete("playlists", "id = ?", arrayOf(oldId))
             }
 
@@ -876,6 +922,103 @@ class LocalDatabase private constructor(context: Context) :
             db.endTransaction()
         }
         _playlistsFlow.value = queryPlaylistsSync()
+    }
+
+    fun getPlaylistByNameSync(name: String): PlaylistRecord? {
+        val trimmed = name.trim().lowercase()
+        return queryPlaylistsSync().find { it.name.trim().lowercase() == trimmed }
+    }
+
+    private data class PlaylistCandidate(
+        val id: String,
+        val name: String,
+        val createdAt: Long,
+        val trackCount: Int,
+        val isCloud: Boolean
+    )
+
+    /**
+     * Automated Playlist Deduplication Routine (EchoMusic-style).
+     * Normalizes playlist titles, groups them, picks the winner (Cloud ID > Track Count > Created At),
+     * merges unique tracks into the winner, and purges duplicate rows from the database atomically.
+     */
+    fun cleanupDuplicatePlaylistsSync() {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val playlists = mutableListOf<Triple<String, String, Long>>()
+            val sql = "SELECT id, name, created_at FROM playlists"
+            db.rawQuery(sql, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    playlists.add(Triple(cursor.getString(0), cursor.getString(1), cursor.getLong(2)))
+                }
+            }
+
+            val groupedByName = playlists.groupBy { it.second.trim().lowercase() }
+
+            for ((normName, group) in groupedByName) {
+                if (normName.isBlank() || group.size <= 1) continue
+
+                val candidates = group.map { triple ->
+                    val id = triple.first
+                    val name = triple.second
+                    val createdAt = triple.third
+                    val trackCount = db.rawQuery(
+                        "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?",
+                        arrayOf(id)
+                    ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+
+                    val isCloud = id.startsWith("PL") || id.startsWith("VL") || id.startsWith("MP") || id.startsWith("RD")
+                    PlaylistCandidate(id, name, createdAt, trackCount, isCloud)
+                }
+
+                // Pick the best candidate:
+                // 1) Cloud ID preferred over local UUID
+                // 2) Largest track count
+                // 3) Oldest created_at
+                val winner = candidates.sortedWith(
+                    compareByDescending<PlaylistCandidate> { it.isCloud }
+                        .thenByDescending { it.trackCount }
+                        .thenBy { it.createdAt }
+                ).first()
+
+                val duplicates = candidates.filter { it.id != winner.id }
+                com.uta.wave.player.AppLogger.i("cleanupDuplicatePlaylists: Found ${duplicates.size} duplicate(s) for '$normName'. Winner: ${winner.id} (cloud=${winner.isCloud}, tracks=${winner.trackCount})")
+
+                for (dup in duplicates) {
+                    // Remove tracks from duplicate that already exist in winner
+                    db.execSQL(
+                        """
+                        DELETE FROM playlist_tracks 
+                        WHERE playlist_id = ? 
+                          AND track_id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id = ?)
+                        """.trimIndent(),
+                        arrayOf(dup.id, winner.id)
+                    )
+
+                    // Reassign remaining tracks to winner
+                    db.execSQL(
+                        "UPDATE playlist_tracks SET playlist_id = ? WHERE playlist_id = ?",
+                        arrayOf(winner.id, dup.id)
+                    )
+
+                    // Delete duplicate playlist row
+                    db.delete("playlists", "id = ?", arrayOf(dup.id))
+                    com.uta.wave.player.AppLogger.i("cleanupDuplicatePlaylists: Merged and removed duplicate '${dup.name}' (${dup.id}) into ${winner.id}")
+                }
+            }
+
+            db.setTransactionSuccessful()
+        } catch (e: Exception) {
+            com.uta.wave.player.AppLogger.e("cleanupDuplicatePlaylistsSync error", e)
+        } finally {
+            db.endTransaction()
+        }
+        _playlistsFlow.value = queryPlaylistsSync()
+    }
+
+    suspend fun cleanupDuplicatePlaylists() = withContext(Dispatchers.IO) {
+        cleanupDuplicatePlaylistsSync()
     }
 
     fun isSongInPlaylist(playlistId: String, trackId: String): Boolean {
@@ -1106,7 +1249,7 @@ class LocalDatabase private constructor(context: Context) :
                 )
             }
         }
-        return list
+        return list.distinctBy { it.name.trim().lowercase() }
     }
 
     private fun queryHistorySync(): List<TrackItem> {
