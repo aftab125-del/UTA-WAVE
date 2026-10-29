@@ -1,8 +1,8 @@
 {
-  "versionCode": 5,
-  "versionName": "1.1.3",
-  "title": "UTA-wave 1.1.3 Seamless Crossfade Update",
-  "changelog": "\u2022 Integrated EchoMusic Dual-ExoPlayer Crossfade engine\n\u2022 Adaptive pre-arming (20s-35s lead time) buffers incoming track for instant transition\n\u2022 Constant acoustic power sine/cosine Equal-Power volume curve (zero loudness dip)\n\u2022 Dynamic pause synchronization & gapless album preservation",
+  "versionCode": 6,
+  "versionName": "1.1.4",
+  "title": "UTA-wave 1.1.4 Crossfade Stoppage Fix",
+  "changelog": "\u2022 Fixed 5-second crossfade stoppage: eliminated ExoPlayer audio focus conflict\n\u2022 Added global app-level AudioFocusManager with external interruption handling\n\u2022 Added standby player Ready Gate to prevent early audio cutoffs\n\u2022 Eliminated pause-sync deadlock in equal-power volume ramp",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }

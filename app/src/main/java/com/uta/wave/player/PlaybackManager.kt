@@ -4,7 +4,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.Build
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -91,7 +93,7 @@ class PlaybackManager private constructor(private val context: Context) {
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build(),
-                true // handleAudioFocus = true
+                false // handleAudioFocus = false (Critical: dual ExoPlayer instances must never compete for audio focus)
             )
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -124,6 +126,67 @@ class PlaybackManager private constructor(private val context: Context) {
     private var isPreArming = false
     private var isPreArmed = false
     private var preArmJob: Job? = null
+
+    // App-level Audio Focus (EchoMusic standard: managed once for the entire app)
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasAudioFocus = false
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                hasAudioFocus = false
+                if (_state.value.isPlaying) {
+                    player.pause()
+                    if (isCrossfading) {
+                        standbyPlayerInstance.pause()
+                    }
+                    _state.update { it.copy(isPlaying = false) }
+                    stopProgressTracker()
+                }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                hasAudioFocus = true
+            }
+        }
+    }
+
+    private fun requestAppAudioFocus(): Boolean {
+        if (hasAudioFocus) return true
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                .build()
+            audioFocusRequest = req
+            audioManager.requestAudioFocus(req)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                audioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+        hasAudioFocus = (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        return hasAudioFocus
+    }
+
+    private fun abandonAppAudioFocus() {
+        if (!hasAudioFocus) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(audioFocusChangeListener)
+        }
+        hasAudioFocus = false
+    }
     private var currentSpeed: Float = 1.0f
     private var lastListeningSamplePosMs: Long = 0L
     private var lastListeningTrackId: String? = null
@@ -524,7 +587,7 @@ class PlaybackManager private constructor(private val context: Context) {
         crossfadeJob = scope.launch(Dispatchers.Main) {
             AppLogger.i("▶ Starting Equal-Power Crossfade to \"${nextTrack.title}\" (${crossfadeDurationMs}ms)")
 
-            // If not yet pre-armed (e.g. user scrubbed near track end), prepare immediately
+            // 1. If not yet pre-armed (e.g. user scrubbed near track end), resolve stream immediately
             if (!isPreArmed || preArmedTrackId != nextTrack.id) {
                 AppLogger.i("Crossfade: Standby not pre-armed, resolving stream immediately...")
                 val nextVideoId = nextTrack.videoId
@@ -544,7 +607,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 }
 
                 if (streamUrl == null) {
-                    AppLogger.w("Crossfade pre-resolve failed for ${nextTrack.title}")
+                    AppLogger.w("Crossfade pre-resolve failed for ${nextTrack.title}, letting primary track finish")
                     isCrossfading = false
                     return@launch
                 }
@@ -569,13 +632,34 @@ class PlaybackManager private constructor(private val context: Context) {
                 standbyPlayerInstance.prepare()
             }
 
-            // Start playing the incoming track
+            // 2. Ready Gate: Wait for standby player to reach STATE_READY before fading down primary!
+            if (standbyPlayerInstance.playbackState != Player.STATE_READY) {
+                AppLogger.i("Crossfade: Waiting for standby player STATE_READY before beginning fade...")
+                var waitedMs = 0L
+                while (standbyPlayerInstance.playbackState != Player.STATE_READY &&
+                       waitedMs < 3500L &&
+                       primaryPlayerInstance.playbackState != Player.STATE_ENDED &&
+                       isActive && isCrossfading) {
+                    delay(50L)
+                    waitedMs += 50L
+                }
+            }
+
+            // If standby player failed to buffer in time, don't cut primary off! Let it finish naturally.
+            if (standbyPlayerInstance.playbackState != Player.STATE_READY &&
+                standbyPlayerInstance.playbackState != Player.STATE_BUFFERING) {
+                AppLogger.w("Crossfade: Standby failed to ready in time (${standbyPlayerInstance.playbackState}), aborting crossfade")
+                isCrossfading = false
+                return@launch
+            }
+
+            // 3. Start playing the incoming track concurrently
             standbyPlayerInstance.volume = 0f
             standbyPlayerInstance.playWhenReady = true
             standbyPlayerInstance.play()
 
             val baseNormVolume = getTargetNormalizationVolume()
-            // 15ms step granularity (1:1 with EchoMusic) to eliminate audible zipper/click noise
+            // 15ms step granularity (1:1 with EchoMusic) to eliminate audible clicks
             val steps = (crossfadeDurationMs / 15L).toInt().coerceIn(40, 800)
             val stepTime = crossfadeDurationMs / steps
 
@@ -583,20 +667,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 for (i in 0..steps) {
                     if (!isActive || !isCrossfading) break
 
-                    // Sync pause state: if primary paused, pause standby player as well
-                    while (!primaryPlayerInstance.isPlaying && isActive && isCrossfading &&
-                           primaryPlayerInstance.playbackState != Player.STATE_ENDED) {
-                        if (standbyPlayerInstance.isPlaying) {
-                            standbyPlayerInstance.pause()
-                        }
-                        delay(20L)
-                    }
-
-                    if (primaryPlayerInstance.isPlaying && !standbyPlayerInstance.isPlaying && isCrossfading) {
-                        standbyPlayerInstance.play()
-                    }
-
-                    // If outgoing player ended or reached idle, snap incoming player to full volume
+                    // If outgoing player ended or reached idle, snap incoming player to full volume and finish
                     if (primaryPlayerInstance.playbackState == Player.STATE_ENDED ||
                         primaryPlayerInstance.playbackState == Player.STATE_IDLE) {
                         standbyPlayerInstance.volume = baseNormVolume
@@ -616,14 +687,13 @@ class PlaybackManager private constructor(private val context: Context) {
                     delay(stepTime)
                 }
             } finally {
-                // Ensure proper volumes
                 try {
                     primaryPlayerInstance.volume = 0f
                     standbyPlayerInstance.volume = baseNormVolume
                 } catch (_: Exception) {}
             }
 
-            // Crossfade complete: Atomically swap players
+            // 4. Crossfade complete: Atomically swap players
             val oldPrimary = primaryPlayerInstance
             primaryPlayerInstance = standbyPlayerInstance
             standbyPlayerInstance = oldPrimary
@@ -769,6 +839,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
         // Cancel any active crossfade or pre-arm
         cancelCrossfade()
+        requestAppAudioFocus()
 
         // Prevent duplicates in queue if enabled
         val processedQueue = if (settings.preventDuplicateTracksInQueue && queue.size > 1) {
@@ -1477,6 +1548,7 @@ class PlaybackManager private constructor(private val context: Context) {
         stopProgressTracker()
         resolveJob?.cancel()
         cancelCrossfade()
+        abandonAppAudioFocus()
         WaveEqualizer.release()
         primaryPlayerInstance.release()
         standbyPlayerInstance.release()
