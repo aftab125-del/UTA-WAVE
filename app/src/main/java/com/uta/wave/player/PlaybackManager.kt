@@ -126,6 +126,7 @@ class PlaybackManager private constructor(private val context: Context) {
     private var isPreArming = false
     private var isPreArmed = false
     private var preArmJob: Job? = null
+    private var unshuffledQueue: List<TrackItem>? = null
 
     // App-level Audio Focus (EchoMusic standard: managed once for the entire app)
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -852,11 +853,24 @@ class PlaybackManager private constructor(private val context: Context) {
             queue
         }
 
-        val targetIndex = processedQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+        val finalQueue: List<TrackItem>
+        val targetIndex: Int
+        if (_state.value.isShuffle && processedQueue.size > 1 && processedQueue.any { it.id == track.id } && processedQueue != _state.value.queue) {
+            unshuffledQueue = processedQueue
+            finalQueue = smartShuffle(processedQueue, track)
+            targetIndex = 0
+        } else {
+            if (!_state.value.isShuffle && processedQueue != _state.value.queue) {
+                unshuffledQueue = processedQueue
+            }
+            finalQueue = processedQueue
+            targetIndex = processedQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+        }
+
         _state.update {
             it.copy(
                 currentTrack = track,
-                queue = processedQueue,
+                queue = finalQueue,
                 queueIndex = targetIndex,
                 queueTitle = playlistTitle ?: if (queue.size > 1) it.queueTitle else null,
                 activePlaylistId = playlistId ?: if (queue.size > 1) it.activePlaylistId else null,
@@ -1009,13 +1023,8 @@ class PlaybackManager private constructor(private val context: Context) {
         if (queueSize == 0) return null
         return when (repeatMode) {
             RepeatMode.ONE -> currentIndex
-            else -> {
-                if (isShuffle) {
-                    (0 until queueSize).random()
-                } else {
-                    if (currentIndex + 1 < queueSize) currentIndex + 1 else 0
-                }
-            }
+            RepeatMode.ALL -> if (currentIndex + 1 < queueSize) currentIndex + 1 else 0
+            RepeatMode.OFF -> if (currentIndex + 1 < queueSize) currentIndex + 1 else null
         }
     }
 
@@ -1023,7 +1032,7 @@ class PlaybackManager private constructor(private val context: Context) {
         val state = _state.value
         val queue = state.queue
         if (queue.isEmpty()) return false
-        if (state.repeatMode != RepeatMode.OFF || state.isShuffle) return true
+        if (state.repeatMode != RepeatMode.OFF) return true
         if (state.isRadioActive) return true
         return state.queueIndex + 1 < queue.size
     }
@@ -1044,7 +1053,7 @@ class PlaybackManager private constructor(private val context: Context) {
         val queue = currentState.queue
         if (queue.isEmpty()) return
 
-        val nextIndex = getNextIndex(currentState.queueIndex, queue.size, currentState.repeatMode, currentState.isShuffle) ?: 0
+        val nextIndex = getNextIndex(currentState.queueIndex, queue.size, currentState.repeatMode, currentState.isShuffle) ?: return
 
         // Auto load more similar content if reaching the end of queue
         val settings = userPrefs.settingsFlow.value
@@ -1286,8 +1295,85 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
+    private fun spreadByArtist(tracks: List<TrackItem>): List<TrackItem> {
+        if (tracks.size <= 2) return tracks
+        val grouped = tracks.groupBy { it.artist.trim().lowercase() }
+            .values
+            .sortedByDescending { it.size }
+            .map { it.toMutableList() }
+            .toMutableList()
+
+        val result = mutableListOf<TrackItem>()
+        var lastArtist: String? = null
+
+        while (grouped.isNotEmpty()) {
+            val candidateGroup = grouped.firstOrNull { it.first().artist.trim().lowercase() != lastArtist }
+                ?: grouped.first()
+
+            val nextTrack = candidateGroup.removeAt(0)
+            result.add(nextTrack)
+            lastArtist = nextTrack.artist.trim().lowercase()
+
+            if (candidateGroup.isEmpty()) {
+                grouped.remove(candidateGroup)
+            }
+            grouped.sortByDescending { it.size }
+        }
+        return result
+    }
+
+    fun smartShuffle(tracks: List<TrackItem>, currentTrack: TrackItem? = null): List<TrackItem> {
+        if (tracks.size <= 1) return tracks
+        val rest = if (currentTrack != null) {
+            tracks.filter { it.id != currentTrack.id }.toMutableList()
+        } else {
+            tracks.toMutableList()
+        }
+        val random = java.util.Random(System.nanoTime())
+        rest.shuffle(random)
+        val spread = spreadByArtist(rest)
+        return if (currentTrack != null) listOf(currentTrack) + spread else spread
+    }
+
     fun toggleShuffle() {
-        _state.update { it.copy(isShuffle = !it.isShuffle) }
+        val currentState = _state.value
+        val queue = currentState.queue
+        if (queue.isEmpty()) {
+            _state.update { it.copy(isShuffle = !it.isShuffle) }
+            return
+        }
+
+        val newShuffle = !currentState.isShuffle
+        if (newShuffle) {
+            // Turning ON shuffle
+            unshuffledQueue = queue
+            val currentTrack = currentState.currentTrack
+            val shuffled = smartShuffle(queue, currentTrack)
+            _state.update { it.copy(isShuffle = true, queue = shuffled, queueIndex = 0) }
+        } else {
+            // Turning OFF shuffle: restore unshuffled queue
+            val restored = unshuffledQueue ?: queue
+            unshuffledQueue = null
+            val currentTrack = currentState.currentTrack
+            val newIndex = if (currentTrack != null) {
+                restored.indexOfFirst { it.id == currentTrack.id }.coerceAtLeast(0)
+            } else {
+                0
+            }
+            _state.update { it.copy(isShuffle = false, queue = restored, queueIndex = newIndex) }
+        }
+    }
+
+    fun playShuffled(
+        tracks: List<TrackItem>,
+        playlistId: String? = null,
+        playlistTitle: String? = null
+    ) {
+        if (tracks.isEmpty()) return
+        unshuffledQueue = tracks
+        val shuffled = smartShuffle(tracks, null)
+        _state.update { it.copy(isShuffle = true) }
+        playTrack(shuffled.first(), shuffled, playlistId, playlistTitle)
     }
 
     fun toggleRepeat() {

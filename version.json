@@ -1,8 +1,8 @@
 {
-  "versionCode": 6,
-  "versionName": "1.1.4",
-  "title": "UTA-wave 1.1.4 Crossfade Stoppage Fix",
-  "changelog": "\u2022 Fixed 5-second crossfade stoppage: eliminated ExoPlayer audio focus conflict\n\u2022 Added global app-level AudioFocusManager with external interruption handling\n\u2022 Added standby player Ready Gate to prevent early audio cutoffs\n\u2022 Eliminated pause-sync deadlock in equal-power volume ramp",
+  "versionCode": 7,
+  "versionName": "1.1.5",
+  "title": "UTA-wave 1.1.5 Playlist Sync & Smart Shuffle",
+  "changelog": "\u2022 Fixed playlist track deletion: added persistent tombstones & remote InnerTube purge\n\u2022 Fixed playlist sync mixing: prevented cross-playlist track contamination during deduplication\n\u2022 Upgraded smart shuffle: true queue-level Fisher-Yates with artist spreading (no repeats)\n\u2022 Updated About screen: dedicated Owner card honoring AFTAB KATHAT",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }

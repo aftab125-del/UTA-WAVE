@@ -431,9 +431,10 @@ fun PlaylistDetailView(
                         OutlinedButton(
                             onClick = {
                                 if (filteredTracks.isNotEmpty()) {
-                                    val shuffled = filteredTracks.shuffled()
-                                    playbackManager.playTrack(shuffled.first(), shuffled, playlist.id, playlistName)
-                                    onPlayTrack(shuffled.first(), shuffled)
+                                    playbackManager.playShuffled(filteredTracks, playlist.id, playlistName)
+                                    val currentPlaying = playbackManager.state.value.currentTrack ?: filteredTracks.first()
+                                    val currentQueue = playbackManager.state.value.queue
+                                    onPlayTrack(currentPlaying, currentQueue)
                                 }
                             },
                             shape = RoundedCornerShape(24.dp),

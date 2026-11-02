@@ -76,6 +76,7 @@ class LocalDatabase private constructor(context: Context) :
         ensureListeningLogsTable()
         ensureHiddenSongsTable()
         ensureSpeedDialTable()
+        ensurePlaylistDeletedTracksTable()
         refreshAllFlows()
         CoroutineScope(Dispatchers.IO).launch {
             if (restoreAutoBackupIfEmpty()) {
@@ -185,6 +186,19 @@ class LocalDatabase private constructor(context: Context) :
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_speed_dial_time ON speed_dial (pinned_at DESC)")
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS playlist_deleted_tracks (
+                playlist_id TEXT NOT NULL,
+                track_id TEXT NOT NULL,
+                video_id TEXT NOT NULL,
+                deleted_at INTEGER NOT NULL,
+                PRIMARY KEY (playlist_id, track_id)
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_playlist_deleted_tracks ON playlist_deleted_tracks (playlist_id, video_id)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -286,6 +300,26 @@ class LocalDatabase private constructor(context: Context) :
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_speed_dial_time ON speed_dial (pinned_at DESC)")
         } catch (e: Exception) {
             // ignore
+        }
+    }
+
+    private fun ensurePlaylistDeletedTracksTable() {
+        try {
+            val db = writableDatabase
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS playlist_deleted_tracks (
+                    playlist_id TEXT NOT NULL,
+                    track_id TEXT NOT NULL,
+                    video_id TEXT NOT NULL,
+                    deleted_at INTEGER NOT NULL,
+                    PRIMARY KEY (playlist_id, track_id)
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_playlist_deleted_tracks ON playlist_deleted_tracks (playlist_id, video_id)")
+        } catch (e: Exception) {
+            AppLogger.w("ensurePlaylistDeletedTracksTable error: ${e.message}")
         }
     }
 
@@ -799,8 +833,14 @@ class LocalDatabase private constructor(context: Context) :
     }
 
     suspend fun addTrackToPlaylist(playlistId: String, track: TrackItem) = withContext(Dispatchers.IO) {
-        insertTrack(track)
         val db = writableDatabase
+        // Clear any previous deletion tombstone so track can be properly re-synced if re-added
+        db.delete(
+            "playlist_deleted_tracks",
+            "playlist_id = ? AND (track_id = ? OR video_id = ?)",
+            arrayOf(playlistId, track.id, track.videoId)
+        )
+        insertTrack(track)
         val count = db.rawQuery("SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?", arrayOf(playlistId)).use {
             if (it.moveToFirst()) it.getInt(0) else 0
         }
@@ -818,13 +858,54 @@ class LocalDatabase private constructor(context: Context) :
 
     suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String) = withContext(Dispatchers.IO) {
         val db = writableDatabase
-        db.delete("playlist_tracks", "playlist_id = ? AND track_id = ?", arrayOf(playlistId, trackId))
+        val cleanVideoId = trackId.removePrefix("youtube:")
+        var resolvedVideoId = cleanVideoId
+        db.rawQuery(
+            "SELECT video_id FROM tracks WHERE id = ? OR video_id = ?",
+            arrayOf(trackId, cleanVideoId)
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                val vid = cursor.getString(0)
+                if (!vid.isNullOrBlank()) resolvedVideoId = vid
+            }
+        }
+
+        // 1. Delete from playlist_tracks (matching trackId or youtube:videoId)
+        db.delete(
+            "playlist_tracks",
+            "playlist_id = ? AND (track_id = ? OR track_id = ? OR track_id LIKE ?)",
+            arrayOf(playlistId, trackId, "youtube:$resolvedVideoId", "%$resolvedVideoId%")
+        )
+
+        // 2. Persist tombstone into playlist_deleted_tracks so sync will never restore it
+        val values = ContentValues().apply {
+            put("playlist_id", playlistId)
+            put("track_id", trackId)
+            put("video_id", resolvedVideoId)
+            put("deleted_at", System.currentTimeMillis())
+        }
+        db.insertWithOnConflict("playlist_deleted_tracks", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+
         _playlistsFlow.value = queryPlaylistsSync()
+
+        // 3. If this is a cloud playlist, trigger remote deletion asynchronously
+        val isCloud = playlistId.startsWith("PL") || playlistId.startsWith("VL")
+        if (isCloud && resolvedVideoId.isNotBlank()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val innerTube = com.uta.wave.data.innertube.InnerTubeClient()
+                    innerTube.removeTrackFromRemotePlaylist(playlistId, resolvedVideoId)
+                } catch (e: Exception) {
+                    AppLogger.w("removeTrackFromPlaylist remote sync error: ${e.message}")
+                }
+            }
+        }
     }
 
     suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
         val db = writableDatabase
         db.delete("playlist_tracks", "playlist_id = ?", arrayOf(playlistId))
+        db.delete("playlist_deleted_tracks", "playlist_id = ?", arrayOf(playlistId))
         db.delete("playlists", "id = ?", arrayOf(playlistId))
         _playlistsFlow.value = queryPlaylistsSync()
     }
@@ -986,25 +1067,35 @@ class LocalDatabase private constructor(context: Context) :
                 com.uta.wave.player.AppLogger.i("cleanupDuplicatePlaylists: Found ${duplicates.size} duplicate(s) for '$normName'. Winner: ${winner.id} (cloud=${winner.isCloud}, tracks=${winner.trackCount})")
 
                 for (dup in duplicates) {
-                    // Remove tracks from duplicate that already exist in winner
-                    db.execSQL(
-                        """
-                        DELETE FROM playlist_tracks 
-                        WHERE playlist_id = ? 
-                          AND track_id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id = ?)
-                        """.trimIndent(),
-                        arrayOf(dup.id, winner.id)
-                    )
+                    if (dup.trackCount == 0) {
+                        // Empty shell duplicate, safely remove
+                        db.delete("playlist_tracks", "playlist_id = ?", arrayOf(dup.id))
+                        db.delete("playlists", "id = ?", arrayOf(dup.id))
+                        com.uta.wave.player.AppLogger.i("cleanupDuplicatePlaylists: Removed empty duplicate '${dup.name}' (${dup.id})")
+                        continue
+                    }
 
-                    // Reassign remaining tracks to winner
-                    db.execSQL(
-                        "UPDATE playlist_tracks SET playlist_id = ? WHERE playlist_id = ?",
-                        arrayOf(winner.id, dup.id)
-                    )
+                    // If dup is a local unsynced playlist and winner is cloud playlist:
+                    // Only remove if all of dup's tracks already exist in winner.
+                    // NEVER arbitrarily reassign tracks into winner to prevent cross-playlist contamination!
+                    if (!dup.isCloud && winner.isCloud) {
+                        val uncontainedCount = db.rawQuery(
+                            """
+                            SELECT COUNT(*) FROM playlist_tracks 
+                            WHERE playlist_id = ? 
+                              AND track_id NOT IN (SELECT track_id FROM playlist_tracks WHERE playlist_id = ?)
+                            """.trimIndent(),
+                            arrayOf(dup.id, winner.id)
+                        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
-                    // Delete duplicate playlist row
-                    db.delete("playlists", "id = ?", arrayOf(dup.id))
-                    com.uta.wave.player.AppLogger.i("cleanupDuplicatePlaylists: Merged and removed duplicate '${dup.name}' (${dup.id}) into ${winner.id}")
+                        if (uncontainedCount == 0) {
+                            db.delete("playlist_tracks", "playlist_id = ?", arrayOf(dup.id))
+                            db.delete("playlists", "id = ?", arrayOf(dup.id))
+                            com.uta.wave.player.AppLogger.i("cleanupDuplicatePlaylists: Removed redundant duplicate '${dup.name}' (${dup.id})")
+                        } else {
+                            com.uta.wave.player.AppLogger.i("cleanupDuplicatePlaylists: Preserving duplicate '${dup.name}' (${dup.id}) because it has $uncontainedCount distinct tracks")
+                        }
+                    }
                 }
             }
 
@@ -1019,6 +1110,23 @@ class LocalDatabase private constructor(context: Context) :
 
     suspend fun cleanupDuplicatePlaylists() = withContext(Dispatchers.IO) {
         cleanupDuplicatePlaylistsSync()
+    }
+
+    fun getDeletedVideoIdsForPlaylist(playlistId: String): Set<String> {
+        val set = mutableSetOf<String>()
+        val db = readableDatabase
+        db.rawQuery(
+            "SELECT video_id, track_id FROM playlist_deleted_tracks WHERE playlist_id = ?",
+            arrayOf(playlistId)
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val vid = cursor.getString(0)
+                val tid = cursor.getString(1)
+                if (!vid.isNullOrBlank()) set.add(vid)
+                if (!tid.isNullOrBlank()) set.add(tid.removePrefix("youtube:"))
+            }
+        }
+        return set
     }
 
     fun isSongInPlaylist(playlistId: String, trackId: String): Boolean {
@@ -1107,6 +1215,12 @@ class LocalDatabase private constructor(context: Context) :
                 if (it.moveToFirst()) it.getInt(0) else 0
             }
             for (track in tracks) {
+                // Clear any previous deletion tombstone so re-added tracks sync properly
+                db.delete(
+                    "playlist_deleted_tracks",
+                    "playlist_id = ? AND (track_id = ? OR video_id = ?)",
+                    arrayOf(playlistId, track.id, track.videoId)
+                )
                 insertTrack(track)
                 val values = ContentValues().apply {
                     put("playlist_id", playlistId)
