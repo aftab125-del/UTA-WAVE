@@ -158,30 +158,60 @@ class AccountSyncManager private constructor(private val appContext: Context) {
                     // Fetch tracks for this playlist with scoped pagination
                     val (_, cloudTracks) = innerTube.getPlaylist(remotePlaylist.id)
                     val localTracks = localDatabase.getPlaylistTracks(remotePlaylist.id)
+                    val deletedVideoIds = localDatabase.getDeletedVideoIdsForPlaylist(remotePlaylist.id)
 
-                    if (cloudTracks.isNotEmpty()) {
-                        if (localTracks.isNotEmpty() && localTracks.size > cloudTracks.size) {
-                            // Local has more tracks than cloud (e.g. tracks added offline or imported from Spotify)
-                            val missingOnCloud = localTracks.filter { lt -> cloudTracks.none { ct -> ct.videoId == lt.videoId } }
-                            val mergedTracks = cloudTracks.toMutableList().apply { addAll(missingOnCloud) }
-                            localDatabase.replacePlaylistTracks(remotePlaylist.id, mergedTracks)
+                    // 1. Filter out any cloud tracks that the user explicitly deleted locally!
+                    val filteredCloudTracks = cloudTracks.filter { ct ->
+                        ct.videoId !in deletedVideoIds && ct.id.removePrefix("youtube:") !in deletedVideoIds
+                    }
 
-                            // Push the missing tracks to YouTube Music so cloud gets updated
-                            val missingVideoIds = missingOnCloud.mapNotNull { it.videoId.takeIf { v -> v.isNotBlank() } }
+                    // 2. If YouTube Music still contains tracks that were deleted locally, purge them from remote
+                    val cloudTracksToDelete = cloudTracks.filter { ct ->
+                        ct.videoId in deletedVideoIds || ct.id.removePrefix("youtube:") in deletedVideoIds
+                    }
+                    if (cloudTracksToDelete.isNotEmpty()) {
+                        AppLogger.i("AccountSyncManager: Purging ${cloudTracksToDelete.size} locally deleted tracks from remote playlist ${remotePlaylist.id}")
+                        for (delTrack in cloudTracksToDelete) {
+                            try {
+                                innerTube.removeTrackFromRemotePlaylist(remotePlaylist.id, delTrack.videoId)
+                            } catch (e: Exception) {
+                                AppLogger.w("Failed to purge remote track ${delTrack.videoId}: ${e.message}")
+                            }
+                        }
+                    }
+
+                    if (filteredCloudTracks.isNotEmpty()) {
+                        // Keep any locally added tracks that are NOT in filteredCloudTracks and NOT deleted
+                        val locallyAdded = localTracks.filter { lt ->
+                            filteredCloudTracks.none { ct -> ct.videoId == lt.videoId } &&
+                                    lt.videoId !in deletedVideoIds &&
+                                    lt.id.removePrefix("youtube:") !in deletedVideoIds
+                        }
+
+                        val mergedTracks = filteredCloudTracks.toMutableList().apply { addAll(locallyAdded) }
+                        localDatabase.replacePlaylistTracks(remotePlaylist.id, mergedTracks)
+
+                        // Push genuinely new locally-added tracks to YouTube Music
+                        val missingVideoIds = locallyAdded.mapNotNull { it.videoId.takeIf { v -> v.isNotBlank() } }
+                        if (missingVideoIds.isNotEmpty()) {
+                            innerTube.addTracksToRemotePlaylist(remotePlaylist.id, missingVideoIds)
+                        }
+                    } else if (localTracks.isNotEmpty()) {
+                        val validLocalTracks = localTracks.filter { lt ->
+                            lt.videoId !in deletedVideoIds && lt.id.removePrefix("youtube:") !in deletedVideoIds
+                        }
+                        if (validLocalTracks.isNotEmpty()) {
+                            AppLogger.w("AccountSyncManager: Cloud returned 0 tracks for ${remotePlaylist.title}; preserving ${validLocalTracks.size} valid local tracks")
+                            localDatabase.replacePlaylistTracks(remotePlaylist.id, validLocalTracks)
+                            val missingVideoIds = validLocalTracks.mapNotNull { it.videoId.takeIf { v -> v.isNotBlank() } }
                             if (missingVideoIds.isNotEmpty()) {
                                 innerTube.addTracksToRemotePlaylist(remotePlaylist.id, missingVideoIds)
                             }
                         } else {
-                            // Standard clean replace with properly sequenced cloud tracks
-                            localDatabase.replacePlaylistTracks(remotePlaylist.id, cloudTracks)
+                            localDatabase.replacePlaylistTracks(remotePlaylist.id, emptyList())
                         }
-                    } else if (localTracks.isNotEmpty()) {
-                        // Cloud returned 0 tracks (temporary network/API glitch) - DO NOT wipe local tracks!
-                        AppLogger.w("AccountSyncManager: Cloud returned 0 tracks for ${remotePlaylist.title}; preserving ${localTracks.size} local tracks")
-                        val missingVideoIds = localTracks.mapNotNull { it.videoId.takeIf { v -> v.isNotBlank() } }
-                        if (missingVideoIds.isNotEmpty()) {
-                            innerTube.addTracksToRemotePlaylist(remotePlaylist.id, missingVideoIds)
-                        }
+                    } else {
+                        localDatabase.replacePlaylistTracks(remotePlaylist.id, emptyList())
                     }
                     playlistsCount++
                 } catch (e: Exception) {

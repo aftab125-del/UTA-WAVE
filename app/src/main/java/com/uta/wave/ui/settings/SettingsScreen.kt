@@ -4672,7 +4672,7 @@ private fun AboutSettingsSection(context: Context) {
         }
         Spacer(modifier = Modifier.height(12.dp))
         Text(text = "UTA-wave", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold), color = Color.White)
-        Text(text = "A Universe of Music • v1.1.0", style = MaterialTheme.typography.bodySmall, color = Color(0xFFF2AEC7))
+        Text(text = "A Universe of Music • v1.1.5", style = MaterialTheme.typography.bodySmall, color = Color(0xFFF2AEC7))
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "A cinematic, dark, futuristic music streaming platform built with Next.js architecture principles, ExoPlayer lossless audio, dynamic ambient flow lyrics, and Echo Music interface design.",
@@ -4706,17 +4706,35 @@ private fun AboutSettingsSection(context: Context) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable {
-                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com"))
-                    context.startActivity(browserIntent)
-                }
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(imageVector = Icons.Default.Link, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+            Icon(imageVector = Icons.Default.AccountCircle, contentDescription = null, tint = Color(0xFFF2AEC7), modifier = Modifier.size(22.dp))
             Spacer(modifier = Modifier.width(14.dp))
-            Text(text = "GitHub Repository", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = Color.White, modifier = Modifier.weight(1f))
-            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, tint = Color.White.copy(alpha = 0.35f), modifier = Modifier.size(13.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "AFTAB KATHAT",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White
+                )
+                Text(
+                    text = "Owner & Creator • UTA-WAVE",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFFF2AEC7)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFF2AEC7).copy(alpha = 0.15f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "OWNER",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp),
+                    color = Color(0xFFF2AEC7)
+                )
+            }
         }
     }
 }

@@ -2138,6 +2138,111 @@ class InnerTubeClient(
         }
     }
 
+    /**
+     * Removes a track from a remote YouTube Music playlist.
+     * Uses the InnerTube browse/edit_playlist endpoint with ACTION_REMOVE_VIDEO.
+     */
+    suspend fun removeTrackFromRemotePlaylist(playlistId: String, videoId: String): Boolean = withContext(Dispatchers.IO) {
+        if (videoId.isBlank()) return@withContext false
+        refreshVisitorDataIfNeeded()
+        try {
+            val cleanPlaylistId = extractYouTubePlaylistId(playlistId)
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("playlistId", cleanPlaylistId)
+                val actions = JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("action", "ACTION_REMOVE_VIDEO")
+                        put("removedVideoId", videoId)
+                    })
+                }
+                put("actions", actions)
+            }
+
+            // 1. Primary: YouTube Music endpoint
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/browse/edit_playlist")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            var success = false
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    success = true
+                    AppLogger.i("removeTrackFromRemotePlaylist primary succeeded: $videoId from $cleanPlaylistId")
+                } else {
+                    AppLogger.w("removeTrackFromRemotePlaylist primary failed: HTTP ${response.code}")
+                }
+            }
+
+            // 2. Secondary fallback: YouTube Web endpoint
+            if (!success) {
+                try {
+                    val webPayload = JSONObject().apply {
+                        val clientObj = JSONObject().apply {
+                            put("clientName", "WEB")
+                            put("clientVersion", "2.20240101.01.00")
+                            put("hl", "en")
+                            put("gl", "US")
+                        }
+                        put("context", JSONObject().put("client", clientObj))
+                        put("playlistId", cleanPlaylistId)
+                        val actions = JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("action", "ACTION_REMOVE_VIDEO")
+                                put("removedVideoId", videoId)
+                            })
+                        }
+                        put("actions", actions)
+                    }
+
+                    val webReq = Request.Builder()
+                        .url("https://www.youtube.com/youtubei/v1/browse/edit_playlist")
+                        .apply {
+                            commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                            applyAuthHeaders(this)
+                        }
+                        .post(webPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                        .build()
+
+                    client.newCall(webReq).execute().use { webResp ->
+                        if (webResp.isSuccessful) {
+                            success = true
+                            AppLogger.i("removeTrackFromRemotePlaylist fallback succeeded: $videoId from $cleanPlaylistId")
+                        } else {
+                            AppLogger.w("removeTrackFromRemotePlaylist fallback failed: HTTP ${webResp.code}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    AppLogger.w("removeTrackFromRemotePlaylist fallback error: ${e.message}")
+                }
+            }
+
+            success
+        } catch (e: Exception) {
+            AppLogger.e("removeTrackFromRemotePlaylist network error", e)
+            false
+        }
+    }
+
+    /**
+     * Batch removes tracks from a remote YouTube Music playlist.
+     */
+    suspend fun removeTracksFromRemotePlaylist(playlistId: String, videoIds: List<String>): Boolean = withContext(Dispatchers.IO) {
+        if (videoIds.isEmpty()) return@withContext true
+        var overallSuccess = true
+        for (vid in videoIds) {
+            val ok = removeTrackFromRemotePlaylist(playlistId, vid)
+            if (!ok) overallSuccess = false
+        }
+        overallSuccess
+    }
+
     private fun findActiveAccountHeader(obj: JSONObject): JSONObject? {
         if (obj.has("activeAccountHeaderRenderer")) {
             return obj.optJSONObject("activeAccountHeaderRenderer")
