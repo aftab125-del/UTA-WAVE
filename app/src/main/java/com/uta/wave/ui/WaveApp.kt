@@ -370,6 +370,12 @@ fun WaveApp(
                     onPlayTrack = { track, queue -> playbackManager.playTrack(track, queue) },
                     onToggleFavorite = { track ->
                         scope.launch { localDatabase.toggleFavorite(track) }
+                    },
+                    onOpenArtist = { artistIdOrName ->
+                        viewingArtistId = artistIdOrName
+                    },
+                    onOpenAlbum = { albumIdOrName ->
+                        viewingAlbumId = albumIdOrName
                     }
                 )
             }

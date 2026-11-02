@@ -1,8 +1,8 @@
 {
-  "versionCode": 7,
-  "versionName": "1.1.5",
-  "title": "UTA-wave 1.1.5 Playlist Sync & Smart Shuffle",
-  "changelog": "\u2022 Fixed playlist track deletion: added persistent tombstones & remote InnerTube purge\n\u2022 Fixed playlist sync mixing: prevented cross-playlist track contamination during deduplication\n\u2022 Upgraded smart shuffle: true queue-level Fisher-Yates with artist spreading (no repeats)\n\u2022 Updated About screen: dedicated Owner card honoring AFTAB KATHAT",
+  "versionCode": 8,
+  "versionName": "1.1.6",
+  "title": "UTA-wave 1.1.6 Artist Cards & Search Categories",
+  "changelog": "\u2022 Added Artist cards with avatar, name, and subscriber count in search\n\u2022 Added Search Category filters: All, Songs, Artists, Albums, Playlists\n\u2022 Added Top Artist Hero card in All view with instant profile navigation\n\u2022 Direct navigation to Artist Screen and Album Screen from search results\n\u2022 Playlists search and instant playback support",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }

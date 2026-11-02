@@ -23,8 +23,11 @@ class InnerTubeClient(
         private const val TAG = "InnerTubeClient"
         private const val INNERTUBE_BASE_URL = "https://music.youtube.com/youtubei/v1"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
-        // Unencoded base64 string for songs filter
-        private const val SONGS_PARAM = "EgWKAQIIAWoKEAkQBRAKEAMQBA=="
+        // Base64 filter tokens for category searches
+        const val SONGS_PARAM = "EgWKAQIIAWoKEAkQBRAKEAMQBA=="
+        const val ARTISTS_PARAM = "EgWKAQIgAWoKEAkQChAFEAMQBA=="
+        const val ALBUMS_PARAM = "EgWKAQIYAWoKEAkQChAFEAMQBA=="
+        const val PLAYLISTS_PARAM = "EgeKAQQoAEABagoQAxAEEAoQCRAF"
         private const val CLIENT_VERSION = "1.20260213.01.00"
 
         // Verified working initial visitor data seed
@@ -133,6 +136,121 @@ class InnerTubeClient(
         }
         AppLogger.i("Search for \"$query\" found ${results.size} tracks")
         results
+    }
+
+    suspend fun searchArtists(query: String): List<ArtistCard> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        refreshVisitorDataIfNeeded()
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("query", query.trim())
+                put("params", ARTISTS_PARAM)
+            }
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/search")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val body = response.body?.string() ?: return@withContext emptyList()
+                parseSearchArtists(JSONObject(body))
+            }
+        } catch (e: Exception) {
+            AppLogger.e("searchArtists error for $query", e)
+            emptyList()
+        }
+    }
+
+    suspend fun searchAlbums(query: String): List<AlbumCard> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        refreshVisitorDataIfNeeded()
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("query", query.trim())
+                put("params", ALBUMS_PARAM)
+            }
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/search")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val body = response.body?.string() ?: return@withContext emptyList()
+                parseSearchAlbums(JSONObject(body))
+            }
+        } catch (e: Exception) {
+            AppLogger.e("searchAlbums error for $query", e)
+            emptyList()
+        }
+    }
+
+    suspend fun searchPlaylists(query: String): List<UserPlaylistItem> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        refreshVisitorDataIfNeeded()
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("query", query.trim())
+                put("params", PLAYLISTS_PARAM)
+            }
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/search")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val body = response.body?.string() ?: return@withContext emptyList()
+                parseSearchPlaylists(JSONObject(body))
+            }
+        } catch (e: Exception) {
+            AppLogger.e("searchPlaylists error for $query", e)
+            emptyList()
+        }
+    }
+
+    suspend fun searchAll(query: String): SearchSummary = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext SearchSummary()
+        refreshVisitorDataIfNeeded()
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("query", query.trim())
+            }
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/search")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext SearchSummary()
+                val body = response.body?.string() ?: return@withContext SearchSummary()
+                parseSearchAll(JSONObject(body))
+            }
+        } catch (e: Exception) {
+            AppLogger.e("searchAll error for $query", e)
+            SearchSummary()
+        }
     }
 
     private fun searchInternal(query: String, filterParam: String?): List<TrackItem> {
@@ -720,6 +838,284 @@ class InnerTubeClient(
             }
         }
         return tracks
+    }
+
+    private fun parseSearchArtists(root: JSONObject): List<ArtistCard> {
+        val artists = mutableListOf<ArtistCard>()
+        val contents = root.optJSONObject("contents")
+            ?.optJSONObject("tabbedSearchResultsRenderer")
+            ?.optJSONArray("tabs")
+            ?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents") ?: return artists
+
+        for (i in 0 until contents.length()) {
+            val section = contents.optJSONObject(i) ?: continue
+            val shelfContents = section.optJSONObject("musicShelfRenderer")?.optJSONArray("contents")
+                ?: section.optJSONObject("itemSectionRenderer")?.optJSONArray("contents")
+                ?: continue
+
+            for (j in 0 until shelfContents.length()) {
+                val item = shelfContents.optJSONObject(j) ?: continue
+                val r = item.optJSONObject("musicResponsiveListItemRenderer")
+                    ?: item.optJSONObject("musicTwoRowItemRenderer") ?: continue
+
+                val id = r.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?: r.optJSONObject("onTap")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?: continue
+
+                val title = r.optJSONArray("flexColumns")?.optJSONObject(0)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    ?: r.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    ?: continue
+
+                val subtitleRuns = r.optJSONArray("flexColumns")?.optJSONObject(1)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")?.optJSONArray("runs")
+                    ?: r.optJSONObject("subtitle")?.optJSONArray("runs")
+
+                val subtitle = subtitleRuns?.let { runs ->
+                    val sb = StringBuilder()
+                    for (k in 0 until runs.length()) {
+                        sb.append(runs.optJSONObject(k)?.optString("text") ?: "")
+                    }
+                    sb.toString().trim()
+                }
+
+                val thumbUrl = extractThumbnailUrl(r)
+
+                artists.add(ArtistCard(id = id, name = title, subscriberCount = subtitle, artworkUrl = thumbUrl))
+            }
+        }
+        return artists
+    }
+
+    private fun parseSearchAlbums(root: JSONObject): List<AlbumCard> {
+        val albums = mutableListOf<AlbumCard>()
+        val contents = root.optJSONObject("contents")
+            ?.optJSONObject("tabbedSearchResultsRenderer")
+            ?.optJSONArray("tabs")
+            ?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents") ?: return albums
+
+        for (i in 0 until contents.length()) {
+            val section = contents.optJSONObject(i) ?: continue
+            val shelfContents = section.optJSONObject("musicShelfRenderer")?.optJSONArray("contents")
+                ?: section.optJSONObject("itemSectionRenderer")?.optJSONArray("contents")
+                ?: continue
+
+            for (j in 0 until shelfContents.length()) {
+                val item = shelfContents.optJSONObject(j) ?: continue
+                val r = item.optJSONObject("musicResponsiveListItemRenderer")
+                    ?: item.optJSONObject("musicTwoRowItemRenderer") ?: continue
+
+                val id = r.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?: r.optJSONObject("onTap")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?: continue
+
+                val title = r.optJSONArray("flexColumns")?.optJSONObject(0)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    ?: r.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    ?: continue
+
+                val subtitleRuns = r.optJSONArray("flexColumns")?.optJSONObject(1)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")?.optJSONArray("runs")
+                    ?: r.optJSONObject("subtitle")?.optJSONArray("runs")
+
+                val subtitle = subtitleRuns?.let { runs ->
+                    val sb = StringBuilder()
+                    for (k in 0 until runs.length()) {
+                        sb.append(runs.optJSONObject(k)?.optString("text") ?: "")
+                    }
+                    sb.toString().trim()
+                }
+
+                val thumbUrl = extractThumbnailUrl(r)
+                val year = subtitle?.let { Regex("\\b(19\\d\\d|20\\d\\d)\\b").find(it)?.value }
+
+                albums.add(AlbumCard(id = id, title = title, subtitle = subtitle, artworkUrl = thumbUrl, year = year))
+            }
+        }
+        return albums
+    }
+
+    private fun parseSearchPlaylists(root: JSONObject): List<UserPlaylistItem> {
+        val playlists = mutableListOf<UserPlaylistItem>()
+        val contents = root.optJSONObject("contents")
+            ?.optJSONObject("tabbedSearchResultsRenderer")
+            ?.optJSONArray("tabs")
+            ?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents") ?: return playlists
+
+        for (i in 0 until contents.length()) {
+            val section = contents.optJSONObject(i) ?: continue
+            val shelfContents = section.optJSONObject("musicShelfRenderer")?.optJSONArray("contents")
+                ?: section.optJSONObject("itemSectionRenderer")?.optJSONArray("contents")
+                ?: continue
+
+            for (j in 0 until shelfContents.length()) {
+                val item = shelfContents.optJSONObject(j) ?: continue
+                val r = item.optJSONObject("musicResponsiveListItemRenderer")
+                    ?: item.optJSONObject("musicTwoRowItemRenderer") ?: continue
+
+                val id = r.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?: r.optJSONObject("onTap")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?: continue
+
+                val title = r.optJSONArray("flexColumns")?.optJSONObject(0)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    ?: r.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    ?: continue
+
+                val subtitleRuns = r.optJSONArray("flexColumns")?.optJSONObject(1)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")?.optJSONArray("runs")
+                    ?: r.optJSONObject("subtitle")?.optJSONArray("runs")
+
+                val subtitle = subtitleRuns?.let { runs ->
+                    val sb = StringBuilder()
+                    for (k in 0 until runs.length()) {
+                        sb.append(runs.optJSONObject(k)?.optString("text") ?: "")
+                    }
+                    sb.toString().trim()
+                }
+
+                val thumbUrl = extractThumbnailUrl(r)
+
+                playlists.add(UserPlaylistItem(id = id, title = title, description = subtitle, artworkUrl = thumbUrl))
+            }
+        }
+        return playlists
+    }
+
+    private fun parseSearchAll(root: JSONObject): SearchSummary {
+        var topArtist: ArtistCard? = null
+        var topAlbum: AlbumCard? = null
+        val tracks = mutableListOf<TrackItem>()
+        val artists = mutableListOf<ArtistCard>()
+        val albums = mutableListOf<AlbumCard>()
+
+        val contents = root.optJSONObject("contents")
+            ?.optJSONObject("tabbedSearchResultsRenderer")
+            ?.optJSONArray("tabs")
+            ?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents") ?: return SearchSummary()
+
+        for (i in 0 until contents.length()) {
+            val section = contents.optJSONObject(i) ?: continue
+
+            // 1. Check for musicCardShelfRenderer (Top Result Hero Card)
+            val card = section.optJSONObject("musicCardShelfRenderer")
+            if (card != null && topArtist == null && topAlbum == null) {
+                val title = card.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                val browseId = card.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)
+                    ?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?: card.optJSONObject("onTap")?.optJSONObject("browseEndpoint")?.optString("browseId")
+
+                val subRuns = card.optJSONObject("subtitle")?.optJSONArray("runs")
+                val subText = subRuns?.let { runs ->
+                    val sb = StringBuilder()
+                    for (k in 0 until runs.length()) sb.append(runs.optJSONObject(k)?.optString("text") ?: "")
+                    sb.toString().trim()
+                } ?: ""
+
+                val thumbUrl = card.optJSONObject("thumbnail")?.optJSONObject("musicThumbnailRenderer")
+                    ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")?.let { thumbs ->
+                        thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+                    }
+
+                if (!title.isNullOrBlank() && !browseId.isNullOrBlank()) {
+                    if (browseId.startsWith("UC") || subText.contains("Artist", ignoreCase = true)) {
+                        topArtist = ArtistCard(id = browseId, name = title, subscriberCount = subText, artworkUrl = thumbUrl)
+                    } else if (browseId.startsWith("MPREb_") || subText.contains("Album", ignoreCase = true)) {
+                        topAlbum = AlbumCard(id = browseId, title = title, subtitle = subText, artworkUrl = thumbUrl)
+                    }
+                }
+            }
+
+            // 2. Shelf or itemSection contents
+            val shelfContents = section.optJSONObject("musicShelfRenderer")?.optJSONArray("contents")
+                ?: section.optJSONObject("itemSectionRenderer")?.optJSONArray("contents")
+                ?: continue
+
+            for (j in 0 until shelfContents.length()) {
+                val item = shelfContents.optJSONObject(j) ?: continue
+                val r = item.optJSONObject("musicResponsiveListItemRenderer")
+                    ?: item.optJSONObject("musicTwoRowItemRenderer") ?: continue
+
+                // Check if it's a song
+                val track = parseTrackRenderer(r)
+                if (track != null) {
+                    tracks.add(track)
+                    continue
+                }
+
+                // If not a track, check if it's an artist or album
+                val bId = r.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                    ?: r.optJSONObject("onTap")?.optJSONObject("browseEndpoint")?.optString("browseId")
+
+                val itemTitle = r.optJSONArray("flexColumns")?.optJSONObject(0)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    ?: r.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+
+                val subRuns = r.optJSONArray("flexColumns")?.optJSONObject(1)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")?.optJSONArray("runs")
+                    ?: r.optJSONObject("subtitle")?.optJSONArray("runs")
+
+                val subText = subRuns?.let { runs ->
+                    val sb = StringBuilder()
+                    for (k in 0 until runs.length()) sb.append(runs.optJSONObject(k)?.optString("text") ?: "")
+                    sb.toString().trim()
+                } ?: ""
+
+                val thumb = extractThumbnailUrl(r)
+
+                if (bId != null && itemTitle != null) {
+                    if (bId.startsWith("UC") || subText.contains("Artist", ignoreCase = true)) {
+                        artists.add(ArtistCard(id = bId, name = itemTitle, subscriberCount = subText, artworkUrl = thumb))
+                    } else if (bId.startsWith("MPREb_") || subText.contains("Album", ignoreCase = true)) {
+                        albums.add(AlbumCard(id = bId, title = itemTitle, subtitle = subText, artworkUrl = thumb))
+                    }
+                }
+            }
+        }
+
+        return SearchSummary(
+            topArtist = topArtist,
+            topAlbum = topAlbum,
+            tracks = tracks,
+            artists = artists,
+            albums = albums
+        )
+    }
+
+    private fun extractThumbnailUrl(renderer: JSONObject): String? {
+        val thumbs = renderer.optJSONObject("thumbnail")?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+            ?: renderer.optJSONObject("thumbnailRenderer")?.optJSONObject("musicThumbnailRenderer")
+                ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+            ?: renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        if (thumbs != null && thumbs.length() > 0) {
+            return thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+        }
+        return null
     }
 
     private fun parseBrowseTracks(root: JSONObject): List<TrackItem> {

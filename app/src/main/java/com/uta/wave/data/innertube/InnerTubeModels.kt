@@ -50,6 +50,23 @@ data class AlbumPage(
     val tracks: List<TrackItem> = emptyList()
 )
 
+enum class SearchCategory(val label: String, val param: String?) {
+    ALL("All", null),
+    SONGS("Songs", "EgWKAQIIAWoKEAkQBRAKEAMQBA=="),
+    ARTISTS("Artists", "EgWKAQIgAWoKEAkQChAFEAMQBA=="),
+    ALBUMS("Albums", "EgWKAQIYAWoKEAkQChAFEAMQBA=="),
+    PLAYLISTS("Playlists", "EgeKAQQoAEABagoQAxAEEAoQCRAF")
+}
+
+data class SearchSummary(
+    val topArtist: ArtistCard? = null,
+    val topAlbum: AlbumCard? = null,
+    val tracks: List<TrackItem> = emptyList(),
+    val artists: List<ArtistCard> = emptyList(),
+    val albums: List<AlbumCard> = emptyList(),
+    val playlists: List<UserPlaylistItem> = emptyList()
+)
+
 data class SearchResult(
     val tracks: List<TrackItem> = emptyList(),
     val suggestions: List<String> = emptyList()
