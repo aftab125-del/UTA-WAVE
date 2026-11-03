@@ -6,7 +6,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -18,10 +22,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.DpSize
@@ -30,14 +35,18 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.*
 import com.uta.wave.audio.UnifiedPlaybackState
 import com.uta.wave.core.model.TrackItem
+import com.uta.wave.desktop.account.DesktopAccountManager
+import com.uta.wave.desktop.account.DesktopUserProfile
 import com.uta.wave.desktop.audio.WindowsAudioPlayerEngine
+import com.uta.wave.desktop.data.DesktopDatabase
 import com.uta.wave.desktop.data.DesktopMusicService
+import com.uta.wave.desktop.data.DesktopPlaylist
+import com.uta.wave.desktop.data.DesktopSupabaseClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.res.loadImageBitmap
-import java.io.ByteArrayInputStream
 import java.awt.Dimension
+import java.io.ByteArrayInputStream
 import java.net.URI
 
 // UTA-VERSE Cinematic Dark Theme Colors
@@ -64,14 +73,25 @@ fun main() = application {
         position = WindowPosition(Alignment.Center)
     )
 
-    // Dedicated Windows audio engine & InnerTube search service
     val audioEngine = remember { WindowsAudioPlayerEngine() }
     val musicService = remember { DesktopMusicService() }
+    val accountManager = remember { DesktopAccountManager.getInstance() }
+    val database = remember { DesktopDatabase.getInstance() }
+    val supabaseClient = remember { DesktopSupabaseClient.getInstance() }
+
     val playbackState by audioEngine.state.collectAsState()
+    val userProfile by accountManager.profile.collectAsState()
+    val libraryData by database.library.collectAsState()
     val scope = rememberCoroutineScope()
 
-    var currentTab by remember { mutableStateOf(DesktopNavTab.EXPLORE) }
+    var currentTab by remember { mutableStateOf(DesktopNavTab.LIBRARY) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var isSyncing by remember { mutableStateOf(false) }
+    var showAccountDialog by remember { mutableStateOf(false) }
+
+    // Playlist Queue management
+    var activeQueue by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
+    var currentQueueIndex by remember { mutableStateOf(-1) }
 
     fun playTrack(track: TrackItem) {
         statusMessage = "Resolving audio stream for \"${track.title}\"..."
@@ -92,6 +112,64 @@ fun main() = application {
                 }
             } catch (e: Exception) {
                 statusMessage = "Playback error: ${e.message}"
+            }
+        }
+    }
+
+    fun playQueueTrack(index: Int) {
+        if (index in activeQueue.indices) {
+            currentQueueIndex = index
+            playTrack(activeQueue[index])
+        }
+    }
+
+    fun playPlaylist(playlist: DesktopPlaylist, startIndex: Int = 0) {
+        if (playlist.tracks.isNotEmpty()) {
+            activeQueue = playlist.tracks
+            playQueueTrack(startIndex)
+        }
+    }
+
+    fun shufflePlaylist(playlist: DesktopPlaylist) {
+        if (playlist.tracks.isNotEmpty()) {
+            activeQueue = playlist.tracks.shuffled()
+            playQueueTrack(0)
+        }
+    }
+
+    // Auto-advance to next track in queue when current track ends
+    LaunchedEffect(Unit) {
+        audioEngine.onTrackEnded = {
+            if (currentQueueIndex + 1 < activeQueue.size) {
+                playQueueTrack(currentQueueIndex + 1)
+            }
+        }
+    }
+
+    // Auto-sync on startup if library is empty or when profile changes
+    LaunchedEffect(userProfile.userId) {
+        if (libraryData.playlists.isEmpty()) {
+            isSyncing = true
+            try {
+                supabaseClient.syncAll(userProfile.userId)
+            } catch (e: Exception) {
+                println("[Main] Initial sync error: ${e.message}")
+            } finally {
+                isSyncing = false
+            }
+        }
+    }
+
+    fun triggerManualSync() {
+        if (isSyncing) return
+        isSyncing = true
+        scope.launch {
+            try {
+                supabaseClient.syncAll(userProfile.userId)
+            } catch (e: Exception) {
+                statusMessage = "Sync failed: ${e.message}"
+            } finally {
+                isSyncing = false
             }
         }
     }
@@ -127,7 +205,9 @@ fun main() = application {
                 // Top Custom Header / Branding Bar
                 DesktopTopHeader(
                     activeSessionDevice = "Windows PC",
-                    isCloudSynced = true
+                    isCloudSynced = !isSyncing,
+                    userProfile = userProfile,
+                    onAccountClick = { showAccountDialog = true }
                 )
 
                 // Status Banner (if resolving or error)
@@ -183,7 +263,18 @@ fun main() = application {
                                 musicService = musicService,
                                 onPlayTrack = ::playTrack
                             )
-                            DesktopNavTab.LIBRARY -> LibraryWorkspace()
+                            DesktopNavTab.LIBRARY -> LibraryWorkspace(
+                                library = libraryData,
+                                isSyncing = isSyncing,
+                                currentlyPlayingVideoId = playbackState.videoId,
+                                onSyncNow = ::triggerManualSync,
+                                onPlayPlaylist = ::playPlaylist,
+                                onShufflePlaylist = ::shufflePlaylist,
+                                onPlayTrackInPlaylist = { playlist, index ->
+                                    activeQueue = playlist.tracks
+                                    playQueueTrack(index)
+                                }
+                            )
                             DesktopNavTab.CONNECT -> ConnectWorkspace()
                             DesktopNavTab.AI_STUDIO -> AiStudioWorkspace()
                             DesktopNavTab.SETTINGS -> SettingsWorkspace()
@@ -206,6 +297,34 @@ fun main() = application {
                     },
                     onVolumeChange = { newVol ->
                         audioEngine.setVolume(newVol)
+                    },
+                    onNext = {
+                        if (currentQueueIndex + 1 < activeQueue.size) {
+                            playQueueTrack(currentQueueIndex + 1)
+                        }
+                    },
+                    onPrev = {
+                        if (currentQueueIndex > 0) {
+                            playQueueTrack(currentQueueIndex - 1)
+                        } else {
+                            audioEngine.seekTo(0L)
+                        }
+                    }
+                )
+            }
+
+            // Account & Sync Modal Dialog
+            if (showAccountDialog) {
+                AccountSyncDialog(
+                    userProfile = userProfile,
+                    isSyncing = isSyncing,
+                    onDismiss = { showAccountDialog = false },
+                    onSyncNow = {
+                        triggerManualSync()
+                    },
+                    onImportToken = { token ->
+                        accountManager.importToken(token, userProfile.name)
+                        triggerManualSync()
                     }
                 )
             }
@@ -213,12 +332,21 @@ fun main() = application {
     }
 }
 
+// -----------------------------------------------------------------------------
+// Top Header with Account Pill & Sync Status
+// -----------------------------------------------------------------------------
+
 @Composable
-fun DesktopTopHeader(activeSessionDevice: String, isCloudSynced: Boolean) {
+fun DesktopTopHeader(
+    activeSessionDevice: String,
+    isCloudSynced: Boolean,
+    userProfile: DesktopUserProfile,
+    onAccountClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(52.dp)
             .background(SurfaceDark)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -246,7 +374,7 @@ fun DesktopTopHeader(activeSessionDevice: String, isCloudSynced: Boolean) {
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
@@ -272,7 +400,7 @@ fun DesktopTopHeader(activeSessionDevice: String, isCloudSynced: Boolean) {
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -283,15 +411,221 @@ fun DesktopTopHeader(activeSessionDevice: String, isCloudSynced: Boolean) {
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = if (isCloudSynced) "Synced with Mobile" else "Syncing...",
+                        text = if (isCloudSynced) "Synced with Mobile & Web" else "Syncing...",
                         fontSize = 11.sp,
                         color = TextPrimary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // User Profile Pill (Clickable)
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable(onClick = onAccountClick),
+                color = Color(0xFF1E2230),
+                border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        modifier = Modifier.size(26.dp),
+                        shape = CircleShape,
+                        color = AccentPurple.copy(alpha = 0.2f)
+                    ) {
+                        if (!userProfile.avatarUrl.isNullOrBlank()) {
+                            NetworkThumbnail(url = userProfile.avatarUrl, modifier = Modifier.fillMaxSize())
+                        } else {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                Text(
+                                    text = userProfile.name.take(1).uppercase(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AccentPurple
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = userProfile.name,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = TextSecondary,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
         }
     }
 }
+
+// -----------------------------------------------------------------------------
+// Account & Sync Modal Dialog
+// -----------------------------------------------------------------------------
+
+@Composable
+fun AccountSyncDialog(
+    userProfile: DesktopUserProfile,
+    isSyncing: Boolean,
+    onDismiss: () -> Unit,
+    onSyncNow: () -> Unit,
+    onImportToken: (String) -> Unit
+) {
+    var tokenInput by remember { mutableStateOf("") }
+    var showTokenField by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.width(480.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = SurfaceDark,
+            border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                // Header with title and close
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Account & Cloud Sync", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close", tint = TextSecondary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // User Profile Card
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF181B26),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(54.dp),
+                            shape = CircleShape,
+                            color = AccentPurple.copy(alpha = 0.2f),
+                            border = androidx.compose.foundation.BorderStroke(2.dp, AccentPurple)
+                        ) {
+                            if (!userProfile.avatarUrl.isNullOrBlank()) {
+                                NetworkThumbnail(url = userProfile.avatarUrl, modifier = Modifier.fillMaxSize())
+                            } else {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                    Text(
+                                        text = userProfile.name.take(1).uppercase(),
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentPurple
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column {
+                            Text(userProfile.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(userProfile.email, fontSize = 12.sp, color = TextSecondary)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF10B981)))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Synced with Mobile & Web", fontSize = 11.sp, color = Color(0xFF34D399))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Sync Library button
+                Button(
+                    onClick = onSyncNow,
+                    enabled = !isSyncing,
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    if (isSyncing) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Syncing Cloud Library...", color = Color.White)
+                    } else {
+                        Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sync Cloud Library Now", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Optional Mobile Token Import
+                TextButton(
+                    onClick = { showTokenField = !showTokenField },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (showTokenField) "▲ Hide Mobile Token Import" else "▼ Import Session Token from Mobile",
+                        fontSize = 12.sp,
+                        color = AccentPurple
+                    )
+                }
+
+                if (showTokenField) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = tokenInput,
+                        onValueChange = { tokenInput = it },
+                        placeholder = { Text("Paste cookie or token from Mobile", fontSize = 11.sp, color = TextSecondary) },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (tokenInput.isNotBlank()) {
+                                onImportToken(tokenInput)
+                                tokenInput = ""
+                                showTokenField = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262A3B))
+                    ) {
+                        Text("Apply Token & Re-sync", fontSize = 12.sp, color = TextPrimary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Sidebar Navigation
+// -----------------------------------------------------------------------------
 
 @Composable
 fun DesktopSidebar(
@@ -321,9 +655,7 @@ fun DesktopSidebar(
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        tintColor = if (isSelected) AccentPurple else TextSecondary
-                    ) {
+                    Box {
                         tab.icon()
                     }
                     Spacer(modifier = Modifier.width(12.dp))
@@ -339,12 +671,18 @@ fun DesktopSidebar(
     }
 }
 
+// -----------------------------------------------------------------------------
+// Persistent Bottom Player Dock
+// -----------------------------------------------------------------------------
+
 @Composable
 fun DesktopPlayerDock(
     playbackState: UnifiedPlaybackState,
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
-    onVolumeChange: (Float) -> Unit
+    onVolumeChange: (Float) -> Unit,
+    onNext: () -> Unit = {},
+    onPrev: () -> Unit = {}
 ) {
     Surface(
         modifier = Modifier
@@ -419,7 +757,7 @@ fun DesktopPlayerDock(
                     IconButton(onClick = {}) {
                         Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle", tint = TextSecondary)
                     }
-                    IconButton(onClick = { onSeek(0L) }) {
+                    IconButton(onClick = onPrev) {
                         Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", tint = TextPrimary)
                     }
                     IconButton(
@@ -442,7 +780,7 @@ fun DesktopPlayerDock(
                             )
                         }
                     }
-                    IconButton(onClick = {}) {
+                    IconButton(onClick = onNext) {
                         Icon(Icons.Filled.SkipNext, contentDescription = "Next", tint = TextPrimary)
                     }
                     IconButton(onClick = {}) {
@@ -450,35 +788,35 @@ fun DesktopPlayerDock(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-                // Interactive Scrubber Slider
-                val currentPos = playbackState.positionMs.toFloat()
-                val totalDuration = if (playbackState.durationMs > 0) playbackState.durationMs.toFloat() else 1f
-
+                // Progress Bar & Time Labels
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = formatTime(playbackState.positionMs),
                         fontSize = 11.sp,
                         color = TextSecondary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Slider(
-                        value = (currentPos / totalDuration).coerceIn(0f, 1f),
-                        onValueChange = { fraction ->
-                            onSeek((fraction * totalDuration).toLong())
+                        value = if (playbackState.durationMs > 0) {
+                            (playbackState.positionMs.toFloat() / playbackState.durationMs.toFloat()).coerceIn(0f, 1f)
+                        } else 0f,
+                        onValueChange = { frac ->
+                            val target = (frac * playbackState.durationMs).toLong()
+                            onSeek(target)
                         },
-                        modifier = Modifier.weight(1f).height(20.dp),
+                        modifier = Modifier.weight(1f),
                         colors = SliderDefaults.colors(
                             thumbColor = AccentPurple,
                             activeTrackColor = AccentPurple,
                             inactiveTrackColor = Color(0xFF262A3B)
                         )
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = formatTime(playbackState.durationMs),
                         fontSize = 11.sp,
@@ -487,7 +825,7 @@ fun DesktopPlayerDock(
                 }
             }
 
-            // Right: Volume Slider
+            // Right: Volume Control & Device Output Icon
             Row(
                 modifier = Modifier.width(180.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -516,7 +854,410 @@ fun DesktopPlayerDock(
 }
 
 // -----------------------------------------------------------------------------
-// Interactive Workspaces: Search & Explore
+// Interactive Library Workspace: Synced Playlists & Tracklist View
+// -----------------------------------------------------------------------------
+
+@Composable
+fun LibraryWorkspace(
+    library: com.uta.wave.desktop.data.DesktopLibrary,
+    isSyncing: Boolean,
+    currentlyPlayingVideoId: String?,
+    onSyncNow: () -> Unit,
+    onPlayPlaylist: (DesktopPlaylist, Int) -> Unit,
+    onShufflePlaylist: (DesktopPlaylist) -> Unit,
+    onPlayTrackInPlaylist: (DesktopPlaylist, Int) -> Unit
+) {
+    var selectedPlaylist by remember { mutableStateOf<DesktopPlaylist?>(null) }
+
+    // If a playlist is selected, keep its reference updated if library re-syncs
+    val activePlaylist = selectedPlaylist?.let { cur ->
+        library.playlists.firstOrNull { it.id == cur.id } ?: cur
+    }
+
+    if (activePlaylist != null) {
+        // Detailed Playlist View (matching Image 1)
+        PlaylistDetailView(
+            playlist = activePlaylist,
+            currentlyPlayingVideoId = currentlyPlayingVideoId,
+            onBack = { selectedPlaylist = null },
+            onPlayAll = { onPlayPlaylist(activePlaylist, 0) },
+            onShuffle = { onShufflePlaylist(activePlaylist) },
+            onPlayTrack = { index -> onPlayTrackInPlaylist(activePlaylist, index) }
+        )
+    } else {
+        // Main Library Overview (Grid of Playlists)
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Your Cloud Library", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Synced playlists, Liked Songs, and custom collections mirrored across devices.", fontSize = 13.sp, color = TextSecondary)
+                }
+
+                Button(
+                    onClick = onSyncNow,
+                    enabled = !isSyncing,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2230)),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+                ) {
+                    if (isSyncing) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = AccentPurple, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Syncing...", fontSize = 13.sp, color = TextPrimary)
+                    } else {
+                        Icon(Icons.Filled.Sync, contentDescription = "Sync", tint = AccentPurple, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sync Now", fontSize = 13.sp, color = TextPrimary)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            if (library.playlists.isEmpty() && isSyncing) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = AccentPurple)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Hydrating your playlists from Cloud...", color = TextSecondary, fontSize = 14.sp)
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 200.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // Liked Songs Card
+                    item {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    val likedPlaylist = DesktopPlaylist(
+                                        id = "liked_songs",
+                                        name = "Liked Songs",
+                                        description = "Your favorite tracks",
+                                        trackCount = library.likedSongs.size,
+                                        tracks = library.likedSongs
+                                    )
+                                    selectedPlaylist = likedPlaylist
+                                },
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFF4C1D95), Color(0xFF831843))
+                                        )
+                                    )
+                                    .padding(16.dp)
+                            ) {
+                                Column(modifier = Modifier.align(Alignment.BottomStart)) {
+                                    Icon(
+                                        Icons.Filled.Favorite,
+                                        contentDescription = "Liked",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text("Liked Songs", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("${library.likedSongs.size} tracks", fontSize = 12.sp, color = Color(0xFFE2E8F0))
+                                }
+                            }
+                        }
+                    }
+
+                    // User Synced Playlists
+                    items(library.playlists) { playlist ->
+                        PlaylistCard(
+                            playlist = playlist,
+                            onClick = { selectedPlaylist = playlist },
+                            onPlay = { onPlayPlaylist(playlist, 0) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PlaylistCard(
+    playlist: DesktopPlaylist,
+    onClick: () -> Unit,
+    onPlay: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        color = SurfaceDark,
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Artwork Box
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1E2230))
+            ) {
+                if (!playlist.coverUrl.isNullOrBlank()) {
+                    NetworkThumbnail(url = playlist.coverUrl, modifier = Modifier.fillMaxSize())
+                } else {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(Icons.Filled.LibraryMusic, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(40.dp))
+                    }
+                }
+
+                // Quick Play Floating Button
+                IconButton(
+                    onClick = onPlay,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(8.dp)
+                        .size(38.dp)
+                        .background(AccentPurple, CircleShape)
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(22.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = playlist.name,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "${playlist.trackCount} tracks",
+                fontSize = 12.sp,
+                color = TextSecondary
+            )
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Playlist Detail View (Inspired by Image 1)
+// -----------------------------------------------------------------------------
+
+@Composable
+fun PlaylistDetailView(
+    playlist: DesktopPlaylist,
+    currentlyPlayingVideoId: String?,
+    onBack: () -> Unit,
+    onPlayAll: () -> Unit,
+    onShuffle: () -> Unit,
+    onPlayTrack: (Int) -> Unit
+) {
+    val totalSeconds = playlist.tracks.sumOf { it.durationSeconds }
+    val formattedDuration = formatPlaylistDuration(totalSeconds)
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Back Navigation Button
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onBack)
+                .padding(vertical = 4.dp, horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = TextSecondary, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Back to Playlists", fontSize = 13.sp, color = TextSecondary)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Hero Playlist Header Banner
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Artwork
+            Surface(
+                modifier = Modifier.size(180.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF1E2230),
+                border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+            ) {
+                if (!playlist.coverUrl.isNullOrBlank()) {
+                    NetworkThumbnail(url = playlist.coverUrl, modifier = Modifier.fillMaxSize())
+                } else {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(Icons.Filled.LibraryMusic, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(60.dp))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            // Playlist Info & Actions
+            Column {
+                Text("PLAYLIST", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentPurple)
+                if (!playlist.description.isNullOrBlank() && playlist.description != playlist.name) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(playlist.description, fontSize = 18.sp, color = TextSecondary)
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(playlist.name, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Spacer(modifier = Modifier.height(6.dp))
+                Text("${playlist.tracks.size} tracks · $formattedDuration", fontSize = 13.sp, color = TextSecondary)
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        onClick = onPlayAll,
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(40.dp)
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "Play All", tint = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Play", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    OutlinedButton(
+                        onClick = onShuffle,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder),
+                        modifier = Modifier.height(40.dp)
+                    ) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = "Shuffle", tint = TextPrimary)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Shuffle", color = TextPrimary)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Tracks List
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            itemsIndexed(playlist.tracks) { index, track ->
+                val isPlaying = track.videoId == currentlyPlayingVideoId
+                PlaylistTrackRow(
+                    index = index + 1,
+                    track = track,
+                    isPlaying = isPlaying,
+                    onClick = { onPlayTrack(index) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PlaylistTrackRow(
+    index: Int,
+    track: TrackItem,
+    isPlaying: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick),
+        color = if (isPlaying) AccentPurple.copy(alpha = 0.15f) else Color.Transparent
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                // Track Index / Speaker
+                Box(
+                    modifier = Modifier.width(28.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (isPlaying) {
+                        Icon(Icons.Filled.VolumeUp, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(16.dp))
+                    } else {
+                        Text(index.toString(), fontSize = 13.sp, color = TextSecondary)
+                    }
+                }
+
+                // Thumbnail
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF262A3B)
+                ) {
+                    if (track.artworkUrl.isNotBlank()) {
+                        NetworkThumbnail(url = track.artworkUrl, modifier = Modifier.fillMaxSize())
+                    } else {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = AccentPurple)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                // Title & Artist
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        fontSize = 14.sp,
+                        fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isPlaying) AccentPurple else TextPrimary,
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = track.artist,
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            // Duration
+            if (track.durationSeconds > 0) {
+                Text(
+                    text = formatTime(track.durationSeconds * 1000L),
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+            }
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Search & Explore Workspaces
 // -----------------------------------------------------------------------------
 
 @Composable
@@ -540,7 +1281,6 @@ fun SearchWorkspace(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Search Input Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -583,7 +1323,6 @@ fun SearchWorkspace(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Search Results List
         if (isSearching) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -601,7 +1340,6 @@ fun SearchWorkspace(
                 }
             }
         } else {
-            // Initial Empty Search State
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = SurfaceDark,
@@ -617,7 +1355,7 @@ fun SearchWorkspace(
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("Search YouTube Music", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Type a song title, artist, or album and press Search.", fontSize = 14.sp, color = TextSecondary)
+                    Text("Direct, quota-free YouTube Music autocomplete, artists, albums, and tracks search.", fontSize = 14.sp, color = TextSecondary)
                 }
             }
         }
@@ -626,7 +1364,6 @@ fun SearchWorkspace(
 
 @Composable
 fun ExploreWorkspace(onPlayTrack: (TrackItem) -> Unit) {
-    // Trending quick-play tracks ready on desktop
     val trendingTracks = remember {
         listOf(
             TrackItem(
@@ -638,12 +1375,12 @@ fun ExploreWorkspace(onPlayTrack: (TrackItem) -> Unit) {
                 durationSeconds = 315
             ),
             TrackItem(
-                id = "youtube:Mz2yP0A3t4o",
-                videoId = "Mz2yP0A3t4o",
+                id = "youtube:NPC-9hYbkLE",
+                videoId = "NPC-9hYbkLE",
                 title = "Chahun Main Ya Naa",
                 artist = "Arijit Singh, Palak Muchhal",
-                artworkUrl = "https://i.ytimg.com/vi/Mz2yP0A3t4o/hqdefault.jpg",
-                durationSeconds = 304
+                artworkUrl = "https://i.ytimg.com/vi/NPC-9hYbkLE/hqdefault.jpg",
+                durationSeconds = 305
             ),
             TrackItem(
                 id = "youtube:glXgzvL3qpc",
@@ -782,8 +1519,6 @@ fun NetworkThumbnail(url: String, modifier: Modifier = Modifier) {
     }
 }
 
-// Remaining Workspace Placeholders
-@Composable fun LibraryWorkspace() { WorkspaceCard("📚 Your Cloud Library", "Synced playlists, Liked Songs, and custom collections mirrored between Mobile & Windows.") }
 @Composable fun ConnectWorkspace() { WorkspaceCard("📱 UTA Connect (Remote Control)", "Control music playing on your phone or PC. Handoff playback between devices in real-time.") }
 @Composable fun AiStudioWorkspace() { WorkspaceCard("✨ AI Playlist Studio", "Generate prompt-curated playlists in seconds powered by Google Gemini 2.0 Flash.") }
 @Composable fun SettingsWorkspace() { WorkspaceCard("⚙️ Settings & Audio Engine", "Configure WASAPI bit-perfect output, equalizer, cloud account sync, and theme.") }
@@ -808,16 +1543,15 @@ fun WorkspaceCard(title: String, subtitle: String) {
     }
 }
 
-@Composable
-fun Box(tintColor: Color, content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalContentColor provides tintColor) {
-        content()
-    }
-}
-
 fun formatTime(ms: Long): String {
     val totalSeconds = (ms / 1000).toInt()
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
-    return String.format("%d:%02d", minutes, seconds)
+    return "%d:%02d".format(minutes, seconds)
+}
+
+fun formatPlaylistDuration(totalSeconds: Int): String {
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    return if (hours > 0) "$hours hr $minutes min" else "$minutes min"
 }

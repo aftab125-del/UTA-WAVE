@@ -46,6 +46,7 @@ class WindowsAudioPlayerEngine(
 
     private var mediaPlayer: MediaPlayer? = null
     private var currentStreamUrl: String? = null
+    var onTrackEnded: (() -> Unit)? = null
 
     init {
         JavaFxInitializer.initialize()
@@ -115,6 +116,7 @@ class WindowsAudioPlayerEngine(
                             play()
                         } else {
                             _state.value = _state.value.copy(isPlaying = false, positionMs = 0L)
+                            onTrackEnded?.invoke()
                         }
                     }
 
