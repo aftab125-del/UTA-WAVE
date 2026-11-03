@@ -149,13 +149,24 @@ fun main() = application {
         isSyncing = true
         scope.launch {
             try {
-                val cookie = userProfile.cookie
+                val currentP = accountManager.currentProfile
+                val cookie = currentP.cookie
                 if (!cookie.isNullOrBlank()) {
                     statusMessage = "Syncing with UTA-WAVE Mobile account..."
-                    musicService.syncFullLibrary(cookie, userProfile.sapisid)
+                    val realProfile = musicService.fetchAccountProfile(cookie, currentP.sapisid)
+                    if (realProfile != null && realProfile.name.isNotBlank()) {
+                        accountManager.saveSession(
+                            cookieHeader = cookie,
+                            userName = realProfile.name,
+                            userEmail = realProfile.email,
+                            avatarUrl = realProfile.avatarUrl,
+                            handle = realProfile.handle
+                        )
+                    }
+                    musicService.syncFullLibrary(cookie, currentP.sapisid)
                     statusMessage = null
                 } else {
-                    statusMessage = "Connected to UTA-WAVE Mobile account."
+                    statusMessage = "No active mobile session cookie."
                 }
             } catch (e: Exception) {
                 statusMessage = "Sync notice: ${e.message}"
@@ -256,9 +267,11 @@ fun main() = application {
                             )
                             DesktopNavTab.LIBRARY -> LibraryWorkspace(
                                 library = libraryData,
+                                userProfile = userProfile,
                                 isSyncing = isSyncing,
                                 currentlyPlayingVideoId = playbackState.videoId,
                                 onSyncNow = ::triggerMobileSync,
+                                onSignInClick = { showAccountDialog = true },
                                 onPlayPlaylist = ::playPlaylist,
                                 onShufflePlaylist = ::shufflePlaylist,
                                 onPlayTrackInPlaylist = { playlist, index ->
@@ -314,7 +327,7 @@ fun main() = application {
                         triggerMobileSync()
                     },
                     onImportToken = { token ->
-                        accountManager.importToken(token, "Namikaze aftab")
+                        accountManager.importToken(token, "Connected User")
                         triggerMobileSync()
                     },
                     onImportBackup = { jsonStr ->
@@ -322,6 +335,10 @@ fun main() = application {
                         if (ok) {
                             statusMessage = "Restored mobile library backup successfully!"
                         }
+                    },
+                    onSignOut = {
+                        accountManager.clearSession()
+                        statusMessage = "Signed out and reset desktop data."
                     }
                 )
             }
@@ -365,101 +382,125 @@ fun DesktopTopHeader(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // UTA Connect Indicator
-            Surface(
-                color = Color(0xFF1E293B),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            if (userProfile.isLoggedIn) {
+                // UTA Connect Indicator
+                Surface(
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF10B981))
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Device: Windows PC • Paired with Mobile",
-                        fontSize = 11.sp,
-                        color = TextPrimary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Cloud Sync Status Pill
-            Surface(
-                color = if (isCloudSynced) Color(0xFF064E3B) else Color(0xFF78350F),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (isCloudSynced) Icons.Filled.CloudDone else Icons.Filled.CloudSync,
-                        contentDescription = "Cloud Status",
-                        modifier = Modifier.size(14.dp),
-                        tint = if (isCloudSynced) Color(0xFF34D399) else Color(0xFFFBBF24)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (isCloudSynced) "Synced with UTA-WAVE Mobile" else "Syncing...",
-                        fontSize = 11.sp,
-                        color = TextPrimary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // User Profile Pill (Clickable)
-            Surface(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable(onClick = onAccountClick),
-                color = Color(0xFF1E2230),
-                border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        modifier = Modifier.size(26.dp),
-                        shape = CircleShape,
-                        color = AccentPurple.copy(alpha = 0.2f)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (!userProfile.avatarUrl.isNullOrBlank()) {
-                            NetworkThumbnail(url = userProfile.avatarUrl, modifier = Modifier.fillMaxSize())
-                        } else {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                Text(
-                                    text = userProfile.name.take(1).uppercase(),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AccentPurple
-                                )
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF10B981))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Device: Windows PC • Synced with Mobile",
+                            fontSize = 11.sp,
+                            color = TextPrimary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Cloud Sync Status Pill
+                Surface(
+                    color = if (isCloudSynced) Color(0xFF064E3B) else Color(0xFF78350F),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isCloudSynced) Icons.Filled.CloudDone else Icons.Filled.CloudSync,
+                            contentDescription = "Cloud Status",
+                            modifier = Modifier.size(14.dp),
+                            tint = if (isCloudSynced) Color(0xFF34D399) else Color(0xFFFBBF24)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isCloudSynced) "Synced" else "Syncing...",
+                            fontSize = 11.sp,
+                            color = TextPrimary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // User Profile Pill (Clickable)
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable(onClick = onAccountClick),
+                    color = Color(0xFF1E2230),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(26.dp),
+                            shape = CircleShape,
+                            color = AccentPurple.copy(alpha = 0.2f)
+                        ) {
+                            if (!userProfile.avatarUrl.isNullOrBlank()) {
+                                NetworkThumbnail(url = userProfile.avatarUrl, modifier = Modifier.fillMaxSize())
+                            } else {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                    Text(
+                                        text = userProfile.name.take(1).uppercase(),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AccentPurple
+                                    )
+                                }
                             }
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = userProfile.name,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Filled.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
+                }
+            } else {
+                // NOT LOGGED IN / GUEST: Prominent Sign In Button
+                Button(
+                    onClick = onAccountClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                    shape = RoundedCornerShape(20.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AccountCircle,
+                        contentDescription = "Sign In",
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.White
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = userProfile.name,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Filled.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = TextSecondary,
-                        modifier = Modifier.size(16.dp)
+                        text = "Sign In",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
                 }
             }
@@ -478,16 +519,16 @@ fun AccountSyncDialog(
     onDismiss: () -> Unit,
     onSyncNow: () -> Unit,
     onImportToken: (String) -> Unit,
-    onImportBackup: (String) -> Unit
+    onImportBackup: (String) -> Unit,
+    onSignOut: () -> Unit
 ) {
     var tokenInput by remember { mutableStateOf("") }
     var backupInput by remember { mutableStateOf("") }
-    var showTokenField by remember { mutableStateOf(false) }
     var showBackupField by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.width(500.dp),
+            modifier = Modifier.width(520.dp),
             shape = RoundedCornerShape(16.dp),
             color = SurfaceDark,
             border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
@@ -499,7 +540,12 @@ fun AccountSyncDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("UTA-WAVE Mobile Account & Sync", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(
+                        text = if (userProfile.isLoggedIn) "UTA-WAVE Mobile Account" else "Sign In with Mobile Account",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Filled.Close, contentDescription = "Close", tint = TextSecondary)
                     }
@@ -507,187 +553,246 @@ fun AccountSyncDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // User Profile Card
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF181B26),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                if (userProfile.isLoggedIn) {
+                    // Logged In Card
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF181B26),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
                     ) {
-                        Surface(
-                            modifier = Modifier.size(54.dp),
-                            shape = CircleShape,
-                            color = AccentPurple.copy(alpha = 0.2f),
-                            border = androidx.compose.foundation.BorderStroke(2.dp, AccentPurple)
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (!userProfile.avatarUrl.isNullOrBlank()) {
-                                NetworkThumbnail(url = userProfile.avatarUrl, modifier = Modifier.fillMaxSize())
-                            } else {
-                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                    Text(
-                                        text = userProfile.name.take(1).uppercase(),
-                                        fontSize = 22.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = AccentPurple
-                                    )
+                            Surface(
+                                modifier = Modifier.size(54.dp),
+                                shape = CircleShape,
+                                color = AccentPurple.copy(alpha = 0.2f),
+                                border = androidx.compose.foundation.BorderStroke(2.dp, AccentPurple)
+                            ) {
+                                if (!userProfile.avatarUrl.isNullOrBlank()) {
+                                    NetworkThumbnail(url = userProfile.avatarUrl, modifier = Modifier.fillMaxSize())
+                                } else {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        Text(
+                                            text = userProfile.name.take(1).uppercase(),
+                                            fontSize = 22.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = AccentPurple
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(16.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(userProfile.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(userProfile.email, fontSize = 12.sp, color = TextSecondary)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF10B981)))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Connected with Mobile", fontSize = 11.sp, color = Color(0xFF34D399))
                                 }
                             }
                         }
+                    }
 
-                        Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                        Column {
-                            Text(userProfile.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(userProfile.email, fontSize = 12.sp, color = TextSecondary)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF10B981)))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Synced with UTA-WAVE Mobile", fontSize = 11.sp, color = Color(0xFF34D399))
-                            }
+                    // Sync Library button
+                    Button(
+                        onClick = onSyncNow,
+                        enabled = !isSyncing,
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Syncing with Mobile...", color = Color.White)
+                        } else {
+                            Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sync Mobile Library Now", color = Color.White, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                // Mobile Pairing Instructions
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF151926),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text("📱 To pair with your UTA-WAVE Mobile phone:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                        Spacer(modifier = Modifier.height(4.dp))
+                    // Sign Out & Disconnect Button
+                    OutlinedButton(
+                        onClick = {
+                            onSignOut()
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(42.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444))
+                    ) {
+                        Icon(Icons.Filled.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sign Out & Clear Desktop Data", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Import Backup Option
+                    TextButton(
+                        onClick = { showBackupField = !showBackupField },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.FileUpload, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "1. Open UTA-WAVE on your phone\n" +
-                            "2. Go to Account → tap 'LOGIN WITH TOKEN: Tap to show token'\n" +
-                            "3. Tap 'Copy Token' and paste below to sync.",
-                            fontSize = 11.sp,
-                            color = TextSecondary,
-                            lineHeight = 16.sp
+                            if (showBackupField) "▲ Hide Backup Import" else "▼ Import uta_wave_library_backup.json",
+                            fontSize = 12.sp,
+                            color = TextSecondary
                         )
                     }
-                }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Sync Library button
-                Button(
-                    onClick = onSyncNow,
-                    enabled = !isSyncing,
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    if (isSyncing) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Syncing with Mobile...", color = Color.White)
-                    } else {
-                        Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Sync Mobile Library Now", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    if (showBackupField) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = backupInput,
+                            onValueChange = { backupInput = it },
+                            placeholder = { Text("Paste uta_wave_library_backup.json content...", fontSize = 11.sp, color = TextSecondary) },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 4,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                if (backupInput.isNotBlank()) {
+                                    onImportBackup(backupInput)
+                                    backupInput = ""
+                                    showBackupField = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262A3B))
+                        ) {
+                            Text("Restore Mobile Backup", fontSize = 12.sp, color = TextPrimary)
+                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                } else {
+                    // LOGGED OUT / GUEST VIEW: Clear instructions and token paste input!
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF151926),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text("📱 How to sign in with your UTA-WAVE Mobile account:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "1. Open the UTA-WAVE app on your Android phone\n" +
+                                "2. Go to the Account tab\n" +
+                                "3. Tap 'LOGIN WITH TOKEN: Tap to show token'\n" +
+                                "4. Tap 'Copy Token' and paste it in the box below",
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
 
-                // Paste Mobile Token Button
-                TextButton(
-                    onClick = { showTokenField = !showTokenField },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.Key, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        if (showTokenField) "▲ Hide Mobile Token Input" else "▼ Paste Token from Mobile Account",
-                        fontSize = 12.sp,
-                        color = AccentPurple,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                if (showTokenField) {
+                    Text("Mobile Session Token / Cookie", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(6.dp))
+
                     OutlinedTextField(
                         value = tokenInput,
                         onValueChange = { tokenInput = it },
-                        placeholder = { Text("Paste cookie / token from Mobile", fontSize = 11.sp, color = TextSecondary) },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 3,
+                        placeholder = { Text("Paste token copied from UTA-WAVE Mobile here...", fontSize = 12.sp, color = TextSecondary) },
+                        modifier = Modifier.fillMaxWidth().height(100.dp),
+                        maxLines = 5,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = AccentPurple,
+                            unfocusedBorderColor = SurfaceBorder
                         )
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
                     Button(
                         onClick = {
                             if (tokenInput.isNotBlank()) {
                                 onImportToken(tokenInput)
                                 tokenInput = ""
-                                showTokenField = false
+                                onDismiss()
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
+                        enabled = tokenInput.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
                     ) {
-                        Text("Connect Mobile Account & Sync", fontSize = 12.sp, color = Color.White)
+                        Icon(Icons.Filled.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Connect Account & Sync Library", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
-                }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                // Import Mobile Backup JSON option
-                TextButton(
-                    onClick = { showBackupField = !showBackupField },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.FileUpload, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        if (showBackupField) "▲ Hide Backup Import" else "▼ Import uta_wave_library_backup.json",
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
-                }
-
-                if (showBackupField) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = backupInput,
-                        onValueChange = { backupInput = it },
-                        placeholder = { Text("Paste uta_wave_library_backup.json content...", fontSize = 11.sp, color = TextSecondary) },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 4,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        )
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            if (backupInput.isNotBlank()) {
-                                onImportBackup(backupInput)
-                                backupInput = ""
-                                showBackupField = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262A3B))
+                    // Or import backup file option
+                    TextButton(
+                        onClick = { showBackupField = !showBackupField },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Restore Mobile Backup", fontSize = 12.sp, color = TextPrimary)
+                        Icon(Icons.Filled.FileUpload, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            if (showBackupField) "▲ Hide Backup Option" else "▼ Or import uta_wave_library_backup.json",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                    }
+
+                    if (showBackupField) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = backupInput,
+                            onValueChange = { backupInput = it },
+                            placeholder = { Text("Paste uta_wave_library_backup.json content...", fontSize = 11.sp, color = TextSecondary) },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 4,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                if (backupInput.isNotBlank()) {
+                                    onImportBackup(backupInput)
+                                    backupInput = ""
+                                    showBackupField = false
+                                    onDismiss()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262A3B))
+                        ) {
+                            Text("Restore Mobile Backup", fontSize = 12.sp, color = TextPrimary)
+                        }
                     }
                 }
             }
@@ -932,9 +1037,11 @@ fun DesktopPlayerDock(
 @Composable
 fun LibraryWorkspace(
     library: com.uta.wave.desktop.data.DesktopLibrary,
+    userProfile: DesktopUserProfile,
     isSyncing: Boolean,
     currentlyPlayingVideoId: String?,
     onSyncNow: () -> Unit,
+    onSignInClick: () -> Unit,
     onPlayPlaylist: (DesktopPlaylist, Int) -> Unit,
     onShufflePlaylist: (DesktopPlaylist) -> Unit,
     onPlayTrackInPlaylist: (DesktopPlaylist, Int) -> Unit
@@ -956,6 +1063,73 @@ fun LibraryWorkspace(
             onShuffle = { onShufflePlaylist(activePlaylist) },
             onPlayTrack = { index -> onPlayTrackInPlaylist(activePlaylist, index) }
         )
+    } else if (!userProfile.isLoggedIn && library.playlists.isEmpty() && library.likedSongs.isEmpty()) {
+        // Clean Signed-Out / Guest State for Library
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier.width(480.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF131722),
+                border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+            ) {
+                Column(
+                    modifier = Modifier.padding(36.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Surface(
+                        modifier = Modifier.size(68.dp),
+                        shape = CircleShape,
+                        color = AccentPurple.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.4f))
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.AccountCircle,
+                                contentDescription = null,
+                                tint = AccentPurple,
+                                modifier = Modifier.size(38.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text(
+                        "Sign in to Sync Your Library",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        "Connect your UTA-WAVE Mobile account using your session token to load your playlists, favorite tracks, and saved albums right here on Windows.",
+                        fontSize = 13.sp,
+                        color = TextSecondary,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Button(
+                        onClick = onSignInClick,
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                    ) {
+                        Icon(Icons.Filled.Login, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Sign In with Mobile Account", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                    }
+                }
+            }
+        }
     } else {
         // Main Library Overview (Grid of Playlists)
         Column(modifier = Modifier.fillMaxSize()) {
@@ -965,38 +1139,65 @@ fun LibraryWorkspace(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("UTA-WAVE Mobile Library", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("UTA-WAVE Library", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Playlists, collections, and liked songs synced with your Namikaze aftab mobile account.", fontSize = 13.sp, color = TextSecondary)
+                    Text(
+                        if (userProfile.isLoggedIn) "Playlists and liked songs synced with ${userProfile.name}."
+                        else "Imported playlists and liked songs.",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
                 }
 
-                Button(
-                    onClick = onSyncNow,
-                    enabled = !isSyncing,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2230)),
-                    shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
-                ) {
-                    if (isSyncing) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = AccentPurple, strokeWidth = 2.dp)
+                if (userProfile.isLoggedIn) {
+                    Button(
+                        onClick = onSyncNow,
+                        enabled = !isSyncing,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2230)),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = AccentPurple, strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Syncing...", fontSize = 13.sp, color = TextPrimary)
+                        } else {
+                            Icon(Icons.Filled.Sync, contentDescription = "Sync", tint = AccentPurple, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sync Now", fontSize = 13.sp, color = TextPrimary)
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = onSignInClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.Login, contentDescription = "Sign In", tint = Color.White, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Syncing...", fontSize = 13.sp, color = TextPrimary)
-                    } else {
-                        Icon(Icons.Filled.Sync, contentDescription = "Sync", tint = AccentPurple, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Sync Now", fontSize = 13.sp, color = TextPrimary)
+                        Text("Sign In", fontSize = 13.sp, color = Color.White)
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            if (library.playlists.isEmpty() && isSyncing) {
+            if (library.playlists.isEmpty() && library.likedSongs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = AccentPurple)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Hydrating your playlists from Cloud...", color = TextSecondary, fontSize = 14.sp)
+                    if (isSyncing) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = AccentPurple)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Hydrating your playlists from Cloud...", color = TextSecondary, fontSize = 14.sp)
+                        }
+                    } else {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Filled.QueueMusic, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(48.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Your library is empty", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Click 'Sync Now' to pull playlists from your mobile account or import a backup.", color = TextSecondary, fontSize = 13.sp)
+                        }
                     }
                 }
             } else {
@@ -1006,50 +1207,52 @@ fun LibraryWorkspace(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    // Liked Songs Card
-                    item {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    val likedPlaylist = DesktopPlaylist(
-                                        id = "liked_songs",
-                                        name = "Liked Songs",
-                                        description = "Your favorite tracks",
-                                        trackCount = library.likedSongs.size,
-                                        tracks = library.likedSongs
-                                    )
-                                    selectedPlaylist = likedPlaylist
-                                },
-                            shape = RoundedCornerShape(12.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
-                        ) {
-                            Box(
+                    if (library.likedSongs.isNotEmpty()) {
+                        // Liked Songs Card
+                        item {
+                            Surface(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(Color(0xFF4C1D95), Color(0xFF831843))
+                                    .fillMaxWidth()
+                                    .height(220.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        val likedPlaylist = DesktopPlaylist(
+                                            id = "liked_songs",
+                                            name = "Liked Songs",
+                                            description = "Your favorite tracks",
+                                            trackCount = library.likedSongs.size,
+                                            tracks = library.likedSongs
                                         )
-                                    )
-                                    .padding(16.dp)
+                                        selectedPlaylist = likedPlaylist
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
                             ) {
-                                Column(modifier = Modifier.align(Alignment.BottomStart)) {
-                                    Icon(
-                                        Icons.Filled.Favorite,
-                                        contentDescription = "Liked",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text("Liked Songs", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Text("${library.likedSongs.size} tracks", fontSize = 12.sp, color = Color(0xFFE2E8F0))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(Color(0xFF4C1D95), Color(0xFF831843))
+                                            )
+                                        )
+                                        .padding(16.dp)
+                                    ) {
+                                        Column(modifier = Modifier.align(Alignment.BottomStart)) {
+                                            Icon(
+                                                Icons.Filled.Favorite,
+                                                contentDescription = "Liked",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(36.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Text("Liked Songs", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            Text("${library.likedSongs.size} tracks", fontSize = 12.sp, color = Color(0xFFE2E8F0))
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
 
                     // User Synced Playlists
                     items(library.playlists) { playlist ->

@@ -183,6 +183,13 @@ class DesktopDatabase private constructor() {
         _library.value = newLib
     }
 
+    fun clearLibrary() {
+        try {
+            if (libraryFile.exists()) libraryFile.delete()
+        } catch (_: Exception) {}
+        _library.value = DesktopLibrary()
+    }
+
     fun updatePlaylistTracks(playlistId: String, tracks: List<TrackItem>) {
         val current = _library.value.playlists.toMutableList()
         val index = current.indexOfFirst { it.id == playlistId }
