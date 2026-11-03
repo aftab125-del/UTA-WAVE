@@ -6,17 +6,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
 data class DesktopUserProfile(
-    val isLoggedIn: Boolean = true,
-    val name: String = "Namikaze aftab",
-    val email: String = "Google Account Connected (UTA-WAVE Mobile)",
+    val isLoggedIn: Boolean = false,
+    val name: String = "Guest User",
+    val email: String = "Offline Mode",
     val avatarUrl: String? = null,
-    val handle: String? = "@namikaze",
+    val handle: String? = null,
     val cookie: String? = null,
     val sapisid: String? = null
 )
@@ -51,7 +50,6 @@ class DesktopAccountManager private constructor() {
         }
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val sessionFile = getSessionFile()
 
     private val _profile = MutableStateFlow(loadSession())
@@ -62,36 +60,24 @@ class DesktopAccountManager private constructor() {
 
     private fun loadSession(): DesktopUserProfile {
         try {
-            if (!sessionFile.exists()) {
-                val defaultProf = DesktopUserProfile()
-                try {
-                    val json = JSONObject().apply {
-                        put("is_logged_in", true)
-                        put("name", defaultProf.name)
-                        put("email", defaultProf.email)
-                        put("avatar_url", defaultProf.avatarUrl ?: "")
-                        put("handle", defaultProf.handle ?: "")
-                        put("saved_at", System.currentTimeMillis())
-                    }
-                    sessionFile.writeText(json.toString(2), Charsets.UTF_8)
-                } catch (_: Exception) {}
-                return defaultProf
-            }
+            if (!sessionFile.exists()) return DesktopUserProfile()
             val content = sessionFile.readText(Charsets.UTF_8)
             if (content.isBlank()) return DesktopUserProfile()
 
             val json = JSONObject(content)
-            val isLoggedIn = json.optBoolean("is_logged_in", true)
-            val name = json.optString("name", "Namikaze aftab")
-            val email = json.optString("email", "Google Account Connected (UTA-WAVE Mobile)")
+            val isLoggedIn = json.optBoolean("is_logged_in", false)
+            if (!isLoggedIn) return DesktopUserProfile()
+
+            val name = json.optString("name", "Guest User")
+            val email = json.optString("email", "Offline Mode")
             val avatarUrl = json.optString("avatar_url").takeIf { !it.isNullOrBlank() }
-            val handle = json.optString("handle").takeIf { !it.isNullOrBlank() } ?: "@namikaze"
+            val handle = json.optString("handle").takeIf { !it.isNullOrBlank() }
             val cookie = json.optString("cookie").takeIf { !it.isNullOrBlank() }
             val sapisid = json.optString("sapisid").takeIf { !it.isNullOrBlank() }
                 ?: cookie?.let { extractCookiePart(it, "SAPISID") ?: extractCookiePart(it, "__Secure-3PAPISID") }
 
             return DesktopUserProfile(
-                isLoggedIn = isLoggedIn,
+                isLoggedIn = true,
                 name = name,
                 email = email,
                 avatarUrl = avatarUrl,
@@ -107,8 +93,8 @@ class DesktopAccountManager private constructor() {
 
     fun saveSession(
         cookieHeader: String,
-        userName: String = "Namikaze aftab",
-        userEmail: String = "Google Account Connected (UTA-WAVE Mobile)",
+        userName: String = "Connected User",
+        userEmail: String = "Connected via Token",
         avatarUrl: String? = null,
         handle: String? = null
     ) {
@@ -145,7 +131,15 @@ class DesktopAccountManager private constructor() {
         _profile.value = newProfile
     }
 
-    fun importToken(tokenString: String, defaultName: String = "Namikaze aftab"): Boolean {
+    fun clearSession() {
+        try {
+            if (sessionFile.exists()) sessionFile.delete()
+        } catch (_: Exception) {}
+        _profile.value = DesktopUserProfile()
+        com.uta.wave.desktop.data.DesktopDatabase.getInstance().clearLibrary()
+    }
+
+    fun importToken(tokenString: String, defaultName: String = "Connected User"): Boolean {
         val clean = tokenString.trim()
         if (clean.isBlank()) return false
 
@@ -183,13 +177,6 @@ class DesktopAccountManager private constructor() {
 
         saveSession(cookieHeader = clean, userName = defaultName)
         return true
-    }
-
-    fun clearSession() {
-        try {
-            if (sessionFile.exists()) sessionFile.delete()
-        } catch (_: Exception) {}
-        _profile.value = DesktopUserProfile()
     }
 
     private fun extractCookiePart(cookie: String, key: String): String? {
