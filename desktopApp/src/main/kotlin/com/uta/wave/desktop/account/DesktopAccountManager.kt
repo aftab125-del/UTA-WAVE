@@ -13,11 +13,10 @@ import java.security.MessageDigest
 
 data class DesktopUserProfile(
     val isLoggedIn: Boolean = true,
-    val userId: String = "d3be4e1b-af5d-4dc4-80ae-8fb0e3ca969c",
-    val name: String = "Samurai Gaming",
-    val email: String = "Google Account Connected",
-    val avatarUrl: String? = "https://lh3.googleusercontent.com/a/ACg8ocKRYAmjD5cwzakrVPq_EeNxAdlQDsOQ-O1W_glUZHAT_s7UqVGVWQ=s96-c",
-    val handle: String? = "@samurai",
+    val name: String = "Namikaze aftab",
+    val email: String = "Google Account Connected (UTA-WAVE Mobile)",
+    val avatarUrl: String? = null,
+    val handle: String? = "@namikaze",
     val cookie: String? = null,
     val sapisid: String? = null
 )
@@ -68,7 +67,6 @@ class DesktopAccountManager private constructor() {
                 try {
                     val json = JSONObject().apply {
                         put("is_logged_in", true)
-                        put("user_id", defaultProf.userId)
                         put("name", defaultProf.name)
                         put("email", defaultProf.email)
                         put("avatar_url", defaultProf.avatarUrl ?: "")
@@ -84,19 +82,16 @@ class DesktopAccountManager private constructor() {
 
             val json = JSONObject(content)
             val isLoggedIn = json.optBoolean("is_logged_in", true)
-            val userId = json.optString("user_id", "d3be4e1b-af5d-4dc4-80ae-8fb0e3ca969c")
-            val name = json.optString("name", "Samurai Gaming")
-            val email = json.optString("email", "Google Account Connected")
+            val name = json.optString("name", "Namikaze aftab")
+            val email = json.optString("email", "Google Account Connected (UTA-WAVE Mobile)")
             val avatarUrl = json.optString("avatar_url").takeIf { !it.isNullOrBlank() }
-                ?: "https://lh3.googleusercontent.com/a/ACg8ocKRYAmjD5cwzakrVPq_EeNxAdlQDsOQ-O1W_glUZHAT_s7UqVGVWQ=s96-c"
-            val handle = json.optString("handle").takeIf { !it.isNullOrBlank() } ?: "@samurai"
+            val handle = json.optString("handle").takeIf { !it.isNullOrBlank() } ?: "@namikaze"
             val cookie = json.optString("cookie").takeIf { !it.isNullOrBlank() }
             val sapisid = json.optString("sapisid").takeIf { !it.isNullOrBlank() }
                 ?: cookie?.let { extractCookiePart(it, "SAPISID") ?: extractCookiePart(it, "__Secure-3PAPISID") }
 
             return DesktopUserProfile(
                 isLoggedIn = isLoggedIn,
-                userId = userId,
                 name = name,
                 email = email,
                 avatarUrl = avatarUrl,
@@ -112,9 +107,8 @@ class DesktopAccountManager private constructor() {
 
     fun saveSession(
         cookieHeader: String,
-        userId: String = "d3be4e1b-af5d-4dc4-80ae-8fb0e3ca969c",
-        userName: String = "Samurai Gaming",
-        userEmail: String = "Google Account Connected",
+        userName: String = "Namikaze aftab",
+        userEmail: String = "Google Account Connected (UTA-WAVE Mobile)",
         avatarUrl: String? = null,
         handle: String? = null
     ) {
@@ -123,7 +117,6 @@ class DesktopAccountManager private constructor() {
 
         val newProfile = DesktopUserProfile(
             isLoggedIn = true,
-            userId = userId,
             name = userName,
             email = userEmail,
             avatarUrl = avatarUrl,
@@ -135,7 +128,6 @@ class DesktopAccountManager private constructor() {
         try {
             val json = JSONObject().apply {
                 put("is_logged_in", true)
-                put("user_id", userId)
                 put("name", userName)
                 put("email", userEmail)
                 put("avatar_url", avatarUrl ?: "")
@@ -157,7 +149,6 @@ class DesktopAccountManager private constructor() {
         val clean = tokenString.trim()
         if (clean.isBlank()) return false
 
-        // Check if raw cookie or token format
         var cookieHeader = clean
         var name = defaultName
         var avatar: String? = null
@@ -175,18 +166,17 @@ class DesktopAccountManager private constructor() {
             saveSession(
                 cookieHeader = cookieHeader,
                 userName = name,
-                userEmail = "Google Account Connected",
+                userEmail = "Google Account Connected (UTA-WAVE Mobile)",
                 avatarUrl = avatar
             )
             return true
         }
 
-        // Even if just sapisid is provided
         if (clean.length > 20 && !clean.contains("=")) {
             saveSession(
                 cookieHeader = "SAPISID=$clean; __Secure-3PAPISID=$clean",
                 userName = defaultName,
-                userEmail = "Session Token Connected"
+                userEmail = "Session Token Connected (UTA-WAVE Mobile)"
             )
             return true
         }
