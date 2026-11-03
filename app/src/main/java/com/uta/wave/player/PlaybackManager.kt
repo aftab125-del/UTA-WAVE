@@ -17,11 +17,14 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.uta.wave.data.innertube.InnerTubeClient
+import com.uta.wave.data.innertube.PlayerClient
 import com.uta.wave.data.innertube.TrackItem
 import com.uta.wave.data.local.LocalDatabase
 import com.uta.wave.data.preferences.AppSettings
@@ -71,6 +74,7 @@ class PlaybackManager private constructor(private val context: Context) {
     private val localDatabase = LocalDatabase.getInstance(context)
     private val userPrefs = UserPreferences.getInstance(context)
     private val scope = CoroutineScope(Dispatchers.Main + Job())
+    val wakeLockHelper = PlaybackWakeLockHelper(context)
 
     var currentQueueProvider: WaveQueue? = null
 
@@ -83,7 +87,24 @@ class PlaybackManager private constructor(private val context: Context) {
         .setConnectTimeoutMs(15000)
         .setReadTimeoutMs(20000)
 
-    private val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+    private val baseDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
+    private val dataSourceFactory = ResolvingDataSource.Factory(
+        baseDataSourceFactory,
+        object : ResolvingDataSource.Resolver {
+            override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
+                val url = dataSpec.uri.toString()
+                if (url.contains("googlevideo.com")) {
+                    val playerClient = PlayerClient.forStreamUrl(url)
+                    val headers = playerClient.mediaHeaders()
+                    return dataSpec.buildUpon()
+                        .setHttpRequestHeaders(headers)
+                        .build()
+                }
+                return dataSpec
+            }
+        }
+    )
 
     private fun createPlayerInstance(): ExoPlayer {
         return ExoPlayer.Builder(context)
@@ -289,6 +310,7 @@ class PlaybackManager private constructor(private val context: Context) {
                         _state.update { it.copy(isBuffering = true) }
                     }
                     Player.STATE_READY -> {
+                        wakeLockHelper.releaseTransitionLock()
                         _state.update {
                             it.copy(
                                 isBuffering = false,
@@ -313,6 +335,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 if (exoPlayer != primaryPlayerInstance) return
                 _state.update { it.copy(isPlaying = isPlaying) }
                 if (isPlaying) {
+                    wakeLockHelper.acquireContinuousPlaybackLock()
                     startProgressTracker()
                     _state.value.currentTrack?.let { track ->
                         if (lastListeningTrackId != track.id) {
@@ -324,6 +347,7 @@ class PlaybackManager private constructor(private val context: Context) {
                         }
                     }
                 } else {
+                    wakeLockHelper.releaseContinuousPlaybackLock()
                     stopProgressTracker()
                 }
                 if (!isRemoteSync) {
@@ -368,9 +392,11 @@ class PlaybackManager private constructor(private val context: Context) {
 
                 val settings = userPrefs.settingsFlow.value
                 if (settings.autoSkipNextOnError && _state.value.queue.size > 1) {
+                    AppLogger.w("Stream error encountered, auto-skipping to next song...")
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                         android.widget.Toast.makeText(context, "Stream error, auto-skipping to next song...", android.widget.Toast.LENGTH_SHORT).show()
                     }
+                    wakeLockHelper.acquireTransitionLock(30_000L)
                     scope.launch {
                         delay(600)
                         next()
@@ -441,8 +467,53 @@ class PlaybackManager private constructor(private val context: Context) {
 
                     // Check for Standby Crossfade Trigger
                     checkAndTriggerCrossfade(currentPos, duration)
+
+                    // Proactive Next-Track Stream Pre-Resolution (Zero-Gap Transition)
+                    checkAndPreResolveNextTrack(currentPos, duration)
                 }
                 delay(100)
+            }
+        }
+    }
+
+    private var isPreResolvingNext = false
+    private var lastPreResolvedIndex: Int? = null
+
+    private fun checkAndPreResolveNextTrack(currentPos: Long, duration: Long) {
+        if (duration <= 10_000L || isPreResolvingNext) return
+        val remainingMs = duration - currentPos
+        val progressRatio = currentPos.toFloat() / duration.toFloat()
+
+        // Trigger when song is at 70% duration OR <= 35 seconds remaining
+        if (progressRatio >= 0.70f || remainingMs <= 35_000L) {
+            val q = _state.value.queue
+            val qIdx = _state.value.queueIndex
+            val nextIdx = getNextIndex(qIdx, q.size, _state.value.repeatMode, _state.value.isShuffle) ?: return
+            if (nextIdx == qIdx && _state.value.repeatMode != RepeatMode.ONE) return
+            if (lastPreResolvedIndex == nextIdx) return
+
+            val nextTrack = q.getOrNull(nextIdx) ?: return
+            if (getCachedStreamUrl(nextTrack.videoId) != null) {
+                lastPreResolvedIndex = nextIdx
+                return
+            }
+
+            isPreResolvingNext = true
+            scope.launch(Dispatchers.IO) {
+                try {
+                    AppLogger.i("⚡ Proactively pre-resolving next stream URL for \"${nextTrack.title}\" (${remainingMs}ms remaining)")
+                    wakeLockHelper.acquireTransitionLock(35_000L)
+                    val url = innerTubeClient.resolveStreamUrl(nextTrack.videoId)
+                    if (url != null) {
+                        setCachedStreamUrl(nextTrack.videoId, url)
+                        lastPreResolvedIndex = nextIdx
+                        AppLogger.i("⚡ Proactively cached stream URL for \"${nextTrack.title}\"")
+                    }
+                } catch (e: Exception) {
+                    AppLogger.w("Proactive pre-resolve failed: ${e.message}")
+                } finally {
+                    isPreResolvingNext = false
+                }
             }
         }
     }
@@ -508,7 +579,7 @@ class PlaybackManager private constructor(private val context: Context) {
         preArmJob?.cancel()
         preArmJob = scope.launch(Dispatchers.IO) {
             try {
-                AppLogger.i("▶ Pre-arming standby player for \"${nextTrack.title}\" (lead time: ${preArmManager.currentLeadTimeMs}ms)")
+                AppLogger.i("â–¶ Pre-arming standby player for \"${nextTrack.title}\" (lead time: ${preArmManager.currentLeadTimeMs}ms)")
                 val startPrepMs = System.currentTimeMillis()
                 val nextVideoId = nextTrack.videoId
                 val localDb = LocalDatabase.getInstance(context)
@@ -563,7 +634,7 @@ class PlaybackManager private constructor(private val context: Context) {
                                 isPreArmed = true
                                 isPreArming = false
                                 preArmedTrackId = nextTrack.id
-                                AppLogger.i("▶ Standby player pre-armed and ready for \"${nextTrack.title}\" in ${prepDuration}ms")
+                                AppLogger.i("â–¶ Standby player pre-armed and ready for \"${nextTrack.title}\" in ${prepDuration}ms")
                                 readyListener?.let { standbyPlayerInstance.removeListener(it) }
                             } else if (state == Player.STATE_IDLE) {
                                 isPreArming = false
@@ -586,7 +657,7 @@ class PlaybackManager private constructor(private val context: Context) {
         isCrossfading = true
         crossfadeJob?.cancel()
         crossfadeJob = scope.launch(Dispatchers.Main) {
-            AppLogger.i("▶ Starting Equal-Power Crossfade to \"${nextTrack.title}\" (${crossfadeDurationMs}ms)")
+            AppLogger.i("â–¶ Starting Equal-Power Crossfade to \"${nextTrack.title}\" (${crossfadeDurationMs}ms)")
 
             // 1. If not yet pre-armed (e.g. user scrubbed near track end), resolve stream immediately
             if (!isPreArmed || preArmedTrackId != nextTrack.id) {
@@ -732,7 +803,7 @@ class PlaybackManager private constructor(private val context: Context) {
             isPreArmed = false
             isPreArming = false
             preArmedTrackId = null
-            AppLogger.i("▶ Equal-Power Crossfade swapped successfully to \"${nextTrack.title}\"")
+            AppLogger.i("â–¶ Equal-Power Crossfade swapped successfully to \"${nextTrack.title}\"")
         }
     }
 
@@ -778,6 +849,19 @@ class PlaybackManager private constructor(private val context: Context) {
                     }
                     savePersistentQueue()
                     AppLogger.i("▶ Algorithmic radio ready with ${radioTracks.size} tracks for \"${track.title}\"")
+
+                    // Pre-resolve upcoming radio track immediately
+                    val nextRadioIdx = targetIndex + 1
+                    if (nextRadioIdx < radioTracks.size) {
+                        val upcoming = radioTracks[nextRadioIdx]
+                        if (getCachedStreamUrl(upcoming.videoId) == null) {
+                            wakeLockHelper.acquireTransitionLock(30_000L)
+                            innerTubeClient.resolveStreamUrl(upcoming.videoId)?.let { url ->
+                                setCachedStreamUrl(upcoming.videoId, url)
+                                AppLogger.i("⚡ Pre-cached radio track #$nextRadioIdx: \"${upcoming.title}\"")
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 AppLogger.w("Failed to populate initial radio tracks: ${e.message}")
@@ -884,6 +968,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
         savePersistentQueue()
 
+        wakeLockHelper.acquireTransitionLock(45_000L)
         resolveJob?.cancel()
         resolveJob = scope.launch {
             val videoId = track.videoId
@@ -902,14 +987,21 @@ class PlaybackManager private constructor(private val context: Context) {
                 }
                 else -> {
                     val cached = getCachedStreamUrl(videoId)
-                    cached ?: innerTubeClient.resolveStreamUrl(videoId)?.also {
-                        setCachedStreamUrl(videoId, it)
+                    cached ?: run {
+                        var resolved = innerTubeClient.resolveStreamUrl(videoId)
+                        if (resolved == null) {
+                            AppLogger.w("First resolution attempt failed for $videoId, retrying with wake lock...")
+                            wakeLockHelper.acquireTransitionLock(30_000L)
+                            delay(400)
+                            resolved = innerTubeClient.resolveStreamUrl(videoId)
+                        }
+                        resolved?.also { setCachedStreamUrl(videoId, it) }
                     }
                 }
             }
 
             if (streamUrl != null) {
-                AppLogger.i("▶ Resolved stream URL (${streamUrl.take(65)}...), setting ExoPlayer...")
+                AppLogger.i("â–¶ Resolved stream URL (${streamUrl.take(65)}...), setting ExoPlayer...")
                 val mediaMetadata = MediaMetadata.Builder()
                     .setTitle(track.title)
                     .setArtist(track.artist)
@@ -928,7 +1020,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 primaryPlayerInstance.setMediaItem(mediaItem)
                 primaryPlayerInstance.prepare()
                 primaryPlayerInstance.play()
-                AppLogger.i("▶ ExoPlayer.prepare() and play() called successfully")
+                AppLogger.i("â–¶ ExoPlayer.prepare() and play() called successfully")
 
                 if (!isRemoteSync) {
                     sync?.onLocalTrackChange(track, processedQueue)
@@ -1043,6 +1135,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
     fun next() {
         cancelCrossfade()
+        wakeLockHelper.acquireTransitionLock(45_000L)
         val sync = waveSyncManager
         if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
             sync.notifyGuestRestricted()
@@ -1069,6 +1162,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
     fun previous() {
         cancelCrossfade()
+        wakeLockHelper.acquireTransitionLock(45_000L)
         val sync = waveSyncManager
         if (sync != null && sync.isInRoom && !sync.canControlMusic && !isRemoteSync) {
             sync.notifyGuestRestricted()
@@ -1386,6 +1480,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     private fun handleTrackEnded() {
+        wakeLockHelper.acquireTransitionLock(45_000L)
         when (_state.value.repeatMode) {
             RepeatMode.ONE -> {
                 player.seekTo(0)
@@ -1457,10 +1552,10 @@ class PlaybackManager private constructor(private val context: Context) {
             try {
                 val provider = currentQueueProvider
                 val newTracks = if (provider != null && provider.hasNextPage()) {
-                    AppLogger.i("▶ Paging next batch from active queue provider (${provider.title})")
+                    AppLogger.i("â–¶ Paging next batch from active queue provider (${provider.title})")
                     provider.nextPage()
                 } else {
-                    AppLogger.i("▶ Seamlessly initiating YouTube Radio Queue for \"${currentTrack.title}\"")
+                    AppLogger.i("â–¶ Seamlessly initiating YouTube Radio Queue for \"${currentTrack.title}\"")
                     val radioQueue = YouTubeRadioQueue(
                         videoId = currentTrack.videoId,
                         initialTrack = currentTrack,
@@ -1486,7 +1581,7 @@ class PlaybackManager private constructor(private val context: Context) {
                             )
                         }
                         savePersistentQueue()
-                        AppLogger.i("▶ Auto-appended ${filtered.size} radio tracks to queue. Total: ${merged.size}")
+                        AppLogger.i("â–¶ Auto-appended ${filtered.size} radio tracks to queue. Total: ${merged.size}")
                     }
                 }
             } catch (e: Exception) {
@@ -1606,7 +1701,7 @@ class PlaybackManager private constructor(private val context: Context) {
                             isRadioActive = savedIsRadio
                         )
                     }
-                    AppLogger.i("▶ Restored persistent queue: ${restoredList.size} tracks, active=\"${activeTrack.title}\" at ${savedPos}ms")
+                    AppLogger.i("â–¶ Restored persistent queue: ${restoredList.size} tracks, active=\"${activeTrack.title}\" at ${savedPos}ms")
                 }
             } catch (e: Exception) {
                 AppLogger.e("Failed to restore persistent queue", e)
@@ -1635,6 +1730,7 @@ class PlaybackManager private constructor(private val context: Context) {
         resolveJob?.cancel()
         cancelCrossfade()
         abandonAppAudioFocus()
+        wakeLockHelper.releaseAll()
         WaveEqualizer.release()
         primaryPlayerInstance.release()
         standbyPlayerInstance.release()

@@ -109,7 +109,7 @@ data class AppSettings(
     val rememberShuffleAndRepeat: Boolean = true,
     val shufflePlaylistFirst: Boolean = false,
     val preventDuplicateTracksInQueue: Boolean = false,
-    val autoSkipNextOnError: Boolean = false,
+    val autoSkipNextOnError: Boolean = true,
 
     // Group 4: Misc & System Integration
     val stopMusicOnTaskClear: Boolean = true,
@@ -303,7 +303,7 @@ class UserPreferences private constructor(context: Context) {
             rememberShuffleAndRepeat = prefs.getBoolean("remember_shuffle_and_repeat", true),
             shufflePlaylistFirst = prefs.getBoolean("shuffle_playlist_first", false),
             preventDuplicateTracksInQueue = prefs.getBoolean("prevent_duplicate_tracks_in_queue", false),
-            autoSkipNextOnError = prefs.getBoolean("auto_skip_next_on_error", false),
+            autoSkipNextOnError = prefs.getBoolean("auto_skip_next_on_error", true),
 
             stopMusicOnTaskClear = prefs.getBoolean("stop_music_on_task_clear", true),
             pauseOnMute = prefs.getBoolean("pause_on_mute", false),
