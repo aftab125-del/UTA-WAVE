@@ -308,6 +308,9 @@ class WaveMediaService : MediaLibraryService() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        if (::playbackManager.isInitialized) {
+            playbackManager.wakeLockHelper.releaseAll()
+        }
         mediaSession?.run {
             release()
             mediaSession = null

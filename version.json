@@ -1,8 +1,8 @@
 {
-  "versionCode": 8,
-  "versionName": "1.1.6",
-  "title": "UTA-wave 1.1.6 Artist Cards & Search Categories",
-  "changelog": "\u2022 Added Artist cards with avatar, name, and subscriber count in search\n\u2022 Added Search Category filters: All, Songs, Artists, Albums, Playlists\n\u2022 Added Top Artist Hero card in All view with instant profile navigation\n\u2022 Direct navigation to Artist Screen and Album Screen from search results\n\u2022 Playlists search and instant playback support",
+  "versionCode": 9,
+  "versionName": "1.1.7",
+  "title": "UTA-wave 1.1.7 Uninterrupted Background Playback & Doze Fix",
+  "changelog": "\u2022 Fixed screen-off background playback stopping after ~3 songs in Android Doze mode\n\u2022 Added PlaybackWakeLockHelper with CPU transition lock and high-performance Wi-Fi lock\n\u2022 Added proactive zero-gap next-track stream pre-resolution during active playback\n\u2022 Integrated dynamic PlayerClient headers in ExoPlayer to prevent CDN 403 Forbidden disconnects\n\u2022 Added 'Uninterrupted Screen-Off Playback' setting with 1-click battery optimization exemption\n\u2022 Enabled auto-recovery retry on stream errors and auto-skip by default",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }

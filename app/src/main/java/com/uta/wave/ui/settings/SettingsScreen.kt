@@ -515,7 +515,7 @@ private fun AIHubSettingsSection(prefs: UserPreferences, settings: AppSettings) 
         )
 
         val providers = listOf(
-            Triple("GEMINI", "Google Gemini 2.0 Flash", "Free Official API Key • 15 RPM • Ultra Fast (< 1s)"),
+            Triple("GEMINI", "Google Gemini 2.0 Flash", "Free Official API Key â€¢ 15 RPM â€¢ Ultra Fast (< 1s)"),
             Triple("OPENROUTER", "OpenRouter / DeepSeek", "Custom BYO Key for GPT-4o, Claude 3.5, DeepSeek"),
             Triple("BUILTIN", "Free Neural Cloud", "Zero-setup public cloud fallback (no key needed)")
         )
@@ -636,7 +636,7 @@ private fun AIHubSettingsSection(prefs: UserPreferences, settings: AppSettings) 
                     color = Color.White.copy(alpha = 0.5f)
                 )
                 Text(
-                    text = "Get Free Key ↗",
+                    text = "Get Free Key â†—",
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
                     color = currentAccent,
                     modifier = Modifier.clickable {
@@ -1441,10 +1441,10 @@ private fun AppearanceSettingsSection(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = when {
-                            settings.pureBlack -> "AMOLED Pure Black • OLED power saving"
-                            settings.darkMode == "OFF" -> "Light Theme • Custom palette"
+                            settings.pureBlack -> "AMOLED Pure Black â€¢ OLED power saving"
+                            settings.darkMode == "OFF" -> "Light Theme â€¢ Custom palette"
                             settings.darkMode == "AUTO" -> "Following System Theme"
-                            else -> "Obsidian Dark • Custom palette"
+                            else -> "Obsidian Dark â€¢ Custom palette"
                         },
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                         color = Color.White.copy(alpha = 0.60f)
@@ -1631,7 +1631,7 @@ private fun AppearanceSettingsSection(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Permanent • AGSL shaders, miniplayer & navigation optics",
+                        text = "Permanent â€¢ AGSL shaders, miniplayer & navigation optics",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                         color = Color.White.copy(alpha = 0.60f)
                     )
@@ -2828,6 +2828,10 @@ private fun AppearanceSettingsSection(
 // -------------------------------------------------------------------------
 @Composable
 private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSettings) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var isBatteryExempt by remember {
+        mutableStateOf(com.uta.wave.util.BatteryOptimizationHelper.isBatteryOptimizationIgnored(context))
+    }
     val currentAccent = remember(settings.accentColorHex) {
         try {
             Color(android.graphics.Color.parseColor(settings.accentColorHex))
@@ -3719,7 +3723,7 @@ private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSett
             Column(modifier = Modifier.weight(1f)) {
                 Text("Equalizer", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp), color = Color.White)
                 Spacer(modifier = Modifier.height(2.dp))
-                Text("Pro-grade acoustic tuning • ${settings.equalizerPreset.replace("_", " ")}", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = currentAccent)
+                Text("Pro-grade acoustic tuning â€¢ ${settings.equalizerPreset.replace("_", " ")}", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = currentAccent)
             }
             Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null, tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(16.dp))
         }
@@ -3825,6 +3829,53 @@ private fun PlayerAudioSettingsSection(prefs: UserPreferences, settings: AppSett
             .background(Color(0xFF1E1522))
             .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
     ) {
+        // Uninterrupted Screen-Off Playback (Doze exemption)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    com.uta.wave.util.BatteryOptimizationHelper.requestIgnoreBatteryOptimization(context)
+                    // Refresh status after user interaction
+                    isBatteryExempt = com.uta.wave.util.BatteryOptimizationHelper.isBatteryOptimizationIgnored(context)
+                }
+                .padding(horizontal = 16.dp, vertical = 13.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Uninterrupted Screen-Off Playback",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    if (isBatteryExempt)
+                        "Battery optimization disabled — playback will not stop when screen is locked"
+                    else
+                        "Tap to exempt UTA-wave from battery restrictions to prevent playback stopping after ~3 songs",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = if (isBatteryExempt) Color(0xFF10B981) else Color(0xFFF59E0B)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isBatteryExempt) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFF59E0B).copy(alpha = 0.2f))
+                    .border(1.dp, if (isBatteryExempt) Color(0xFF10B981) else Color(0xFFF59E0B), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = if (isBatteryExempt) "Unrestricted" else "Exempt Now",
+                    color = if (isBatteryExempt) Color(0xFF10B981) else Color(0xFFF59E0B),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        SettingsItemDivider()
+
         SettingsToggleRow(
             title = "Stop music on task clear",
             subtitle = "Stop music service when app is swiped away from recent apps",
@@ -4041,14 +4092,14 @@ private fun ContentSettingsSection(prefs: UserPreferences, settings: AppSettings
 
     val countries = listOf(
         Pair("GLOBAL", "Global (Worldwide)"),
-        Pair("US", "United States 🇺🇸"),
-        Pair("IN", "India 🇮🇳"),
-        Pair("JP", "Japan 🇯🇵"),
-        Pair("GB", "United Kingdom 🇬🇧"),
-        Pair("KR", "South Korea 🇰🇷"),
-        Pair("DE", "Germany 🇩🇪"),
-        Pair("CA", "Canada 🇨🇦"),
-        Pair("BR", "Brazil 🇧🇷")
+        Pair("US", "United States ðŸ‡ºðŸ‡¸"),
+        Pair("IN", "India ðŸ‡®ðŸ‡³"),
+        Pair("JP", "Japan ðŸ‡¯ðŸ‡µ"),
+        Pair("GB", "United Kingdom ðŸ‡¬ðŸ‡§"),
+        Pair("KR", "South Korea ðŸ‡°ðŸ‡·"),
+        Pair("DE", "Germany ðŸ‡©ðŸ‡ª"),
+        Pair("CA", "Canada ðŸ‡¨ðŸ‡¦"),
+        Pair("BR", "Brazil ðŸ‡§ðŸ‡·")
     )
 
     Column(
@@ -4441,7 +4492,7 @@ private fun SystemUpdateSettingsSection(context: Context) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
                     Text(text = "UTA-wave", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold), color = Color.White)
-                    Text(text = "Version 1.1.0 • Build 20261024", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f))
+                    Text(text = "Version 1.1.0 â€¢ Build 20261024", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f))
                 }
                 Box(
                     modifier = Modifier
@@ -4493,13 +4544,13 @@ private fun SystemUpdateSettingsSection(context: Context) {
             .padding(16.dp)
     ) {
         val features = listOf(
-            "⚡ Lossless Master Audio Engine (256k AAC / 160k Opus)",
-            "🌌 Landscape Ambient Mode with Kinetic Word Flow Lyrics",
-            "✂️ Set as Ringtone 30s Audio Trimmer & M4A/MP3 Exporter",
-            "💾 Lossless Offline Audio Downloads Manager",
-            "👤 YouTube Music Auth & Channel Profile Avatar Sync",
-            "📊 Weekly Listening Summary with 7-Day Pill Bar Chart & Vibe Callout",
-            "🎛️ Complete 11-Domain Settings & Customization Hub"
+            "âš¡ Lossless Master Audio Engine (256k AAC / 160k Opus)",
+            "ðŸŒŒ Landscape Ambient Mode with Kinetic Word Flow Lyrics",
+            "âœ‚ï¸ Set as Ringtone 30s Audio Trimmer & M4A/MP3 Exporter",
+            "ðŸ’¾ Lossless Offline Audio Downloads Manager",
+            "ðŸ‘¤ YouTube Music Auth & Channel Profile Avatar Sync",
+            "ðŸ“Š Weekly Listening Summary with 7-Day Pill Bar Chart & Vibe Callout",
+            "ðŸŽ›ï¸ Complete 11-Domain Settings & Customization Hub"
         )
         features.forEach { feat ->
             Text(text = feat, style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp), color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(vertical = 4.dp))
@@ -4639,7 +4690,7 @@ private fun AboutSettingsSection(context: Context) {
                         "LRCLIB Synchronized Lyrics (MIT)"
                     )
                     licenses.forEach { lic ->
-                        Text(text = "• $lic", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp), color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(vertical = 3.dp))
+                        Text(text = "â€¢ $lic", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp), color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(vertical = 3.dp))
                     }
                 }
             },
@@ -4672,7 +4723,7 @@ private fun AboutSettingsSection(context: Context) {
         }
         Spacer(modifier = Modifier.height(12.dp))
         Text(text = "UTA-wave", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold), color = Color.White)
-        Text(text = "A Universe of Music • v1.1.5", style = MaterialTheme.typography.bodySmall, color = Color(0xFFF2AEC7))
+        Text(text = "A Universe of Music â€¢ v1.1.5", style = MaterialTheme.typography.bodySmall, color = Color(0xFFF2AEC7))
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "A cinematic, dark, futuristic music streaming platform built with Next.js architecture principles, ExoPlayer lossless audio, dynamic ambient flow lyrics, and Echo Music interface design.",
@@ -4718,7 +4769,7 @@ private fun AboutSettingsSection(context: Context) {
                     color = Color.White
                 )
                 Text(
-                    text = "Owner & Creator • UTA-WAVE",
+                    text = "Owner & Creator â€¢ UTA-WAVE",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFF2AEC7)
                 )
