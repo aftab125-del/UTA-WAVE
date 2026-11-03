@@ -41,6 +41,7 @@ import com.uta.wave.desktop.audio.WindowsAudioPlayerEngine
 import com.uta.wave.desktop.data.DesktopDatabase
 import com.uta.wave.desktop.data.DesktopMusicService
 import com.uta.wave.desktop.data.DesktopPlaylist
+import com.uta.wave.desktop.ui.DesktopFloatingNavBar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -230,32 +231,18 @@ fun main() = application {
                     }
                 }
 
-                // Main Content Workspace (Sidebar + View Area)
-                Row(
+                // Main Content Canvas with Floating Liquid Glass Navigation Dock
+                Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    // Left Navigation Sidebar
-                    DesktopSidebar(
-                        selectedTab = currentTab,
-                        onTabSelected = { currentTab = it }
-                    )
-
-                    // Vertical Divider
+                    // Full-Bleed Content Workspace
                     Box(
                         modifier = Modifier
-                            .fillMaxHeight()
-                            .width(1.dp)
-                            .background(SurfaceBorder)
-                    )
-
-                    // Tab View Workspace
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .padding(20.dp)
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp, vertical = 16.dp)
+                            .padding(bottom = 72.dp) // Leave breathing room for the floating dock
                     ) {
                         when (currentTab) {
                             DesktopNavTab.EXPLORE -> ExploreWorkspace(
@@ -284,6 +271,15 @@ fun main() = application {
                             DesktopNavTab.SETTINGS -> SettingsWorkspace()
                         }
                     }
+
+                    // Iconic UTA-WAVE Liquid Glass Floating Navigation Bar (Docked Bottom-Center)
+                    DesktopFloatingNavBar(
+                        selectedTab = currentTab,
+                        onTabSelected = { currentTab = it },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 12.dp)
+                    )
                 }
 
                 // Bottom Persistent Playback Deck
@@ -865,8 +861,13 @@ fun DesktopPlayerDock(
         modifier = Modifier
             .fillMaxWidth()
             .height(96.dp),
-        color = SurfaceDark,
-        border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+        color = Color(0xF2100C18),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            Brush.verticalGradient(
+                listOf(Color.White.copy(alpha = 0.16f), Color.White.copy(alpha = 0.04f))
+            )
+        )
     ) {
         Row(
             modifier = Modifier
