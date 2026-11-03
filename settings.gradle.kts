@@ -27,3 +27,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "UTA-wave"
 include(":app")
+include(":core")
+include(":audio")

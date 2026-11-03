@@ -78,5 +78,9 @@ dependencies {
     // Reorderable Drag and Drop
     implementation("sh.calvin.reorderable:reorderable:3.1.0")
 
+    // Multiplatform Core & Audio modules
+    implementation(project(":core"))
+    implementation(project(":audio"))
+
     testImplementation(libs.junit)
 }
