@@ -41,7 +41,6 @@ import com.uta.wave.desktop.audio.WindowsAudioPlayerEngine
 import com.uta.wave.desktop.data.DesktopDatabase
 import com.uta.wave.desktop.data.DesktopMusicService
 import com.uta.wave.desktop.data.DesktopPlaylist
-import com.uta.wave.desktop.data.DesktopSupabaseClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,7 +76,6 @@ fun main() = application {
     val musicService = remember { DesktopMusicService() }
     val accountManager = remember { DesktopAccountManager.getInstance() }
     val database = remember { DesktopDatabase.getInstance() }
-    val supabaseClient = remember { DesktopSupabaseClient.getInstance() }
 
     val playbackState by audioEngine.state.collectAsState()
     val userProfile by accountManager.profile.collectAsState()
@@ -146,28 +144,21 @@ fun main() = application {
         }
     }
 
-    // Auto-sync on startup if library is empty or when profile changes
-    LaunchedEffect(userProfile.userId) {
-        if (libraryData.playlists.isEmpty()) {
-            isSyncing = true
-            try {
-                supabaseClient.syncAll(userProfile.userId)
-            } catch (e: Exception) {
-                println("[Main] Initial sync error: ${e.message}")
-            } finally {
-                isSyncing = false
-            }
-        }
-    }
-
-    fun triggerManualSync() {
+    fun triggerMobileSync() {
         if (isSyncing) return
         isSyncing = true
         scope.launch {
             try {
-                supabaseClient.syncAll(userProfile.userId)
+                val cookie = userProfile.cookie
+                if (!cookie.isNullOrBlank()) {
+                    statusMessage = "Syncing with UTA-WAVE Mobile account..."
+                    musicService.syncFullLibrary(cookie, userProfile.sapisid)
+                    statusMessage = null
+                } else {
+                    statusMessage = "Connected to UTA-WAVE Mobile account."
+                }
             } catch (e: Exception) {
-                statusMessage = "Sync failed: ${e.message}"
+                statusMessage = "Sync notice: ${e.message}"
             } finally {
                 isSyncing = false
             }
@@ -267,7 +258,7 @@ fun main() = application {
                                 library = libraryData,
                                 isSyncing = isSyncing,
                                 currentlyPlayingVideoId = playbackState.videoId,
-                                onSyncNow = ::triggerManualSync,
+                                onSyncNow = ::triggerMobileSync,
                                 onPlayPlaylist = ::playPlaylist,
                                 onShufflePlaylist = ::shufflePlaylist,
                                 onPlayTrackInPlaylist = { playlist, index ->
@@ -320,11 +311,17 @@ fun main() = application {
                     isSyncing = isSyncing,
                     onDismiss = { showAccountDialog = false },
                     onSyncNow = {
-                        triggerManualSync()
+                        triggerMobileSync()
                     },
                     onImportToken = { token ->
-                        accountManager.importToken(token, userProfile.name)
-                        triggerManualSync()
+                        accountManager.importToken(token, "Namikaze aftab")
+                        triggerMobileSync()
+                    },
+                    onImportBackup = { jsonStr ->
+                        val ok = database.importMobileBackupJson(jsonStr)
+                        if (ok) {
+                            statusMessage = "Restored mobile library backup successfully!"
+                        }
                     }
                 )
             }
@@ -385,7 +382,7 @@ fun DesktopTopHeader(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Device: $activeSessionDevice",
+                        text = "Device: Windows PC • Paired with Mobile",
                         fontSize = 11.sp,
                         color = TextPrimary
                     )
@@ -411,7 +408,7 @@ fun DesktopTopHeader(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = if (isCloudSynced) "Synced with Mobile & Web" else "Syncing...",
+                        text = if (isCloudSynced) "Synced with UTA-WAVE Mobile" else "Syncing...",
                         fontSize = 11.sp,
                         color = TextPrimary
                     )
@@ -480,14 +477,17 @@ fun AccountSyncDialog(
     isSyncing: Boolean,
     onDismiss: () -> Unit,
     onSyncNow: () -> Unit,
-    onImportToken: (String) -> Unit
+    onImportToken: (String) -> Unit,
+    onImportBackup: (String) -> Unit
 ) {
     var tokenInput by remember { mutableStateOf("") }
+    var backupInput by remember { mutableStateOf("") }
     var showTokenField by remember { mutableStateOf(false) }
+    var showBackupField by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.width(480.dp),
+            modifier = Modifier.width(500.dp),
             shape = RoundedCornerShape(16.dp),
             color = SurfaceDark,
             border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
@@ -499,7 +499,7 @@ fun AccountSyncDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Account & Cloud Sync", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("UTA-WAVE Mobile Account & Sync", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Filled.Close, contentDescription = "Close", tint = TextSecondary)
                     }
@@ -548,13 +548,36 @@ fun AccountSyncDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF10B981)))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Synced with Mobile & Web", fontSize = 11.sp, color = Color(0xFF34D399))
+                                Text("Synced with UTA-WAVE Mobile", fontSize = 11.sp, color = Color(0xFF34D399))
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Mobile Pairing Instructions
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF151926),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("📱 To pair with your UTA-WAVE Mobile phone:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "1. Open UTA-WAVE on your phone\n" +
+                            "2. Go to Account → tap 'LOGIN WITH TOKEN: Tap to show token'\n" +
+                            "3. Tap 'Copy Token' and paste below to sync.",
+                            fontSize = 11.sp,
+                            color = TextSecondary,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Sync Library button
                 Button(
@@ -567,34 +590,37 @@ fun AccountSyncDialog(
                     if (isSyncing) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Syncing Cloud Library...", color = Color.White)
+                        Text("Syncing with Mobile...", color = Color.White)
                     } else {
                         Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Sync Cloud Library Now", color = Color.White, fontWeight = FontWeight.SemiBold)
+                        Text("Sync Mobile Library Now", color = Color.White, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Optional Mobile Token Import
+                // Paste Mobile Token Button
                 TextButton(
                     onClick = { showTokenField = !showTokenField },
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    Icon(Icons.Filled.Key, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        if (showTokenField) "▲ Hide Mobile Token Import" else "▼ Import Session Token from Mobile",
+                        if (showTokenField) "▲ Hide Mobile Token Input" else "▼ Paste Token from Mobile Account",
                         fontSize = 12.sp,
-                        color = AccentPurple
+                        color = AccentPurple,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
 
                 if (showTokenField) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = tokenInput,
                         onValueChange = { tokenInput = it },
-                        placeholder = { Text("Paste cookie or token from Mobile", fontSize = 11.sp, color = TextSecondary) },
+                        placeholder = { Text("Paste cookie / token from Mobile", fontSize = 11.sp, color = TextSecondary) },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 3,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -613,9 +639,55 @@ fun AccountSyncDialog(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                    ) {
+                        Text("Connect Mobile Account & Sync", fontSize = 12.sp, color = Color.White)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Import Mobile Backup JSON option
+                TextButton(
+                    onClick = { showBackupField = !showBackupField },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.FileUpload, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        if (showBackupField) "▲ Hide Backup Import" else "▼ Import uta_wave_library_backup.json",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+
+                if (showBackupField) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = backupInput,
+                        onValueChange = { backupInput = it },
+                        placeholder = { Text("Paste uta_wave_library_backup.json content...", fontSize = 11.sp, color = TextSecondary) },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 4,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (backupInput.isNotBlank()) {
+                                onImportBackup(backupInput)
+                                backupInput = ""
+                                showBackupField = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF262A3B))
                     ) {
-                        Text("Apply Token & Re-sync", fontSize = 12.sp, color = TextPrimary)
+                        Text("Restore Mobile Backup", fontSize = 12.sp, color = TextPrimary)
                     }
                 }
             }
@@ -893,9 +965,9 @@ fun LibraryWorkspace(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("Your Cloud Library", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("UTA-WAVE Mobile Library", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Synced playlists, Liked Songs, and custom collections mirrored across devices.", fontSize = 13.sp, color = TextSecondary)
+                    Text("Playlists, collections, and liked songs synced with your Namikaze aftab mobile account.", fontSize = 13.sp, color = TextSecondary)
                 }
 
                 Button(

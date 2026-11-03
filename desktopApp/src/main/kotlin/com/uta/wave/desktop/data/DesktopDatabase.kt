@@ -196,4 +196,80 @@ class DesktopDatabase private constructor() {
             saveLibrary(current, _library.value.likedSongs)
         }
     }
+
+    fun importMobileBackupJson(jsonString: String): Boolean {
+        try {
+            val root = JSONObject(jsonString)
+            val newPlaylists = mutableListOf<DesktopPlaylist>()
+            val newLiked = mutableListOf<TrackItem>()
+
+            val favsArray = root.optJSONArray("favorites")
+            if (favsArray != null) {
+                for (i in 0 until favsArray.length()) {
+                    val obj = favsArray.optJSONObject(i) ?: continue
+                    val vid = obj.optString("videoId").ifBlank { obj.optString("id").removePrefix("youtube:") }
+                    if (vid.isNotBlank()) {
+                        newLiked.add(
+                            TrackItem(
+                                id = "youtube:$vid",
+                                videoId = vid,
+                                title = obj.optString("title", "Unknown"),
+                                artist = obj.optString("artist", "Unknown"),
+                                artworkUrl = obj.optString("artworkUrl", ""),
+                                durationSeconds = obj.optInt("durationSeconds", 0)
+                            )
+                        )
+                    }
+                }
+            }
+
+            val playlistsArray = root.optJSONArray("playlists")
+            if (playlistsArray != null) {
+                for (i in 0 until playlistsArray.length()) {
+                    val pObj = playlistsArray.optJSONObject(i) ?: continue
+                    val pId = pObj.optString("id", java.util.UUID.randomUUID().toString())
+                    val pName = pObj.optString("name", "Mobile Playlist")
+                    val pDesc = pObj.optString("description").takeIf { !it.isNullOrBlank() }
+
+                    val tracksArray = pObj.optJSONArray("tracks") ?: JSONArray()
+                    val pTracks = mutableListOf<TrackItem>()
+                    for (j in 0 until tracksArray.length()) {
+                        val tObj = tracksArray.optJSONObject(j) ?: continue
+                        val vid = tObj.optString("videoId").ifBlank { tObj.optString("id").removePrefix("youtube:") }
+                        if (vid.isNotBlank()) {
+                            pTracks.add(
+                                TrackItem(
+                                    id = "youtube:$vid",
+                                    videoId = vid,
+                                    title = tObj.optString("title", "Unknown"),
+                                    artist = tObj.optString("artist", "Unknown"),
+                                    artworkUrl = tObj.optString("artworkUrl", ""),
+                                    durationSeconds = tObj.optInt("durationSeconds", 0)
+                                )
+                            )
+                        }
+                    }
+
+                    newPlaylists.add(
+                        DesktopPlaylist(
+                            id = pId,
+                            name = pName,
+                            description = pDesc,
+                            trackCount = pTracks.size,
+                            coverUrl = pTracks.firstOrNull()?.artworkUrl,
+                            tracks = pTracks
+                        )
+                    )
+                }
+            }
+
+            if (newPlaylists.isNotEmpty() || newLiked.isNotEmpty()) {
+                saveLibrary(newPlaylists, newLiked)
+                return true
+            }
+        } catch (e: Exception) {
+            println("[DesktopDatabase] Failed to import mobile backup: ${e.message}")
+        }
+        return false
+    }
 }
