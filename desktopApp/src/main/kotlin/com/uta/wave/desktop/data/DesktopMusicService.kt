@@ -1,6 +1,8 @@
 package com.uta.wave.desktop.data
 
 import com.uta.wave.core.model.TrackItem
+import com.uta.wave.desktop.account.DesktopAccountManager
+import com.uta.wave.desktop.account.DesktopUserProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -380,5 +382,311 @@ class DesktopMusicService(
 
         // Fallback to whatever audio format is available
         return candidates.maxByOrNull { it.third }?.first
+    }
+
+    // -------------------------------------------------------------------------
+    // User Account & Library Cloud Synchronization
+    // -------------------------------------------------------------------------
+
+    fun applyAuthHeaders(builder: Request.Builder, cookie: String?, sapisid: String?) {
+        if (!cookie.isNullOrBlank()) {
+            builder.addHeader("Cookie", cookie)
+        }
+        val resolvedSapisid = sapisid ?: cookie?.let { extractCookiePart(it, "SAPISID") ?: extractCookiePart(it, "__Secure-3PAPISID") }
+        if (!resolvedSapisid.isNullOrBlank()) {
+            val timestamp = System.currentTimeMillis() / 1000
+            val input = "$timestamp $resolvedSapisid https://music.youtube.com"
+            val md = java.security.MessageDigest.getInstance("SHA-1")
+            val digest = md.digest(input.toByteArray(Charsets.UTF_8))
+            val sha1 = digest.joinToString("") { b -> "%02x".format(b) }
+            builder.addHeader("Authorization", "SAPISIDHASH ${timestamp}_$sha1")
+        }
+    }
+
+    private fun extractCookiePart(cookie: String, key: String): String? {
+        val regex = Regex("(?:^|;\\s*)$key=([^;]+)")
+        return regex.find(cookie)?.groupValues?.get(1)
+    }
+
+    suspend fun fetchAccountProfile(cookie: String, sapisid: String? = null): DesktopUserProfile? = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+            }
+            val requestBuilder = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/account/account_menu")
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Origin", "https://music.youtube.com")
+                .header("Referer", "https://music.youtube.com/")
+                .header("X-YouTube-Client-Name", "67")
+                .header("X-YouTube-Client-Version", CLIENT_VERSION)
+
+            applyAuthHeaders(requestBuilder, cookie, sapisid)
+
+            val request = requestBuilder.post(payload.toString().toRequestBody(JSON_MEDIA_TYPE)).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val body = response.body?.string() ?: return@withContext null
+                val root = JSONObject(body)
+
+                // Locate active account header in account menu
+                val actions = root.optJSONArray("actions") ?: return@withContext null
+                for (i in 0 until actions.length()) {
+                    val action = actions.optJSONObject(i) ?: continue
+                    val header = action.optJSONObject("openPopupAction")
+                        ?.optJSONObject("popup")
+                        ?.optJSONObject("multiPageMenuRenderer")
+                        ?.optJSONObject("header")
+                        ?.optJSONObject("activeAccountHeaderRenderer") ?: continue
+
+                    val name = header.optJSONObject("accountName")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: header.optJSONObject("accountName")?.optString("simpleText")
+                        ?: "Namikaze aftab"
+
+                    val email = header.optJSONObject("email")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: header.optJSONObject("email")?.optString("simpleText")
+                        ?: "Google Account Connected"
+
+                    val handle = header.optJSONObject("channelHandle")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+
+                    val thumbs = header.optJSONObject("accountPhoto")?.optJSONArray("thumbnails")
+                    var avatarUrl = if (thumbs != null && thumbs.length() > 0) {
+                        thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+                    } else null
+                    if (avatarUrl != null && avatarUrl.startsWith("//")) {
+                        avatarUrl = "https:$avatarUrl"
+                    }
+
+                    return@withContext DesktopUserProfile(
+                        isLoggedIn = true,
+                        name = name,
+                        email = email,
+                        avatarUrl = avatarUrl,
+                        handle = handle,
+                        cookie = cookie,
+                        sapisid = sapisid
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            println("[DesktopMusicService] fetchAccountProfile error: ${e.message}")
+        }
+        null
+    }
+
+    suspend fun fetchUserPlaylists(cookie: String, sapisid: String? = null): List<DesktopPlaylist> = withContext(Dispatchers.IO) {
+        val playlists = mutableListOf<DesktopPlaylist>()
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("browseId", "FEmusic_liked_playlists")
+            }
+            val reqBuilder = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/browse")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this, cookie, sapisid)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+
+            client.newCall(reqBuilder.build()).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val body = response.body?.string() ?: return@withContext emptyList()
+                val root = JSONObject(body)
+                parseUserPlaylistsRecursively(root, playlists)
+                println("[DesktopMusicService] Discovered ${playlists.size} playlists from YouTube Music")
+            }
+        } catch (e: Exception) {
+            println("[DesktopMusicService] fetchUserPlaylists error: ${e.message}")
+        }
+        playlists
+    }
+
+    private fun parseUserPlaylistsRecursively(json: Any?, outPlaylists: MutableList<DesktopPlaylist>) {
+        when (json) {
+            is JSONObject -> {
+                if (json.has("musicTwoRowItemRenderer")) {
+                    val renderer = json.optJSONObject("musicTwoRowItemRenderer")
+                    if (renderer != null) {
+                        val title = renderer.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text") ?: ""
+                        val navEndpoint = renderer.optJSONObject("navigationEndpoint")
+                        val browseId = navEndpoint?.optJSONObject("browseEndpoint")?.optString("browseId")
+                            ?: navEndpoint?.optJSONObject("watchPlaylistEndpoint")?.optString("playlistId")
+
+                        val cleanId = browseId?.removePrefix("VL")?.removePrefix("MPSP") ?: ""
+                        val ignored = setOf("LM", "VLLM", "LL", "VLLL", "SE", "VLSE", "WL", "VLWL", "RDPN")
+
+                        if (cleanId.isNotBlank() && title.isNotBlank() && !ignored.contains(cleanId.uppercase())) {
+                            val thumbUrl = renderer.optJSONObject("thumbnailRenderer")
+                                ?.optJSONObject("musicThumbnailRenderer")
+                                ?.optJSONObject("thumbnail")
+                                ?.optJSONArray("thumbnails")
+                                ?.let { thumbs ->
+                                    thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+                                }
+
+                            val subtitle = renderer.optJSONObject("subtitle")?.optJSONArray("runs")?.let { runs ->
+                                (0 until runs.length()).joinToString("") { runs.optJSONObject(it)?.optString("text") ?: "" }
+                            }
+                            val count = subtitle?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() } ?: 0
+
+                            if (outPlaylists.none { it.id == cleanId }) {
+                                outPlaylists.add(
+                                    DesktopPlaylist(
+                                        id = cleanId,
+                                        name = title,
+                                        description = subtitle,
+                                        trackCount = count,
+                                        coverUrl = thumbUrl
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    parseUserPlaylistsRecursively(json.opt(keys.next()), outPlaylists)
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until json.length()) {
+                    parseUserPlaylistsRecursively(json.opt(i), outPlaylists)
+                }
+            }
+        }
+    }
+
+    suspend fun getPlaylist(playlistId: String, cookie: String? = null, sapisid: String? = null): Pair<String, List<TrackItem>> = withContext(Dispatchers.IO) {
+        val cleanId = playlistId.removePrefix("VL")
+        val browseId = if (cleanId.startsWith("VL")) cleanId else "VL$cleanId"
+        val tracks = mutableListOf<TrackItem>()
+        var playlistTitle = "Playlist"
+
+        try {
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("browseId", browseId)
+            }
+            val reqBuilder = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/browse")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this, cookie, sapisid)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+
+            client.newCall(reqBuilder.build()).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (body != null) {
+                        val root = JSONObject(body)
+                        playlistTitle = root.optJSONObject("microformat")
+                            ?.optJSONObject("microformatDataRenderer")
+                            ?.optString("title", "Playlist") ?: "Playlist"
+
+                        var nextContinuation = parsePlaylistTracks(root, tracks)
+
+                        // Follow continuations up to 500 tracks
+                        var pages = 0
+                        while (!nextContinuation.isNullOrBlank() && pages < 10) {
+                            pages++
+                            val contPayload = JSONObject().apply {
+                                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                                put("continuation", nextContinuation)
+                            }
+                            val contReq = Request.Builder()
+                                .url("$INNERTUBE_BASE_URL/browse?continuation=$nextContinuation")
+                                .apply {
+                                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                                    applyAuthHeaders(this, cookie, sapisid)
+                                }
+                                .post(contPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                                .build()
+
+                            client.newCall(contReq).execute().use { contRes ->
+                                if (contRes.isSuccessful) {
+                                    val contBody = contRes.body?.string() ?: ""
+                                    nextContinuation = parsePlaylistTracks(JSONObject(contBody), tracks)
+                                } else {
+                                    nextContinuation = null
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            println("[DesktopMusicService] getPlaylist error: ${e.message}")
+        }
+        Pair(playlistTitle, tracks)
+    }
+
+    private fun parsePlaylistTracks(json: JSONObject, outTracks: MutableList<TrackItem>): String? {
+        val contents = json.optJSONObject("contents")
+            ?.optJSONObject("twoColumnBrowseResultsRenderer")
+            ?.optJSONArray("secondaryContents")
+            ?.optJSONObject(0)
+            ?.optJSONObject("musicPlaylistShelfRenderer")
+            ?.optJSONArray("contents")
+            ?: json.optJSONObject("continuationContents")
+                ?.optJSONObject("musicPlaylistShelfContinuation")
+                ?.optJSONArray("contents")
+            ?: return null
+
+        var nextToken: String? = null
+
+        for (i in 0 until contents.length()) {
+            val item = contents.optJSONObject(i) ?: continue
+            val renderer = item.optJSONObject("musicResponsiveListItemRenderer")
+            if (renderer != null) {
+                parseTrackItem(renderer)?.let { track ->
+                    if (outTracks.none { it.videoId == track.videoId }) {
+                        outTracks.add(track)
+                    }
+                }
+            }
+            val contItem = item.optJSONObject("continuationItemRenderer")
+            if (contItem != null) {
+                nextToken = contItem.optJSONObject("continuationEndpoint")
+                    ?.optJSONObject("continuationCommand")
+                    ?.optString("token")
+            }
+        }
+        return nextToken
+    }
+
+    suspend fun fetchLikedTracks(cookie: String, sapisid: String? = null): List<TrackItem> {
+        val (_, tracks) = getPlaylist("LM", cookie, sapisid)
+        return tracks
+    }
+
+    suspend fun syncFullLibrary(cookie: String, sapisid: String? = null): DesktopLibrary = withContext(Dispatchers.IO) {
+        println("[DesktopMusicService] Initiating full library sync...")
+        val rawPlaylists = fetchUserPlaylists(cookie, sapisid)
+        val hydratedPlaylists = mutableListOf<DesktopPlaylist>()
+
+        for (p in rawPlaylists) {
+            println("[DesktopMusicService] Hydrating tracks for playlist: ${p.name} (${p.id})...")
+            val (title, tracks) = getPlaylist(p.id, cookie, sapisid)
+            hydratedPlaylists.add(
+                p.copy(
+                    name = if (title.isNotBlank() && title != "Playlist") title else p.name,
+                    tracks = tracks,
+                    trackCount = if (tracks.isNotEmpty()) tracks.size else p.trackCount,
+                    coverUrl = p.coverUrl ?: tracks.firstOrNull()?.artworkUrl
+                )
+            )
+        }
+
+        val likedTracks = fetchLikedTracks(cookie, sapisid)
+        println("[DesktopMusicService] Library sync complete: ${hydratedPlaylists.size} playlists, ${likedTracks.size} liked songs.")
+
+        DesktopDatabase.getInstance().saveLibrary(hydratedPlaylists, likedTracks)
+        DesktopDatabase.getInstance().library.value
     }
 }
