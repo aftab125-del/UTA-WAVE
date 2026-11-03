@@ -98,8 +98,11 @@ fun main() = application {
 
     Window(
         onCloseRequest = {
-            audioEngine.release()
+            try {
+                audioEngine.release()
+            } catch (_: Exception) {}
             exitApplication()
+            kotlin.system.exitProcess(0)
         },
         state = windowState,
         title = "UTA-WAVE — A Universe of Music",
