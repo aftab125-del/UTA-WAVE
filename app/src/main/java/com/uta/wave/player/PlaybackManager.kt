@@ -1389,44 +1389,78 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
-    private fun spreadByArtist(tracks: List<TrackItem>): List<TrackItem> {
-        if (tracks.size <= 2) return tracks
-        val grouped = tracks.groupBy { it.artist.trim().lowercase() }
-            .values
-            .sortedByDescending { it.size }
-            .map { it.toMutableList() }
-            .toMutableList()
+    private val secureRandom = java.security.SecureRandom()
+    private val recentShuffleOpeningIds = java.util.concurrent.ConcurrentLinkedDeque<String>()
+    private val maxRecentOpeningHistory = 15
 
-        val result = mutableListOf<TrackItem>()
-        var lastArtist: String? = null
-
-        while (grouped.isNotEmpty()) {
-            val candidateGroup = grouped.firstOrNull { it.first().artist.trim().lowercase() != lastArtist }
-                ?: grouped.first()
-
-            val nextTrack = candidateGroup.removeAt(0)
-            result.add(nextTrack)
-            lastArtist = nextTrack.artist.trim().lowercase()
-
-            if (candidateGroup.isEmpty()) {
-                grouped.remove(candidateGroup)
-            }
-            grouped.sortByDescending { it.size }
-        }
-        return result
-    }
-
+    /**
+     * Fair, high-entropy cryptographic Fisher-Yates shuffle with uniform opening track
+     * selection, recency history penalty (avoiding repeating the last 15 opening tracks),
+     * and local adjacent-artist relaxation swap (eliminating artist frequency bias).
+     */
     fun smartShuffle(tracks: List<TrackItem>, currentTrack: TrackItem? = null): List<TrackItem> {
         if (tracks.size <= 1) return tracks
-        val rest = if (currentTrack != null) {
-            tracks.filter { it.id != currentTrack.id }.toMutableList()
+
+        // 1. Determine opening track
+        val openingTrack: TrackItem = if (currentTrack != null) {
+            currentTrack
         } else {
-            tracks.toMutableList()
+            // Tapping "Shuffle": Pick fairly from tracks, avoiding recent opening history if possible
+            val candidatePool = tracks.toList()
+            var chosen = candidatePool[secureRandom.nextInt(candidatePool.size)]
+            if (candidatePool.size > maxRecentOpeningHistory) {
+                var attempts = 0
+                while (attempts < 12 && (chosen.id in recentShuffleOpeningIds || chosen.videoId in recentShuffleOpeningIds)) {
+                    chosen = candidatePool[secureRandom.nextInt(candidatePool.size)]
+                    attempts++
+                }
+            }
+            recentShuffleOpeningIds.addLast(chosen.id)
+            if (chosen.videoId.isNotBlank()) recentShuffleOpeningIds.addLast(chosen.videoId)
+            while (recentShuffleOpeningIds.size > maxRecentOpeningHistory * 2) {
+                recentShuffleOpeningIds.pollFirst()
+            }
+            chosen
         }
-        val random = java.util.Random(System.nanoTime())
-        rest.shuffle(random)
-        val spread = spreadByArtist(rest)
-        return if (currentTrack != null) listOf(currentTrack) + spread else spread
+
+        // 2. High-entropy Fisher-Yates shuffle on the remainder
+        val rest = tracks.filterNot { it.id == openingTrack.id || (it.videoId.isNotBlank() && it.videoId == openingTrack.videoId) }.toMutableList()
+        for (i in rest.indices.reversed()) {
+            val j = secureRandom.nextInt(i + 1)
+            val tmp = rest[i]
+            rest[i] = rest[j]
+            rest[j] = tmp
+        }
+
+        // 3. Assemble combined queue
+        val result = ArrayList<TrackItem>(tracks.size)
+        result.add(openingTrack)
+        result.addAll(rest)
+
+        // 4. Adjacent-artist relaxation pass:
+        // If two consecutive songs have the exact same artist, do a local forward swap
+        // to disperse clustering WITHOUT any artist frequency bias or deterministic sorting.
+        if (result.size > 2) {
+            for (i in 1 until (result.size - 1)) {
+                val currentArtist = result[i].artist.trim()
+                val prevArtist = result[i - 1].artist.trim()
+
+                if (currentArtist.isNotBlank() && currentArtist.equals(prevArtist, ignoreCase = true)) {
+                    val searchLimit = minOf(result.size, i + 8)
+                    for (j in (i + 1) until searchLimit) {
+                        val candidateArtist = result[j].artist.trim()
+                        if (!candidateArtist.equals(prevArtist, ignoreCase = true)) {
+                            val swapTmp = result[i]
+                            result[i] = result[j]
+                            result[j] = swapTmp
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        return result
     }
 
     fun toggleShuffle() {

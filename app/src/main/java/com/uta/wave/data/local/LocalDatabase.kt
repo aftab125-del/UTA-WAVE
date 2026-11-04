@@ -77,6 +77,7 @@ class LocalDatabase private constructor(context: Context) :
         ensureHiddenSongsTable()
         ensureSpeedDialTable()
         ensurePlaylistDeletedTracksTable()
+        ensureDeletedPlaylistsTable()
         refreshAllFlows()
         CoroutineScope(Dispatchers.IO).launch {
             if (restoreAutoBackupIfEmpty()) {
@@ -199,6 +200,16 @@ class LocalDatabase private constructor(context: Context) :
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_playlist_deleted_tracks ON playlist_deleted_tracks (playlist_id, video_id)")
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS deleted_playlists (
+                playlist_id TEXT PRIMARY KEY NOT NULL,
+                deleted_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_playlists ON deleted_playlists (playlist_id)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -320,6 +331,23 @@ class LocalDatabase private constructor(context: Context) :
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_playlist_deleted_tracks ON playlist_deleted_tracks (playlist_id, video_id)")
         } catch (e: Exception) {
             AppLogger.w("ensurePlaylistDeletedTracksTable error: ${e.message}")
+        }
+    }
+
+    private fun ensureDeletedPlaylistsTable() {
+        try {
+            val db = writableDatabase
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS deleted_playlists (
+                    playlist_id TEXT PRIMARY KEY NOT NULL,
+                    deleted_at INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_deleted_playlists ON deleted_playlists (playlist_id)")
+        } catch (e: Exception) {
+            AppLogger.w("ensureDeletedPlaylistsTable error: ${e.message}")
         }
     }
 
@@ -790,6 +818,11 @@ class LocalDatabase private constructor(context: Context) :
         val cleanName = name.trim()
         val db = writableDatabase
 
+        // If explicitly creating/restoring with customId, clear any existing tombstone
+        if (customId != null) {
+            clearPlaylistTombstone(customId)
+        }
+
         // If customId is null (local creation), check if playlist with same title already exists
         if (customId == null) {
             val existingId = db.rawQuery(
@@ -904,10 +937,68 @@ class LocalDatabase private constructor(context: Context) :
 
     suspend fun deletePlaylist(playlistId: String) = withContext(Dispatchers.IO) {
         val db = writableDatabase
-        db.delete("playlist_tracks", "playlist_id = ?", arrayOf(playlistId))
-        db.delete("playlist_deleted_tracks", "playlist_id = ?", arrayOf(playlistId))
-        db.delete("playlists", "id = ?", arrayOf(playlistId))
+        db.beginTransaction()
+        try {
+            val now = System.currentTimeMillis()
+            val altId = if (playlistId.startsWith("VL")) playlistId.removePrefix("VL") else "VL$playlistId"
+
+            // 1. Record persistent tombstones so sync & backups never resurrect it
+            val values = ContentValues().apply {
+                put("playlist_id", playlistId)
+                put("deleted_at", now)
+            }
+            db.insertWithOnConflict("deleted_playlists", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+
+            val altValues = ContentValues().apply {
+                put("playlist_id", altId)
+                put("deleted_at", now)
+            }
+            db.insertWithOnConflict("deleted_playlists", null, altValues, SQLiteDatabase.CONFLICT_REPLACE)
+
+            // 2. Delete playlist tracks & deleted track records
+            db.delete("playlist_tracks", "playlist_id = ? OR playlist_id = ?", arrayOf(playlistId, altId))
+            db.delete("playlist_deleted_tracks", "playlist_id = ? OR playlist_id = ?", arrayOf(playlistId, altId))
+
+            // 3. Delete playlist entity
+            db.delete("playlists", "id = ? OR id = ?", arrayOf(playlistId, altId))
+
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
         _playlistsFlow.value = queryPlaylistsSync()
+
+        // 4. Immediately update auto-backup JSON so it never holds deleted playlists
+        try {
+            saveAutoBackup()
+        } catch (e: Exception) {
+            AppLogger.w("deletePlaylist saveAutoBackup error: ${e.message}")
+        }
+    }
+
+    fun getDeletedPlaylistIds(): Set<String> {
+        val set = mutableSetOf<String>()
+        try {
+            val db = readableDatabase
+            db.rawQuery("SELECT playlist_id FROM deleted_playlists", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    set.add(cursor.getString(0))
+                }
+            }
+        } catch (e: Exception) {
+            AppLogger.w("getDeletedPlaylistIds error: ${e.message}")
+        }
+        return set
+    }
+
+    fun clearPlaylistTombstone(playlistId: String) {
+        try {
+            val db = writableDatabase
+            val altId = if (playlistId.startsWith("VL")) playlistId.removePrefix("VL") else "VL$playlistId"
+            db.delete("deleted_playlists", "playlist_id = ? OR playlist_id = ?", arrayOf(playlistId, altId))
+        } catch (e: Exception) {
+            AppLogger.w("clearPlaylistTombstone error: ${e.message}")
+        }
     }
 
     suspend fun purgeSystemPlaylists() = withContext(Dispatchers.IO) {
@@ -1479,11 +1570,16 @@ class LocalDatabase private constructor(context: Context) :
                 }
             }
 
+            val deletedPlaylistIds = getDeletedPlaylistIds()
             val playlists = root.optJSONArray("playlists")
             if (playlists != null) {
                 for (i in 0 until playlists.length()) {
                     val pObj = playlists.optJSONObject(i) ?: continue
                     val pId = pObj.optString("id", UUID.randomUUID().toString())
+                    if (pId in deletedPlaylistIds || "VL$pId" in deletedPlaylistIds || pId.removePrefix("VL") in deletedPlaylistIds) {
+                        com.uta.wave.player.AppLogger.i("restoreBackupJson: Skipping tombstoned deleted playlist $pId")
+                        continue
+                    }
                     val pName = pObj.optString("name", "Restored Playlist")
                     val pDesc = pObj.optString("description", "")
                     val pValues = ContentValues().apply {

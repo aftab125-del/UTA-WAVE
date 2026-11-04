@@ -1,8 +1,8 @@
 {
-  "versionCode": 12,
-  "versionName": "1.1.10",
-  "title": "UTA-wave 1.1.10 Startup Crash & Theme Fix",
-  "changelog": "\u2022 Fixed launch crash on Android 8.0+ by resolving theme XML parent syntax and removing incompatible windowLightNavigationBar attributes\n\u2022 Resolved edge-to-edge system bar runtime conflicts on app initialization\n\u2022 Added startup splash watchdog and failsafe dismiss mechanism ensuring instantaneous entry to Home screen\n\u2022 Added tap-to-dismiss gesture on opening splash animation\n\u2022 Hardened display refresh rate controller with runtime error guard",
+  "versionCode": 13,
+  "versionName": "1.1.11",
+  "title": "UTA-wave 1.1.11 Playlist Resurrection Fix & Shuffle Overhaul",
+  "changelog": "\u2022 Fixed playlist resurrection bug: added persistent deleted_playlists tombstone table preventing sync & backup re-creation\n\u2022 Bi-directional cloud deletion: deleting playlists locally automatically purges them remotely on YouTube Music\n\u2022 Overhauled shuffle engine: replaced artist-biased algorithm with cryptographic Fisher-Yates high-entropy shuffle\n\u2022 Smart opening track selection with recency history penalty preventing repeating opening songs\n\u2022 Adjacent-artist relaxation swaps to prevent identical consecutive tracks without frequency bias",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }

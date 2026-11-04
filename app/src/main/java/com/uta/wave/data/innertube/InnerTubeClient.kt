@@ -2639,6 +2639,82 @@ class InnerTubeClient(
         overallSuccess
     }
 
+    /**
+     * Deletes a remote YouTube Music playlist on the user's account.
+     */
+    suspend fun deleteRemotePlaylist(playlistId: String): Boolean = withContext(Dispatchers.IO) {
+        val cleanPlaylistId = playlistId.removePrefix("VL")
+        refreshVisitorDataIfNeeded()
+        try {
+            var success = false
+            // 1. Primary: YouTube Music endpoint
+            val payload = JSONObject().apply {
+                put("context", getClientContext("WEB_REMIX", CLIENT_VERSION))
+                put("playlistId", cleanPlaylistId)
+            }
+
+            val request = Request.Builder()
+                .url("$INNERTUBE_BASE_URL/playlist/delete")
+                .apply {
+                    commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                    addHeader("X-Goog-Visitor-Id", cachedVisitorData)
+                    applyAuthHeaders(this)
+                }
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    success = true
+                    AppLogger.i("deleteRemotePlaylist primary succeeded for $cleanPlaylistId")
+                } else {
+                    AppLogger.w("deleteRemotePlaylist primary failed: HTTP ${response.code}")
+                }
+            }
+
+            // 2. Secondary fallback: YouTube Web endpoint
+            if (!success) {
+                try {
+                    val webPayload = JSONObject().apply {
+                        val clientObj = JSONObject().apply {
+                            put("clientName", "WEB")
+                            put("clientVersion", "2.20240101.01.00")
+                            put("hl", "en")
+                            put("gl", "US")
+                        }
+                        put("context", JSONObject().put("client", clientObj))
+                        put("playlistId", cleanPlaylistId)
+                    }
+
+                    val webReq = Request.Builder()
+                        .url("https://www.youtube.com/youtubei/v1/playlist/delete")
+                        .apply {
+                            commonHeaders.forEach { (k, v) -> addHeader(k, v) }
+                            applyAuthHeaders(this)
+                        }
+                        .post(webPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                        .build()
+
+                    client.newCall(webReq).execute().use { webResp ->
+                        if (webResp.isSuccessful) {
+                            success = true
+                            AppLogger.i("deleteRemotePlaylist fallback succeeded for $cleanPlaylistId")
+                        } else {
+                            AppLogger.w("deleteRemotePlaylist fallback failed: HTTP ${webResp.code}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    AppLogger.w("deleteRemotePlaylist fallback error: ${e.message}")
+                }
+            }
+
+            success
+        } catch (e: Exception) {
+            AppLogger.e("deleteRemotePlaylist network error", e)
+            false
+        }
+    }
+
     private fun findActiveAccountHeader(obj: JSONObject): JSONObject? {
         if (obj.has("activeAccountHeaderRenderer")) {
             return obj.optJSONObject("activeAccountHeaderRenderer")

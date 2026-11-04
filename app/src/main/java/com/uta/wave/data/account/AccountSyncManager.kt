@@ -142,9 +142,25 @@ class AccountSyncManager private constructor(private val appContext: Context) {
 
             // 3. Download Phase: Sync Google Account Playlists ("FEmusic_liked_playlists")
             _syncState.value = AccountSyncState.Syncing("Syncing Playlists from Google Account...")
+            val deletedPlaylistIds = localDatabase.getDeletedPlaylistIds()
             for (remotePlaylist in remotePlaylists) {
                 if (isIgnoredSystemPlaylist(remotePlaylist.id, remotePlaylist.title)) {
                     AppLogger.i("AccountSyncManager: Skipping YouTube system playlist: ${remotePlaylist.title}")
+                    continue
+                }
+                if (remotePlaylist.id in deletedPlaylistIds ||
+                    "VL${remotePlaylist.id}" in deletedPlaylistIds ||
+                    remotePlaylist.id.removePrefix("VL") in deletedPlaylistIds
+                ) {
+                    AppLogger.i("AccountSyncManager: Skipping tombstoned deleted playlist: ${remotePlaylist.title} (${remotePlaylist.id})")
+                    // Dispatch remote purge so YouTube Music removes it as well
+                    scope.launch {
+                        try {
+                            innerTube.deleteRemotePlaylist(remotePlaylist.id)
+                        } catch (e: Exception) {
+                            AppLogger.w("Failed to purge remote deleted playlist ${remotePlaylist.id}: ${e.message}")
+                        }
+                    }
                     continue
                 }
                 try {
@@ -325,5 +341,34 @@ class AccountSyncManager private constructor(private val appContext: Context) {
         val finalId = localDatabase.createPlaylist(cleanName, description)
         localDatabase.saveAutoBackup()
         finalId
+    }
+
+    /**
+     * Deletes a playlist locally with tombstone recording and purges it remotely on YouTube Music if cloud-backed.
+     */
+    suspend fun deletePlaylist(playlistId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val localDatabase = com.uta.wave.data.local.LocalDatabase.getInstance(appContext)
+            // 1. Delete locally & record tombstone + refresh backup
+            localDatabase.deletePlaylist(playlistId)
+
+            // 2. If authenticated and this is a cloud playlist, purge remotely
+            val accountManager = AccountManager.getInstance(appContext)
+            val isCloud = playlistId.startsWith("PL") || playlistId.startsWith("VL") || playlistId.startsWith("RD") || playlistId.startsWith("MP")
+            if (accountManager.currentProfile.isLoggedIn && isCloud) {
+                scope.launch {
+                    try {
+                        val innerTube = InnerTubeClient()
+                        innerTube.deleteRemotePlaylist(playlistId)
+                    } catch (e: Exception) {
+                        AppLogger.w("AccountSyncManager.deletePlaylist remote purge error: ${e.message}")
+                    }
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            AppLogger.e("AccountSyncManager.deletePlaylist failed", e)
+            Result.failure(e)
+        }
     }
 }

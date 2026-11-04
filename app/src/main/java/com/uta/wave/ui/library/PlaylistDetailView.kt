@@ -741,7 +741,7 @@ fun PlaylistDetailView(
                 Button(
                     onClick = {
                         scope.launch {
-                            localDatabase.deletePlaylist(playlist.id)
+                            com.uta.wave.data.account.AccountSyncManager.getInstance(context).deletePlaylist(playlist.id)
                             showDeleteConfirmDialog = false
                             onNavigateBack()
                             Toast.makeText(context, "Playlist deleted", Toast.LENGTH_SHORT).show()

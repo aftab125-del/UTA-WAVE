@@ -179,44 +179,70 @@ fun main() {
         }
     }
 
-    fun spreadByArtist(tracks: List<TrackItem>): List<TrackItem> {
-        if (tracks.size <= 2) return tracks
-        val grouped = tracks.groupBy { it.artist.trim().lowercase() }
-            .values
-            .sortedByDescending { it.size }
-            .map { it.toMutableList() }
-            .toMutableList()
-
-        val result = mutableListOf<TrackItem>()
-        var lastArtist: String? = null
-
-        while (grouped.isNotEmpty()) {
-            val candidateGroup = grouped.firstOrNull { it.first().artist.trim().lowercase() != lastArtist }
-                ?: grouped.first()
-
-            val nextTrack = candidateGroup.removeAt(0)
-            result.add(nextTrack)
-            lastArtist = nextTrack.artist.trim().lowercase()
-
-            if (candidateGroup.isEmpty()) {
-                grouped.remove(candidateGroup)
-            }
-            grouped.sortByDescending { it.size }
-        }
-        return result
-    }
+    val secureRandom = remember { java.security.SecureRandom() }
+    val recentShuffleOpeningIds = remember { java.util.concurrent.ConcurrentLinkedDeque<String>() }
+    val maxRecentOpeningHistory = 15
 
     fun smartShuffle(tracks: List<TrackItem>, currentTrack: TrackItem? = null): List<TrackItem> {
         if (tracks.size <= 1) return tracks
-        val rest = if (currentTrack != null) {
-            tracks.filter { it.id != currentTrack.id && it.videoId != currentTrack.videoId }.toMutableList()
+
+        // 1. Determine opening track
+        val openingTrack: TrackItem = if (currentTrack != null) {
+            currentTrack
         } else {
-            tracks.toMutableList()
+            val candidatePool = tracks.toList()
+            var chosen = candidatePool[secureRandom.nextInt(candidatePool.size)]
+            if (candidatePool.size > maxRecentOpeningHistory) {
+                var attempts = 0
+                while (attempts < 12 && (chosen.id in recentShuffleOpeningIds || chosen.videoId in recentShuffleOpeningIds)) {
+                    chosen = candidatePool[secureRandom.nextInt(candidatePool.size)]
+                    attempts++
+                }
+            }
+            recentShuffleOpeningIds.addLast(chosen.id)
+            if (chosen.videoId.isNotBlank()) recentShuffleOpeningIds.addLast(chosen.videoId)
+            while (recentShuffleOpeningIds.size > maxRecentOpeningHistory * 2) {
+                recentShuffleOpeningIds.pollFirst()
+            }
+            chosen
         }
-        val random = java.util.Random(System.nanoTime())
-        rest.shuffle(random)
-        val spread = spreadByArtist(rest)
-        return if (currentTrack != null) listOf(currentTrack) + spread else spread
+
+        // 2. High-entropy Fisher-Yates shuffle on the remainder
+        val rest = tracks.filterNot { it.id == openingTrack.id || (it.videoId.isNotBlank() && it.videoId == openingTrack.videoId) }.toMutableList()
+        for (i in rest.indices.reversed()) {
+            val j = secureRandom.nextInt(i + 1)
+            val tmp = rest[i]
+            rest[i] = rest[j]
+            rest[j] = tmp
+        }
+
+        // 3. Assemble combined queue
+        val result = ArrayList<TrackItem>(tracks.size)
+        result.add(openingTrack)
+        result.addAll(rest)
+
+        // 4. Adjacent-artist relaxation pass
+        if (result.size > 2) {
+            for (i in 1 until (result.size - 1)) {
+                val currentArtist = result[i].artist.trim()
+                val prevArtist = result[i - 1].artist.trim()
+
+                if (currentArtist.isNotBlank() && currentArtist.equals(prevArtist, ignoreCase = true)) {
+                    val searchLimit = minOf(result.size, i + 8)
+                    for (j in (i + 1) until searchLimit) {
+                        val candidateArtist = result[j].artist.trim()
+                        if (!candidateArtist.equals(prevArtist, ignoreCase = true)) {
+                            val swapTmp = result[i]
+                            result[i] = result[j]
+                            result[j] = swapTmp
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        return result
     }
 
     fun toggleShuffle() {
