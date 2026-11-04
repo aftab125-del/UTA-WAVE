@@ -1,213 +1,252 @@
 <div align="center">
 
+<img src="docs/screenshots/app_icon.png" width="128" height="128" alt="UTA-WAVE Logo" style="border-radius: 28px; box-shadow: 0 8px 32px rgba(242, 174, 199, 0.25);" />
+
 # 🌊 UTA-WAVE
+### *A Universe of Music — Cinematic, Ad-Free Music Streaming & Offline Audio Platform for Android & Windows Desktop*
 
-### *A Universe of Music — Cinematic, Ad-Free, High-Fidelity Music Streaming & Offline Player for Android*
+[![Android Release](https://img.shields.io/badge/Download-Android%20APK%20(v1.1.8)-F2AEC7?style=for-the-badge&logo=android&logoColor=black)](https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk)
+[![Windows Release](https://img.shields.io/badge/Download-Windows%20Installer%20(.msi)-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/aftab125-del/UTA-WAVE/releases/latest/download/UTA-wave-1.0.0.msi)
+[![GitHub Releases](https://img.shields.io/badge/GitHub-Releases-8B5CF6?style=for-the-badge&logo=github&logoColor=white)](https://github.com/aftab125-del/UTA-WAVE/releases)
 
-[![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B%20(API%2026%2B)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://android.com)
-[![Language](https://img.shields.io/badge/Language-Kotlin%202.0-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![UI Toolkit](https://img.shields.io/badge/UI-Jetpack%20Compose%20%26%20Material%203-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Audio Engine](https://img.shields.io/badge/Audio-AndroidX%20Media3%20ExoPlayer-FF6F00?style=for-the-badge&logo=google&logoColor=white)](https://developer.android.com/guide/topics/media/media3)
-[![Shaders](https://img.shields.io/badge/Optics-AGSL%20Liquid%20Glass-EC4899?style=for-the-badge)](https://developer.android.com/develop/ui/views/graphics/agsl)
-[![License](https://img.shields.io/badge/License-GPL%20v3-blue.style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20Windows%2010%2F11-3DDC84?style=flat-square&logo=android&logoColor=white)](https://github.com/aftab125-del/UTA-WAVE)
+[![Language](https://img.shields.io/badge/Language-Kotlin%202.0%20(KMP)-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![UI Toolkit](https://img.shields.io/badge/UI-Jetpack%20Compose%20%26%20Compose%20Desktop-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![Audio Pipeline](https://img.shields.io/badge/Audio-ExoPlayer%20%26%20WMF%20Native-FF6F00?style=flat-square&logo=google&logoColor=white)](https://developer.android.com/guide/topics/media/media3)
+[![Optics](https://img.shields.io/badge/Optics-AGSL%20Liquid%20Glass%20Shaders-EC4899?style=flat-square)](https://developer.android.com/develop/ui/views/graphics/agsl)
+[![Creator](https://img.shields.io/badge/Created%20by-Aftab%20Kathat-F2AEC7?style=flat-square&logo=instagram&logoColor=white)](https://www.instagram.com/dhaniya0patta?cplk=MWt5bWR4cXN1OTdqYg==)
 
 <br/>
 
 <p align="center">
-  <b>UTA-WAVE</b> is a next-generation music client engineered from the ground up for audiophiles, aesthetic purists, and music enthusiasts. Combining hardware-accelerated AGSL glass refraction, Apple Music-inspired cinematic playback sheets, offline-first library resilience, built-in acoustic song recognition, and direct AI curation powered by Google Gemini 2.0 Flash.
+  <b>UTA-WAVE</b> is an ultra-premium, dark, futuristic music streaming and offline playback platform engineered for audiophiles, aesthetic purists, and power users. Built on a clean <b>Kotlin Multiplatform (KMP)</b> architecture spanning <b>Android</b> and <b>Windows Desktop</b>, UTA-WAVE combines hardware-accelerated <b>AGSL liquid glass optics</b>, Apple Music-inspired fluid playback backdrops, synchronized kinetic typography lyrics, built-in acoustic song recognition, Windows 10/11 SMTC integration with Dynamic Island transport controls, and real-time cloud synchronization powered by Supabase.
 </p>
 
 ---
 
 </div>
 
-## ✨ Key Feature Highlights
+## 📸 Visual Showcase
 
-### 🍎 1. Apple Music-Inspired Cinematic Player
+<div align="center">
+
+### 📱 Android Mobile Experience
+
+| Cinematic Fullscreen Player | Fluid Mesh & Squiggly Waveform | Dynamic Lyric Flow |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/mobile_player_amber.jpg" width="260" alt="Fullscreen Player - Amber Glow" /> | <img src="docs/screenshots/mobile_player_fluid.jpg" width="260" alt="Fullscreen Player - Fluid Mesh" /> | <img src="docs/screenshots/mobile_player_lyrics.jpg" width="260" alt="Dynamic Synchronized Lyrics" /> |
+
+<br/>
+
+| Explore Hub & Brand Header | About & Creator Profile |
+|:---:|:---:|
+| <img src="docs/screenshots/mobile_home_header.jpg" width="260" alt="Home Screen - by Aftab Kathat" /> | <img src="docs/screenshots/mobile_settings_about.jpg" width="260" alt="About & Instagram Handle" /> |
+
+<br/>
+
+### 💻 Windows Desktop & Landscape Experience
+
+| Synchronized Devanagari / Multilingual Karaoke Lyrics |
+|:---:|
+| <img src="docs/screenshots/desktop_lyrics_karaoke.jpg" width="820" alt="Desktop / Landscape Karaoke Lyrics" /> |
+
+| Cinematic Full-Bleed Synchronized Lyrics |
+|:---:|
+| <img src="docs/screenshots/desktop_lyrics_cinematic.jpg" width="820" alt="Cinematic Lyrics Renderer" /> |
+
+| Windows Desktop Client & Dynamic Island SMTC Controls |
+|:---:|
+| <img src="docs/screenshots/desktop_windows_island.jpg" width="820" alt="Windows Desktop Client with Dynamic Island" /> |
+
+</div>
+
+---
+
+## ⚡ Quick Download & Installation
+
+### 🤖 Android (Mobile & Tablet)
+1. Download the latest release APK directly:
+   👉 **[Download UTA-wave v1.1.8 APK](https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk)**
+2. Open the downloaded file on your device and tap **Install** (enable *"Install unknown apps"* for your browser if prompted).
+3. The app includes a built-in auto-updater that notifies you whenever a new release is available!
+
+### 🖥️ Windows Desktop (Windows 10 & 11)
+- **Installer (.msi)**:
+  👉 **[Download UTA-wave Windows Installer (v1.0.0)](https://github.com/aftab125-del/UTA-WAVE/releases/latest/download/UTA-wave-1.0.0.msi)**
+  *(Runs a per-user, single-click install with Desktop & Start Menu shortcuts)*
+- **One-Click Portable Execution**:
+  Clone or download this repository, then double-click [`run-desktop.bat`](run-desktop.bat) or run [`run-desktop.ps1`](run-desktop.ps1) for instant startup.
+
+---
+
+## ✨ Comprehensive Features
+
+### 🖥️ 1. Windows Desktop Client (`:desktopApp`)
+- **Compose Multiplatform UI**: Fully native Windows desktop client with dark glass styling, frameless fluid window controls, and responsive wide-screen layout.
+- **Windows System Media Transport Controls (SMTC)**:
+  - Deep integration with the Windows 10/11 taskbar media thumbnail, Lockscreen, and third-party overlays (e.g. **Dynamic Island**).
+  - Real-time album artwork streaming via Windows StorageFile memory bridge.
+  - Interactive transport controls: Play, Pause, Next, Previous, and Timeline seeking.
+- **Native WMF AAC Streaming Engine**: Low-latency hardware-accelerated playback through JavaFX Media / Windows Media Foundation with automatic fallback proxy.
+- **Floating Liquid Glass Navigation Bar**: Translucent glass pill floating seamlessly above content with active indicator glow.
+- **Desktop Queue Management & Full-Bleed Lyrics**: Dedicated queue drawer with drag-drop style controls, quick song menus, and synchronized lyric backdrops.
+- **Mobile-Desktop Cloud Sync**: Seamless account login syncing your playlists, favorites, and listening data in real time via Supabase.
+
+---
+
+### 🍎 2. Apple Music-Inspired Cinematic Player
 - **Fluid Multi-Mesh Background**: Real-time atmospheric color mesh dynamically extracted from album cover palettes with smooth animated blur transitions.
 - **Apple Control Deck**: Signature Apple-style fluid playback controls, progressive volume scrubbing, and output device switcher.
-- **Turntable Vinyl Disc**: Optional rotating vinyl disc animation synchronized with playback state.
+- **Turntable Vinyl Disc**: Rotating vinyl disc animation synchronized with playback state.
 - **Squiggly & Custom Seek Bars**: Dynamic animated squiggly waveforms, continuous sleek lines, and haptic feedback scrubbing.
 - **Gesture-Driven UX**: Swipe left/right across artwork or miniplayer to jump tracks; swipe down smoothly to collapse.
 
 ---
 
-### 🔮 2. Liquid Glass & Physical Optics Engine
+### 🔮 3. Liquid Glass & Physical Optics Engine
 - **Hardware-Accelerated AGSL Shaders**: Physics-based ray refraction that dynamically bends and distorts live UI content behind floating navigation pills and docked players.
 - **Chromatic Aberration**: 7-band rainbow spectral fringing along capsule contours for authentic glass realism.
 - **Lens Geometry Controls**: Customizable curvature bevel height, signed-distance-field (SDF) displacement amount, and depth-of-field diffusion blur (10dp to 40dp).
 - **Permanent Across UI**: Fully integrated into the **Floating MiniPlayer**, **Floating Navigation Bar**, and **Fullscreen Player Backdrops**.
-- **MiniPlayer Optics Customization**:
-  - *Background Styles*: Liquid Glass Refraction, Breathing Neon Mesh, Frosted Acrylic Blur, and Solid Elevated Glass.
-  - *Progress Track Styles*: Live Waveform (Squiggly), Sleek Linear, Glowing Neon Track, and Hidden (Edge-to-Edge).
-  - *Glow Radiance*: Configurable glow intensity slider (0% to 100%).
-- **Floating Navigation Bar Customization**:
-  - *Pill Shape*: Full-width stadium floating bar or compact dynamic capsule.
-  - *Auto-Hide on Scroll*: Seamlessly glides bottom navigation away when scrolling through feeds.
-  - *Translucency & Frosted Blur*: Fine-tuned glass opacity and diffusive depth sliders.
 
 ---
 
-### 🎧 3. Audiophile Playback Engine
-- **AndroidX Media3 ExoPlayer Architecture**: Rock-solid foreground playback service (`WaveAudioService`) with full wake-lock and audio focus handling.
-- **Native Media Notification & Lockscreen Player**:
-  - High-res dynamic album artwork with color-matched background.
-  - Interactive scrubbable progress bar.
-  - Full playback controls: Previous, Play/Pause, Next, Seek, and custom actions (Shuffle, Repeat, Radio, Like).
-- **High-Resolution & Bit-Perfect USB DAC Mode**: Pure direct bit-perfect audio stream pass-through for external DACs and audiophile hardware.
-- **Seamless Playback**: True gapless audio playback with customizable crossfade (0s - 10s) and skip silence detection.
-- **Audio Normalization**: Integrated loudness normalization and volume leveling preventing sudden volume spikes.
-- **10-Band Graphic Equalizer**: Custom parametric equalizer with Bass Boost and 3D Virtualizer audio effect processors.
-- **Smart Preloading & Cache**: Intelligent preloading of upcoming queue tracks for zero-latency, instant song changes.
-
----
-
-### 🧠 4. AI Hub & Intelligent Music Studio
-- **Google Gemini 2.0 Flash Integration**: Official free API key support delivering ultra-fast (< 1s) responses and structured JSON outputs.
-- **BYO Key Provider Selector**: Seamless switching between **Google Gemini 2.0 Flash (Recommended)**, **OpenRouter (DeepSeek R1, GPT-4o, Claude 3.5)**, and a **Free Neural Cloud** fallback (no API key needed).
-- **In-App Latency & Health Benchmarking**: "Test Connection" button with real-time ping diagnostics.
-- **AI Playlist Studio Sandbox**:
-  - Natural language prompt-to-playlist generator (e.g. *"Late night cyberpunk synth drive with female vocals"*).
-  - Preset quick-mood chips (*"Cyberpunk Drive"*, *"Rainy Day Acoustic"*, *"Tokyo City Pop"*, *"Intense Gym"*, *"Lo-Fi Focus"*).
-  - Configurable song count slider (5 to 25 tracks).
-  - 1-tap save: Directly resolves tracks and saves curated playlists into your Library!
-- **AI Lyrics Intelligence**: Real-time bilingual translation for foreign songs and phonetic romanization / transliteration (Japanese Romaji, Korean Revised Romanization, Hindi Latin script).
-
----
-
-### 🔍 5. Acoustic Song Recognition (Shazam DejaVu Engine)
-- **Built-in Music Recognition**: Identify any song playing in the ambient room in seconds without third-party apps.
-- **Native 16.0 kHz Acoustic Recording**: Captures audio directly at 16,000 Hz, eliminating software downsampling phase distortion and preserving exact FFT bin frequencies.
-- **Voice Recognition Audio Source**: Prioritizes `VOICE_RECOGNITION` and `UNPROCESSED` sources over standard `MIC`, bypassing telephone high-pass bandpass filters (< 300Hz) and preserving musical bass and overtones.
-- **Pure-Kotlin DejaVu Implementation**: Reverse-engineered acoustic fingerprinting algorithm with 2048-point Hanning window FFTs, peak spreading, sub-bin quadratic interpolation, 4-band frequency chunking, and CRC32 packaging.
-- **Instant InnerTube Resolution**: Resolves identified songs directly into high-res streamable tracks with official audio matching and 1-tap playback.
-
----
-
-### 📊 6. Listening Summary & Stats Center
-- **Today's Minutes Played**: Prominent hero card tracking exact minutes listened today with trending pulse indicator.
-- **Multi-Slot Time Selector**:
-  - 📅 **Last 7 Days**
-  - 📅 **Last 15 Days**
-  - 📅 **Last 30 Days**
-  - 🏆 **All Time** (Total time listened since installing the APK)
-- **Visual Analytics**:
-  - 7-bar daily listening distribution chart with peak-day highlight.
-  - **Most Played Song Spotlight Card** with album artwork, title, artist, play count, and 1-tap play.
-  - **Top Artist & Top Album** side-by-side cards.
-  - **Top 5 Songs Leaderboard** with numbered rankings and replay counters.
-  - **Top Artists Breakdown** with proportional percentage progress bars.
-  - **Sonic Vibe & Top Styles** breakdown.
-- **Anti-Spam Playback Tracking**: Logs real elapsed playback time in 15-second intervals, preventing duplicate counts on rapid pause/resume.
-
----
-
-### 📴 7. Complete Offline Mode & Download Manager
-- **Zero-Network Library Resilience**: App opens instantly in offline / airplane mode without internet hangs, immediately presenting downloaded library tracks and playlists.
-- **Multi-Quality Downloads**: Choose between Lossless Opus, High (256 kbps), and Standard (128 kbps).
-- **Wi-Fi Protection**: "Download over Wi-Fi only" toggle to protect mobile data.
-- **Auto-Download on Like**: Automatically download liked songs for offline preservation.
-- **Local Audio Player**: Scans and plays offline files directly from local device storage.
-
----
-
-### 🎙 8. Synchronized Karaoke Lyrics
+### 🎙️ 4. Synchronized Karaoke & Kinetic Lyrics
 - **Multi-Source Provider Hierarchy**: Real-time synced lyrics fetched from **LRCLIB**, **YouTube / Musixmatch**, and local LRC files.
-- **Line-by-Line Synchronized Scrolling**: Auto-scrolling lyrics with click-to-seek timestamp navigation.
-- **Word-by-Word Animation**: Fluid kinetic typography animations with dynamic blur effects.
+- **Line-by-Line & Kinetic Word Animation**: Auto-scrolling lyrics with click-to-seek timestamp navigation and dynamic blur effects.
+- **Multilingual & Devanagari Support**: Full support for Hindi, Japanese, Korean, Spanish, and English lyrics with flawless typography.
 - **Apple Music-Style Blurred Backdrops**: Smooth Gaussian background blur behind active lyric lines.
 
 ---
 
-### 📻 9. Continuous AutoMix & Artist Radio
-- **Endless Radio Generation**: Seed infinite, dynamic streaming radio from any track or artist.
-- **AutoMix Queue Drawer**: Queue drawer with toggle button to expand or collapse auto-suggested similar tracks.
-- **Smart Queue Persistence**: Queue restores seamlessly across app restarts and app clears.
+### 🎧 5. Audiophile Playback Engine
+- **AndroidX Media3 ExoPlayer Architecture**: Foreground playback service (`WaveAudioService`) with full CPU wake-locks and Wi-Fi locks preventing background cutoff during Android Doze mode.
+- **Native Media Notification & Lockscreen Player**:
+  - High-res dynamic album artwork with color-matched background.
+  - Interactive scrubbable progress bar with full media controls.
+- **High-Resolution & Bit-Perfect USB DAC Mode**: Direct bit-perfect stream pass-through for external audiophile DACs.
+- **Seamless Playback**: True gapless audio playback with customizable crossfade (0s - 10s) and skip silence detection.
+- **10-Band Graphic Equalizer**: Custom parametric equalizer with Bass Boost and 3D Virtualizer processors.
 
 ---
 
-### 🌐 10. Listen Together (Synchronized Social Listening)
-- **Real-Time Room Synchronization**: Listen in sync with friends via lightweight WebSocket architecture.
-- **Dual Room Modes**:
-  - *Host Sync*: Host controls song selection, seeking, and playback state.
-  - *Collaborative*: Anyone in the room can add songs, reorder queue, and control playback.
-- **Auto Re-Sync**: Millisecond-accurate timestamp resynchronization on track drifts or latency spikes.
+### 🧠 6. AI Hub & Intelligent Music Studio
+- **Google Gemini 2.0 Flash Integration**: Official free API key support delivering ultra-fast (< 1s) responses and structured JSON outputs.
+- **BYO Key Provider Selector**: Seamless switching between **Google Gemini 2.0 Flash (Recommended)**, **OpenRouter (DeepSeek R1, GPT-4o, Claude 3.5)**, and a **Free Neural Cloud** fallback.
+- **AI Playlist Studio Sandbox**:
+  - Natural language prompt-to-playlist generator (*e.g. "Late night cyberpunk synth drive with female vocals"*).
+  - Preset quick-mood chips (*Cyberpunk Drive*, *Rainy Day Acoustic*, *Tokyo City Pop*, *Intense Gym*, *Lo-Fi Focus*).
+- **AI Lyrics Intelligence**: Real-time bilingual translation for foreign songs and phonetic romanization / transliteration.
 
 ---
 
-### 🎨 11. Customization & Theming
-- **Theme Modes**: Obsidian Dark, True AMOLED Pitch Black (OLED battery saver), Clean Light, and Follow System.
-- **Dynamic Color Palettes**: Material You dynamic palette extraction from current track artwork or device wallpaper.
-- **Accent Colors**: Blush Pink (`#F2AEC7`), Electric Violet (`#A855F7`), Cyber Sky Blue (`#38BDF8`), Emerald Green (`#10B981`), Amber Gold (`#F59E0B`), and Crimson.
-- **Custom Font Selector**: Switch between *Google Sans*, *Outfit*, *Plus Jakarta Sans*, *Sans Flex*, or load custom TTF/OTF fonts.
-- **Custom App Icons & Shapes**: Built-in icon presets (Echo Pink, Cyber Gold, Neon Blue, Crimson, Sakura) and customizable launcher shapes (Squircle, Circle, Rounded).
+### 🔍 7. Acoustic Song Recognition (Shazam DejaVu Engine)
+- **Built-in Ambient Music Recognition**: Identify songs playing around you in seconds without third-party apps.
+- **Native 16.0 kHz Acoustic Recording**: Captures audio directly at 16,000 Hz, eliminating software downsampling phase distortion.
+- **Voice Recognition Audio Source**: Prioritizes `VOICE_RECOGNITION` and `UNPROCESSED` sources over standard `MIC`, preserving musical bass and overtones.
+- **Pure-Kotlin DejaVu Implementation**: Reverse-engineered acoustic fingerprinting algorithm with 2048-point Hanning window FFTs and sub-bin quadratic interpolation.
 
 ---
 
-### 🔄 12. Playlist Importer & Backup
-- **Spotify & YouTube Music Importer**: Paste any public playlist URL to automatically resolve and import songs into your local library.
-- **JSON Backup & Restore**: One-tap export and import of your entire music library, favorites, playlists, and listening history.
+### 📊 8. Listening Summary & Stats Center
+- **Listening Analytics**: Track exact minutes listened today with trending pulse indicators.
+- **Multi-Slot Time Selector**: Last 7 Days, Last 15 Days, Last 30 Days, and All-Time stats.
+- **Visual Analytics**: 7-bar daily listening distribution charts, Most Played Song Spotlight, Top Artists Breakdown, and Sonic Vibe analysis.
+
+---
+
+### 📴 9. Complete Offline Mode & Download Manager
+- **Zero-Network Library Resilience**: App opens instantly in offline / airplane mode without internet hangs, immediately presenting downloaded library tracks and playlists.
+- **Multi-Quality Downloads**: Choose between Lossless Opus, High (256 kbps), and Standard (128 kbps).
+- **Local Audio Player**: Scans and plays offline MP3/M4A/FLAC files directly from device storage.
+
+---
+
+### 🎨 10. Customization, Theming & Identity
+- **Futuristic Brand Identity**: Concentric acoustic soundwaves with glowing white "U" on pure obsidian black.
+- **Buttery-Smooth Launch**: High-performance GPU Canvas opening animation (~850ms, 120fps, zero GC allocations) with pitch-black cold-start window styling.
+- **Theme Modes**: Obsidian Dark, True AMOLED Pitch Black, Clean Light, and Follow System.
+- **Creator Attribution**: Dedicated header branding *"by Aftab Kathat"* on Home screen and interactive Instagram profile row in Settings.
 
 ---
 
 ## 🛠 Tech Stack & Architecture
 
-| Layer | Technologies |
-|---|---|
-| **Language** | Kotlin 2.0 (100% strict type-safe Kotlin) |
-| **UI Toolkit** | Jetpack Compose, Material 3, Accompanist, Foundation |
-| **Graphics & Shaders** | AGSL (Android Graphics Shading Language), RuntimeShader, RenderEffect |
-| **Audio Pipeline** | AndroidX Media3 1.5 (ExoPlayer), AudioAttributes, SonicAudioProcessor |
-| **Networking** | OkHttp 4.12, Kotlinx Coroutines, WebSockets |
-| **Data Engine** | YouTube Music InnerTube Client, LRCLIB API, Shazam Cloud Discovery |
-| **Database** | SQLite, Room-inspired DAO abstractions, Flow-based reactive queries |
-| **State Management** | StateFlow, SharedFlow, Compose State, DataStore Preferences |
-| **Architecture** | Unidirectional Data Flow (UDF), Clean Architecture, Domain Boundaries |
+```
+UTA-WAVE Multiplatform Architecture
+├── :core                 # Shared Kotlin Multiplatform data models, contracts, and Supabase cloud sync
+├── :audio                # Audio interfaces, equalizer models, and stream management
+├── :app                  # Android client (Jetpack Compose, Media3 ExoPlayer, AGSL shaders, Room)
+└── :desktopApp           # Windows client (Compose Desktop, WMF audio engine, WinRT SMTC bridge)
+```
+
+| Component | Android Mobile | Windows Desktop |
+|---|---|---|
+| **Language** | Kotlin 2.0 (Strict Types) | Kotlin 2.0 (JVM 17) |
+| **UI Toolkit** | Jetpack Compose / Material 3 | Compose for Desktop |
+| **Audio Engine** | AndroidX Media3 (ExoPlayer 1.5) | JavaFX Media / Windows Media Foundation |
+| **System Integration** | Android MediaSession & Notifications | Windows 10/11 SMTC & WinRT Interop |
+| **Graphics & Optics** | AGSL RuntimeShaders & RenderEffect | Skiko Hardware Acceleration & Custom Shaders |
+| **Lyrics Engine** | Synchronized LRCLIB / Kinetic Typography | Full-Bleed Dual-Column Kinetic Canvas |
+| **Cloud Sync** | Supabase PostgreSQL & Realtime | Supabase Realtime Sync Engine |
+| **Network & HTTP** | OkHttp 4.12 & Coroutines | OkHttp 4.12 & Coroutines |
 
 ---
 
 ## 🚀 Building from Source
 
 ### Prerequisites
-1. Android Studio Ladybug / Meerkat (or newer)
-2. JDK 17 or JDK 21
-3. Android SDK 35 (compileSdk 35, minSdk 26, targetSdk 35)
+- **JDK 17 or 21** (Eclipse Adoptium Temurin or JetBrains Runtime recommended)
+- **Android Studio** Ladybug / Meerkat (for mobile module)
+- **Android SDK 35/36** (`compileSdk 36`, `minSdk 26`, `targetSdk 36`)
 
-### Build Instructions
-
+### 1. Clone the Repository
 ```bash
-# 1. Clone the repository
 git clone https://github.com/aftab125-del/UTA-WAVE.git
 cd UTA-WAVE
-
-# 2. Build Debug APK
-./gradlew assembleDebug
-
-# 3. Locate compiled APK
-# The output APK will be generated at:
-# app/build/outputs/apk/debug/app-debug.apk
 ```
 
-To install directly to a connected Android device or emulator:
+### 2. Build Android APK
 ```bash
-./gradlew installDebug
+./gradlew :app:assembleDebug
+# Output APK: app/build/outputs/apk/debug/app-debug.apk
 ```
+
+### 3. Build & Run Desktop Client
+```bash
+# Run desktop client directly
+./gradlew :desktopApp:run
+
+# Package standalone executable UberJar
+./gradlew :desktopApp:packageUberJarForCurrentOS
+
+# Package Windows native installer (.msi)
+./gradlew :desktopApp:packageMsi
+```
+
+---
+
+## 👨‍💻 Creator & Community
+
+**UTA-WAVE** is engineered and maintained with ❤️ by **Aftab Kathat**.
+
+- 📸 **Instagram**: [@dhaniya0patta](https://www.instagram.com/dhaniya0patta?cplk=MWt5bWR4cXN1OTdqYg==)
+- 🐙 **GitHub**: [@aftab125-del](https://github.com/aftab125-del)
+- 🌐 **Project Home**: [https://github.com/aftab125-del/UTA-WAVE](https://github.com/aftab125-del/UTA-WAVE)
 
 ---
 
 ## 🔒 Privacy & Ad-Free Guarantee
 
-- 🚫 **Zero Advertisements**: Pure, uninterrupted listening experience.
-- 🚫 **No Tracking / Telemetry**: No third-party ad networks, trackers, or commercial telemetry SDKs.
-- 💾 **Local-First Storage**: Your listening history, playlists, and statistics stay encrypted in your local SQLite database on your device.
-- 🔑 **Bring Your Own Keys (Optional)**: AI features use your own private Gemini or OpenRouter API keys stored securely in local app preferences.
+- 🚫 **Zero Advertisements**: Absolutely no audio ads, banner ads, or tracking SDKs.
+- 🚫 **No Commercial Telemetry**: Your data is yours; no behavioral analytics or tracking cookies.
+- 💾 **Local-First & Private**: Playlists, cache, and history are stored on your device and private Supabase cloud backend.
+- 🔑 **BYO API Keys**: AI features run directly using your personal Gemini or OpenRouter keys without intermediary proxies.
 
 ---
 
 <div align="center">
 
-Crafted with ❤️ for music lovers everywhere.
-
-**[UTA-WAVE GitHub Repository](https://github.com/aftab125-del/UTA-WAVE)**
+*A Universe of Music — Welcome to the Wave.* 🌊
 
 </div>
