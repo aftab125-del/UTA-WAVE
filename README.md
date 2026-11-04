@@ -30,33 +30,39 @@
 
 <div align="center">
 
+### 💻 Windows Desktop Edition Experience
+
+*Native Compose Desktop client with lossless 24-bit 96kHz playback, dual-column synchronized lyric canvas, and glass controls.*
+
+| Sunflower (Post Malone) | Same Ol' Mistakes (Rihanna) | Agora Hills (Doja Cat) |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/desktop_player_sunflower.jpg" width="310" alt="Desktop Player - Sunflower" /> | <img src="docs/screenshots/desktop_player_rihanna.jpg" width="310" alt="Desktop Player - Rihanna" /> | <img src="docs/screenshots/desktop_player_doja_cat.jpg" width="310" alt="Desktop Player - Doja Cat" /> |
+
+<br/>
+
+---
+
 ### 📱 Android Mobile Experience
 
-| Cinematic Fullscreen Player | Fluid Mesh & Squiggly Waveform | Dynamic Lyric Flow |
+#### 1. Portrait Fullscreen Player
+
+| Fluid Mesh & Squiggly Waveform | Amber Glow Control Deck | Dynamic Synchronized Lyrics |
 |:---:|:---:|:---:|
-| <img src="docs/screenshots/mobile_player_amber.jpg" width="260" alt="Fullscreen Player - Amber Glow" /> | <img src="docs/screenshots/mobile_player_fluid.jpg" width="260" alt="Fullscreen Player - Fluid Mesh" /> | <img src="docs/screenshots/mobile_player_lyrics.jpg" width="260" alt="Dynamic Synchronized Lyrics" /> |
+| <img src="docs/screenshots/mobile_player_fluid.jpg" width="260" alt="Mobile Player - Arpit Bala" /> | <img src="docs/screenshots/mobile_player_amber.jpg" width="260" alt="Mobile Player - The Weeknd" /> | <img src="docs/screenshots/mobile_player_lyrics.jpg" width="260" alt="Mobile Player - SickLot" /> |
 
 <br/>
 
-| Explore Hub & Brand Header | About & Creator Profile |
-|:---:|:---:|
-| <img src="docs/screenshots/mobile_home_header.jpg" width="260" alt="Home Screen - by Aftab Kathat" /> | <img src="docs/screenshots/mobile_settings_about.jpg" width="260" alt="About & Instagram Handle" /> |
+#### 2. Mobile Ambient Mode (Landscape)
 
-<br/>
+*Rotate device for immersive, full-bleed kinetic typography with synchronized word-by-word karaoke glow.*
 
-### 💻 Windows Desktop & Landscape Experience
-
-| Synchronized Devanagari / Multilingual Karaoke Lyrics |
+| Synchronized Devanagari Karaoke Lyrics (Tashan) |
 |:---:|
-| <img src="docs/screenshots/desktop_lyrics_karaoke.jpg" width="820" alt="Desktop / Landscape Karaoke Lyrics" /> |
+| <img src="docs/screenshots/mobile_ambient_karaoke.jpg" width="840" alt="Mobile Landscape Ambient Mode - Tashan" /> |
 
-| Cinematic Full-Bleed Synchronized Lyrics |
+| Cinematic Ambient Flow (Lootera) |
 |:---:|
-| <img src="docs/screenshots/desktop_lyrics_cinematic.jpg" width="820" alt="Cinematic Lyrics Renderer" /> |
-
-| Windows Desktop Client & Dynamic Island SMTC Controls |
-|:---:|
-| <img src="docs/screenshots/desktop_windows_island.jpg" width="820" alt="Windows Desktop Client with Dynamic Island" /> |
+| <img src="docs/screenshots/mobile_ambient_cinematic.jpg" width="840" alt="Mobile Landscape Ambient Mode - Lootera" /> |
 
 </div>
 
@@ -115,7 +121,7 @@
 - **Multi-Source Provider Hierarchy**: Real-time synced lyrics fetched from **LRCLIB**, **YouTube / Musixmatch**, and local LRC files.
 - **Line-by-Line & Kinetic Word Animation**: Auto-scrolling lyrics with click-to-seek timestamp navigation and dynamic blur effects.
 - **Multilingual & Devanagari Support**: Full support for Hindi, Japanese, Korean, Spanish, and English lyrics with flawless typography.
-- **Apple Music-Style Blurred Backdrops**: Smooth Gaussian background blur behind active lyric lines.
+- **Mobile Ambient Mode**: Automatic horizontal orientation support transforming the phone into an ambient bedside or desk music clock with synchronized typography.
 
 ---
 
