@@ -975,14 +975,25 @@ fun DesktopTopHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "🌊 UTA-WAVE",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = AccentPurple
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Image(
+                painter = painterResource("icon.png"),
+                contentDescription = "UTA-WAVE Icon",
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(6.dp))
             )
-            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "UTA-WAVE",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = AccentPurple,
+                letterSpacing = (-0.3).sp
+            )
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = "Desktop Edition (Windows)",
                 fontSize = 12.sp,
