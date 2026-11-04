@@ -1,8 +1,8 @@
 {
-  "versionCode": 11,
-  "versionName": "1.1.9",
-  "title": "UTA-wave 1.1.9 Cinematic Splash Animation & Optics Fix",
-  "changelog": "\u2022 Completely fixed the square boxy glow artifact on launch screen\n\u2022 Replaced layout blur with infinite GPU radial gradient bloom\n\u2022 Re-tuned opening animation pacing to a luxurious 1.65s acoustic wave transition\n\u2022 Added 4-stage concentric metallic soundwave ripple propagation\n\u2022 Crisp sculpted porcelain-white 'U' brand glyph",
+  "versionCode": 12,
+  "versionName": "1.1.10",
+  "title": "UTA-wave 1.1.10 Startup Crash & Theme Fix",
+  "changelog": "\u2022 Fixed launch crash on Android 8.0+ by resolving theme XML parent syntax and removing incompatible windowLightNavigationBar attributes\n\u2022 Resolved edge-to-edge system bar runtime conflicts on app initialization\n\u2022 Added startup splash watchdog and failsafe dismiss mechanism ensuring instantaneous entry to Home screen\n\u2022 Added tap-to-dismiss gesture on opening splash animation\n\u2022 Hardened display refresh rate controller with runtime error guard",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }

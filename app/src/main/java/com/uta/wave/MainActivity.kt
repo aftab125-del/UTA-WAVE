@@ -84,32 +84,36 @@ class MainActivity : ComponentActivity() {
 
             // High Refresh Rate Display Controller (1:1 with EchoMusic)
             LaunchedEffect(settings.enableHighRefreshRate) {
-                val window = this@MainActivity.window
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    val layoutParams = window.attributes
-                    if (settings.enableHighRefreshRate) {
-                        // 0 allows the window to run at peak device refresh rate (90Hz / 120Hz / 144Hz)
-                        layoutParams.preferredDisplayModeId = 0
-                    } else {
-                        // Lock display mode to 60Hz to save battery
-                        val display = this@MainActivity.display
-                        val modes = display?.supportedModes ?: emptyArray()
-                        val mode60 = modes.firstOrNull { kotlin.math.abs(it.refreshRate - 60f) < 1f }
-                            ?: modes.minByOrNull { kotlin.math.abs(it.refreshRate - 60f) }
+                try {
+                    val window = this@MainActivity.window
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        val layoutParams = window.attributes
+                        if (settings.enableHighRefreshRate) {
+                            // 0 allows the window to run at peak device refresh rate (90Hz / 120Hz / 144Hz)
+                            layoutParams.preferredDisplayModeId = 0
+                        } else {
+                            // Lock display mode to 60Hz to save battery
+                            val display = this@MainActivity.display
+                            val modes = display?.supportedModes ?: emptyArray()
+                            val mode60 = modes.firstOrNull { kotlin.math.abs(it.refreshRate - 60f) < 1f }
+                                ?: modes.minByOrNull { kotlin.math.abs(it.refreshRate - 60f) }
 
-                        if (mode60 != null) {
-                            layoutParams.preferredDisplayModeId = mode60.modeId
+                            if (mode60 != null) {
+                                layoutParams.preferredDisplayModeId = mode60.modeId
+                            }
                         }
-                    }
-                    window.attributes = layoutParams
-                } else {
-                    val params = window.attributes
-                    if (settings.enableHighRefreshRate) {
-                        params.preferredRefreshRate = 0f
+                        window.attributes = layoutParams
                     } else {
-                        params.preferredRefreshRate = 60f
+                        val params = window.attributes
+                        if (settings.enableHighRefreshRate) {
+                            params.preferredRefreshRate = 0f
+                        } else {
+                            params.preferredRefreshRate = 60f
+                        }
+                        window.attributes = params
                     }
-                    window.attributes = params
+                } catch (e: Throwable) {
+                    AppLogger.e("Failed to adjust display refresh rate", e)
                 }
             }
 

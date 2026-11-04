@@ -3,6 +3,8 @@ package com.uta.wave.ui.splash
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -28,6 +30,7 @@ import kotlin.math.max
  *
  * Total duration: ~1.65 seconds (luxurious, silky smooth, pure GPU Canvas radial rendering,
  * zero rectangular bounding-box blur artifacts).
+ * Guaranteed safety dismiss ensures app never hangs on startup.
  */
 @Composable
 fun SplashWaterSurface(
@@ -40,39 +43,42 @@ fun SplashWaterSurface(
     val surfaceAlpha = remember { Animatable(1f) }
 
     LaunchedEffect(Unit) {
-        coroutineScope {
-            // 1. Center porcelain-white "U" gently materializes with smooth scale & bloom (0ms -> 450ms)
-            launch {
-                uScale.animateTo(
-                    targetValue = 1.0f,
-                    animationSpec = tween(durationMillis = 450, easing = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f))
-                )
-            }
-            launch {
-                uAlpha.animateTo(
-                    targetValue = 1.0f,
-                    animationSpec = tween(durationMillis = 380, easing = LinearOutSlowInEasing)
-                )
-            }
+        try {
+            coroutineScope {
+                // 1. Center porcelain-white "U" gently materializes with smooth scale & bloom (0ms -> 450ms)
+                launch {
+                    uScale.animateTo(
+                        targetValue = 1.0f,
+                        animationSpec = tween(durationMillis = 450, easing = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f))
+                    )
+                }
+                launch {
+                    uAlpha.animateTo(
+                        targetValue = 1.0f,
+                        animationSpec = tween(durationMillis = 380, easing = LinearOutSlowInEasing)
+                    )
+                }
 
-            // 2. Concentric acoustic wave rings smoothly radiate outward (200ms -> 1300ms)
-            launch {
-                delay(200)
-                waveProgress.animateTo(
-                    targetValue = 1.0f,
-                    animationSpec = tween(durationMillis = 1100, easing = CubicBezierEasing(0.16f, 1.0f, 0.30f, 1.0f))
-                )
-            }
+                // 2. Concentric acoustic wave rings smoothly radiate outward (200ms -> 1300ms)
+                launch {
+                    delay(200)
+                    waveProgress.animateTo(
+                        targetValue = 1.0f,
+                        animationSpec = tween(durationMillis = 1100, easing = CubicBezierEasing(0.16f, 1.0f, 0.30f, 1.0f))
+                    )
+                }
 
-            // 3. Luxurious crossfade dissolve into HomeScreen (1200ms -> 1650ms)
-            launch {
-                delay(1200)
-                surfaceAlpha.animateTo(
-                    targetValue = 0f,
-                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)
-                )
-                onAnimationComplete()
+                // 3. Luxurious crossfade dissolve into HomeScreen (1200ms -> 1650ms)
+                launch {
+                    delay(1200)
+                    surfaceAlpha.animateTo(
+                        targetValue = 0f,
+                        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)
+                    )
+                }
             }
+        } finally {
+            onAnimationComplete()
         }
     }
 
@@ -80,6 +86,13 @@ fun SplashWaterSurface(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) {
+                // Instant bypass tap if user wants to skip straight into the app
+                onAnimationComplete()
+            }
             .alpha(surfaceAlpha.value),
         contentAlignment = Alignment.Center
     ) {

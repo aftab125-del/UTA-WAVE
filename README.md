@@ -5,7 +5,7 @@
 # 🌊 UTA-WAVE
 ### *A Universe of Music — Cinematic, Ad-Free Music Streaming & Offline Audio Platform for Android & Windows Desktop*
 
-[![Android Release](https://img.shields.io/badge/Download-Android%20APK%20(v1.1.9)-F2AEC7?style=for-the-badge&logo=android&logoColor=black)](https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk)
+[![Android Release](https://img.shields.io/badge/Download-Android%20APK%20(v1.1.10)-F2AEC7?style=for-the-badge&logo=android&logoColor=black)](https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk)
 [![Windows Release](https://img.shields.io/badge/Download-Windows%20Installer%20(.msi)-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/aftab125-del/UTA-WAVE/releases/latest/download/UTA-wave-1.0.0.msi)
 [![GitHub Releases](https://img.shields.io/badge/GitHub-Releases-8B5CF6?style=for-the-badge&logo=github&logoColor=white)](https://github.com/aftab125-del/UTA-WAVE/releases)
 
@@ -72,7 +72,7 @@
 
 ### 🤖 Android (Mobile & Tablet)
 1. Download the latest release APK directly:
-   👉 **[Download UTA-wave v1.1.9 APK](https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk)**
+   👉 **[Download UTA-wave v1.1.10 APK](https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk)**
 2. Open the downloaded file on your device and tap **Install** (enable *"Install unknown apps"* for your browser if prompted).
 3. The app includes a built-in auto-updater that notifies you whenever a new release is available!
 

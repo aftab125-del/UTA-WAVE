@@ -149,6 +149,12 @@ fun WaveApp(
     val recentHistory by localDatabase.historyFlow.collectAsState(initial = emptyList())
 
     var isSplashActive by remember { mutableStateOf(true) }
+
+    // Startup splash watchdog: guarantees splash will dismiss after 2.0s even under edge cases
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(2000)
+        isSplashActive = false
+    }
     var selectedTab by remember { mutableIntStateOf(initialTab) }
     val tabBackStack = remember { mutableStateListOf(initialTab) }
 
