@@ -28,6 +28,7 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.uta.wave.desktop.MainKt"
+        javaHome = "D:\\jdk-17"
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
