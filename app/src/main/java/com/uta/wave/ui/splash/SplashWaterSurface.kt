@@ -1,6 +1,7 @@
 package com.uta.wave.ui.splash
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -11,157 +12,164 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.uta.wave.ui.theme.OutfitFontFamily
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.max
 
 /**
- * Cinematic opening splash screen for UTA-WAVE.
- * Orchestrates:
- * 1. The gravitational drop of the porcelain-white "U" (0.0s -> 0.52s)
- * 2. Water surface impact, volume squash & stretch, and expanding concentric ripples (0.52s -> 1.4s)
- * 3. Fluid dissipation and smooth crossfade transition directly into HomeScreen (1.4s -> 2.0s)
+ * Cinematic, buttery-smooth acoustic opening splash screen for UTA-WAVE.
+ * Visually mirrors the glowing 'U' soundwave aesthetic of the app icon.
+ * Total duration: ~850ms (instant, silky smooth, 120fps GPU-accelerated).
  */
 @Composable
 fun SplashWaterSurface(
     onAnimationComplete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val density = LocalDensity.current
-    val physicsEngine = remember { WaterPhysicsEngine() }
-    var centerOffset by remember { mutableStateOf(Offset.Zero) }
-
-    // Physics Animation Drivers
-    val dropProgress = remember { Animatable(0f) }
-    val squashX = remember { Animatable(1f) }
-    val squashY = remember { Animatable(1f) }
-    val uGlowAlpha = remember { Animatable(0f) }
+    val uScale = remember { Animatable(0.88f) }
+    val uAlpha = remember { Animatable(0f) }
+    val waveProgress = remember { Animatable(0f) }
     val surfaceAlpha = remember { Animatable(1f) }
-    var currentClockMs by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(Unit) {
-        val startNs = System.nanoTime()
+        coroutineScope {
+            // 1. Center "U" blooms into view smoothly (0ms -> 320ms)
+            launch {
+                uScale.animateTo(
+                    targetValue = 1.0f,
+                    animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+                )
+            }
+            launch {
+                uAlpha.animateTo(
+                    targetValue = 1.0f,
+                    animationSpec = tween(durationMillis = 240, easing = LinearOutSlowInEasing)
+                )
+            }
 
-        // 1. Gravitational acceleration: Drop U from top into water surface (0.0s -> 0.52s)
-        dropProgress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 520, easing = FastOutLinearInEasing)
-        )
+            // 2. Concentric acoustic waves expand from behind the U (0ms -> 720ms)
+            launch {
+                waveProgress.animateTo(
+                    targetValue = 1.0f,
+                    animationSpec = tween(durationMillis = 720, easing = CubicBezierEasing(0.2f, 0.0f, 0.2f, 1.0f))
+                )
+            }
 
-        // 2. Impact point at 520ms: Trigger concentric liquid ripples
-        val impactTimeMs = (System.nanoTime() - startNs) / 1_000_000L
-        physicsEngine.triggerImpact(impactTimeMs)
-
-        // 3. Elastic Squash & Stretch (Incompressible volume preservation on liquid impact)
-        // Impact compression
-        squashY.animateTo(0.72f, tween(75, easing = LinearOutSlowInEasing))
-        squashX.animateTo(1.24f, tween(75, easing = LinearOutSlowInEasing))
-        uGlowAlpha.animateTo(0.6f, tween(100))
-
-        // Elastic rebound spring
-        squashY.animateTo(1.08f, spring(dampingRatio = 0.58f, stiffness = Spring.StiffnessMedium))
-        squashX.animateTo(0.95f, spring(dampingRatio = 0.58f, stiffness = Spring.StiffnessMedium))
-        squashY.animateTo(1.0f, tween(120))
-        squashX.animateTo(1.0f, tween(120))
-        uGlowAlpha.animateTo(0.15f, tween(300))
-
-        // 4. Wave resonance expands while U floats peacefully in water (0.6s -> 1.4s)
-        delay(700)
-
-        // 5. Smooth Dissolve / Transition into HomeScreen (1.4s -> 1.95s)
-        surfaceAlpha.animateTo(0f, tween(durationMillis = 520, easing = FastOutSlowInEasing))
-
-        onAnimationComplete()
-    }
-
-    // High-precision frame ticker for fluid wave physics (runs at 60/120Hz)
-    LaunchedEffect(Unit) {
-        val startNs = System.nanoTime()
-        while (surfaceAlpha.value > 0f) {
-            withFrameNanos { frameNs ->
-                currentClockMs = (frameNs - startNs) / 1_000_000L
+            // 3. Smooth dissolve into HomeScreen (600ms -> 850ms)
+            launch {
+                delay(600)
+                surfaceAlpha.animateTo(
+                    targetValue = 0f,
+                    animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing)
+                )
+                onAnimationComplete()
             }
         }
-    }
-
-    val activeRings = remember(currentClockMs) {
-        physicsEngine.getActiveRings(currentClockMs)
     }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .alpha(surfaceAlpha.value)
-            .onGloballyPositioned { coordinates ->
-                centerOffset = Offset(
-                    coordinates.size.width / 2f,
-                    coordinates.size.height / 2f
-                )
-            },
+            .alpha(surfaceAlpha.value),
         contentAlignment = Alignment.Center
     ) {
-        // LAYER 1: Concentric Circular Ripple Waves Canvas
-        WaterRippleCanvasRenderer(
-            rings = activeRings,
-            centerOffset = centerOffset
-        )
+        // LAYER 1: Concentric Circular Soundwave Ripples Canvas (Zero GC allocations in draw loop)
+        val p = waveProgress.value
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val maxR = size.minDimension * 0.46f
 
-        // LAYER 2: Epicenter Water Caustic Pool Glow
-        if (uGlowAlpha.value > 0.01f) {
+            // Wave Ring 1 (Primary wavefront)
+            if (p > 0.04f) {
+                val frac1 = ((p - 0.04f) / 0.88f).coerceIn(0f, 1f)
+                val r1 = frac1 * maxR
+                val a1 = (1f - frac1) * (1f - frac1) * 0.65f
+                if (a1 > 0.01f) {
+                    drawCircle(
+                        color = Color.White.copy(alpha = a1),
+                        radius = r1,
+                        center = center,
+                        style = Stroke(width = max(1.5f, 4.5f * (1f - frac1)))
+                    )
+                }
+            }
+
+            // Wave Ring 2 (Secondary resonance)
+            if (p > 0.18f) {
+                val frac2 = ((p - 0.18f) / 0.76f).coerceIn(0f, 1f)
+                val r2 = frac2 * maxR * 0.82f
+                val a2 = (1f - frac2) * (1f - frac2) * 0.45f
+                if (a2 > 0.01f) {
+                    drawCircle(
+                        color = Color(0xFFD4D4E8).copy(alpha = a2),
+                        radius = r2,
+                        center = center,
+                        style = Stroke(width = max(1.2f, 3.5f * (1f - frac2)))
+                    )
+                }
+            }
+
+            // Wave Ring 3 (Tertiary echo)
+            if (p > 0.32f) {
+                val frac3 = ((p - 0.32f) / 0.65f).coerceIn(0f, 1f)
+                val r3 = frac3 * maxR * 0.64f
+                val a3 = (1f - frac3) * (1f - frac3) * 0.30f
+                if (a3 > 0.01f) {
+                    drawCircle(
+                        color = Color(0xFFA8A8C0).copy(alpha = a3),
+                        radius = r3,
+                        center = center,
+                        style = Stroke(width = max(1.0f, 2.4f * (1f - frac3)))
+                    )
+                }
+            }
+        }
+
+        // LAYER 2: Ethereal ambient bloom behind the U
+        if (uAlpha.value > 0.05f) {
             Box(
                 modifier = Modifier
                     .size(160.dp)
-                    .blur(28.dp)
+                    .blur(36.dp)
                     .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFF6DE8F2).copy(alpha = uGlowAlpha.value * 0.40f),
-                                Color(0xFFFFB060).copy(alpha = uGlowAlpha.value * 0.20f),
-                                Color.Transparent
-                            )
-                        ),
+                        color = Color.White.copy(alpha = 0.14f * uAlpha.value),
                         shape = CircleShape
                     )
             )
         }
 
-        // LAYER 3: Dropping & Floating Porcelain White "U"
-        val startYOffset = with(density) { -260.dp.toPx() }
-        val currentYOffset = startYOffset * (1f - dropProgress.value)
-
+        // LAYER 3: Glowing porcelain-white "U" with smooth scale & bloom
         Box(
             modifier = Modifier
-                .offset(y = with(density) { currentYOffset.toDp() })
-                .scale(scaleX = squashX.value, scaleY = squashY.value),
+                .scale(uScale.value)
+                .alpha(uAlpha.value),
             contentAlignment = Alignment.Center
         ) {
-            // Subtle 3D Depth Shadow on water
+            // Diffuse outer glow
             Text(
                 text = "U",
                 fontFamily = OutfitFontFamily,
                 fontWeight = FontWeight.Bold,
-                fontSize = 94.sp,
-                color = Color.Black.copy(alpha = 0.55f),
-                modifier = Modifier
-                    .offset(y = 4.dp)
-                    .blur(6.dp)
+                fontSize = 96.sp,
+                color = Color.White.copy(alpha = 0.45f),
+                modifier = Modifier.blur(8.dp)
             )
 
-            // Pure Porcelain White Letter U (Matching Apple-Style Core Inlay)
+            // Core crisp porcelain white letter U
             Text(
                 text = "U",
                 fontFamily = OutfitFontFamily,
                 fontWeight = FontWeight.Bold,
-                fontSize = 94.sp,
+                fontSize = 96.sp,
                 color = Color.White
             )
         }

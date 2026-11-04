@@ -39,6 +39,7 @@ class DesktopMusicService(
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Referer" to "https://music.youtube.com/",
             "Origin" to "https://music.youtube.com",
+            "X-Origin" to "https://music.youtube.com",
             "X-YouTube-Client-Name" to "67",
             "X-YouTube-Client-Version" to CLIENT_VERSION
         )
@@ -82,6 +83,10 @@ class DesktopMusicService(
             emptyList()
         }
     }
+    suspend fun getTrending(): List<TrackItem> = searchSongs("trending songs hits charts")
+    suspend fun getArtistHits(artist: String): List<TrackItem> = searchSongs("$artist top songs hits")
+    suspend fun getMoodSongs(mood: String): List<TrackItem> = searchSongs("$mood songs music")
+
 
     private fun parseSearchTracks(root: JSONObject): List<TrackItem> {
         val tracks = mutableListOf<TrackItem>()
@@ -168,9 +173,9 @@ class DesktopMusicService(
         return TrackItem(
             id = "youtube:$videoId",
             videoId = videoId,
-            title = title,
-            artist = artist,
-            album = album,
+            title = TextSanitizer.fixMojibake(title),
+            artist = TextSanitizer.fixMojibake(artist),
+            album = album?.let { TextSanitizer.fixMojibake(it) },
             artworkUrl = artworkUrl,
             durationSeconds = durationSec
         )
@@ -185,21 +190,34 @@ class DesktopMusicService(
         }
     }
 
+    private val streamUrlCache = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
+
     suspend fun resolveStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+        val cached = streamUrlCache[videoId]
+        if (cached != null && System.currentTimeMillis() - cached.second < 2 * 3600 * 1000L) {
+            return@withContext cached.first
+        }
+
         // Level 1: Primary VISIONOS / ANDROID_VR InnerTube player resolution
         val primaryStream = tryResolveVisionOS(videoId) ?: tryResolveVR(videoId) ?: tryResolveIOS(videoId)
         if (!primaryStream.isNullOrBlank()) {
+            streamUrlCache[videoId] = Pair(primaryStream, System.currentTimeMillis())
             return@withContext primaryStream
         }
 
         // Level 2: Local yt-dlp extraction fallback if installed on host Windows PC
         val ytDlpStream = tryResolveYtDlp(videoId)
         if (!ytDlpStream.isNullOrBlank()) {
+            streamUrlCache[videoId] = Pair(ytDlpStream, System.currentTimeMillis())
             return@withContext ytDlpStream
         }
 
         // Level 3: Piped instances fallback
-        return@withContext tryResolvePiped(videoId)
+        val pipedStream = tryResolvePiped(videoId)
+        if (!pipedStream.isNullOrBlank()) {
+            streamUrlCache[videoId] = Pair(pipedStream, System.currentTimeMillis())
+        }
+        return@withContext pipedStream
     }
 
     private fun tryResolveVisionOS(videoId: String): String? {
@@ -627,16 +645,27 @@ class DesktopMusicService(
     }
 
     private fun parsePlaylistTracks(json: JSONObject, outTracks: MutableList<TrackItem>): String? {
-        val contents = json.optJSONObject("contents")
+        val shelf = json.optJSONObject("contents")
             ?.optJSONObject("twoColumnBrowseResultsRenderer")
-            ?.optJSONArray("secondaryContents")
+            ?.optJSONObject("secondaryContents")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents")
             ?.optJSONObject(0)
             ?.optJSONObject("musicPlaylistShelfRenderer")
-            ?.optJSONArray("contents")
+            ?: json.optJSONObject("contents")
+                ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
+                ?.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents")
+                ?.optJSONObject(0)
+                ?.optJSONObject("musicPlaylistShelfRenderer")
             ?: json.optJSONObject("continuationContents")
                 ?.optJSONObject("musicPlaylistShelfContinuation")
-                ?.optJSONArray("contents")
-            ?: return null
+
+        val contents = shelf?.optJSONArray("contents") ?: return null
 
         var nextToken: String? = null
 

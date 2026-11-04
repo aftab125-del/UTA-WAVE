@@ -238,19 +238,32 @@ fun HomeScreen(
                                 .clip(RoundedCornerShape(8.dp))
                         )
                     }
-                    Text(
-                        text = if (userSettings.useCustomIconInApp && userSettings.customIconLabel.isNotBlank()) {
-                            userSettings.customIconLabel
-                        } else {
-                            "UTA-wave"
-                        },
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 26.sp,
-                            letterSpacing = (-0.6).sp
-                        ),
-                        color = TextPrimary
-                    )
+                    Column(
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = if (userSettings.useCustomIconInApp && userSettings.customIconLabel.isNotBlank()) {
+                                userSettings.customIconLabel
+                            } else {
+                                "UTA-wave"
+                            },
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 23.sp,
+                                letterSpacing = (-0.5).sp
+                            ),
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "by Aftab Kathat",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp,
+                                letterSpacing = 0.4.sp
+                            ),
+                            color = Color(0xFFF2AEC7).copy(alpha = 0.85f)
+                        )
+                    }
                 }
 
                 Row(

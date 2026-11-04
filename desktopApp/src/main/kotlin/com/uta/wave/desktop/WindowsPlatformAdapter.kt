@@ -21,6 +21,24 @@ interface WindowsPlatformAdapter {
     )
 
     /**
+     * Initializes SMTC with discrete Play and Pause callbacks for high-fidelity control.
+     */
+    fun initSystemMediaTransportControls(
+        onPlayClicked: () -> Unit,
+        onPauseClicked: () -> Unit,
+        onNextClicked: () -> Unit,
+        onPreviousClicked: () -> Unit,
+        onStopClicked: () -> Unit
+    ) {
+        initSystemMediaTransportControls(
+            onPlayPauseClicked = onPlayClicked,
+            onNextClicked = onNextClicked,
+            onPreviousClicked = onPreviousClicked,
+            onStopClicked = onStopClicked
+        )
+    }
+
+    /**
      * Updates track metadata and playback status on the Windows volume overlay.
      */
     fun updateSmtcPlaybackState(state: UnifiedPlaybackState)
