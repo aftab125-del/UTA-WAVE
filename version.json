@@ -1,8 +1,8 @@
 {
-  "versionCode": 10,
-  "versionName": "1.1.8",
-  "title": "UTA-wave 1.1.8 Acoustic Brand Identity & Creator Profile",
-  "changelog": "\u2022 Brand new futuristic acoustic wave icon with glowing 'U' aesthetic\n\u2022 Ultra-fast buttery-smooth launch engine (~850ms, 120fps GPU canvas splash)\n\u2022 Added creator branding 'by Aftab Kathat' on Home top bar\n\u2022 Added direct Instagram profile link (@dhaniya0patta) in Settings About\n\u2022 Fixed character encoding and cleaned up typography across About screen",
+  "versionCode": 11,
+  "versionName": "1.1.9",
+  "title": "UTA-wave 1.1.9 Cinematic Splash Animation & Optics Fix",
+  "changelog": "\u2022 Completely fixed the square boxy glow artifact on launch screen\n\u2022 Replaced layout blur with infinite GPU radial gradient bloom\n\u2022 Re-tuned opening animation pacing to a luxurious 1.65s acoustic wave transition\n\u2022 Added 4-stage concentric metallic soundwave ripple propagation\n\u2022 Crisp sculpted porcelain-white 'U' brand glyph",
   "downloadUrl": "https://raw.githubusercontent.com/aftab125-del/UTA-WAVE/main/app-latest.apk",
   "mandatory": false
 }
