@@ -38,6 +38,20 @@ compose.desktop {
             copyright = "© 2026 UTA-VERSE. All rights reserved."
             vendor = "UTA-VERSE"
 
+            modules(
+                "java.base",
+                "java.desktop",
+                "java.logging",
+                "java.prefs",
+                "java.xml",
+                "java.naming",
+                "java.management",
+                "java.instrument",
+                "java.net.http",
+                "jdk.unsupported",
+                "jdk.crypto.ec"
+            )
+
             windows {
                 iconFile.set(project.file("src/main/resources/icon.ico"))
                 menuGroup = "UTA-VERSE"
@@ -52,5 +66,3 @@ compose.desktop {
 kotlin {
     jvmToolchain(17)
 }
-
-
