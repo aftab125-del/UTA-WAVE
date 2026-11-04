@@ -61,7 +61,7 @@ class DesktopAccountManager private constructor() {
     private fun loadSession(): DesktopUserProfile {
         try {
             if (!sessionFile.exists()) return DesktopUserProfile()
-            val content = sessionFile.readText(Charsets.UTF_8)
+            val content = sessionFile.readText(Charsets.UTF_8).removePrefix("\uFEFF").trim()
             if (content.isBlank()) return DesktopUserProfile()
 
             val json = JSONObject(content)

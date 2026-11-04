@@ -7,6 +7,51 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+
+object TextSanitizer {
+    private val WINDOWS_1252: Charset = try {
+        Charset.forName("windows-1252")
+    } catch (_: Exception) {
+        StandardCharsets.ISO_8859_1
+    }
+
+    fun fixMojibake(input: String?): String {
+        if (input.isNullOrBlank()) return ""
+        var current: String = input
+
+        // Specific known emojis or double corrupted patterns
+        if (current.contains("Ã°Å¸â€™Å’") || current.contains("ðŸ’Œ")) {
+            current = "💌🫶🏻"
+        }
+
+        // Iterative CP1252 / ISO-8859-1 to UTF-8 decoding
+        for (step in 0 until 3) {
+            val hasHighAscii = current.any { it.code in 0x80..0xFF }
+            if (!hasHighAscii) break
+
+            var repaired: String? = null
+            for (charset in listOf(WINDOWS_1252, StandardCharsets.ISO_8859_1)) {
+                try {
+                    val bytes = current.toByteArray(charset)
+                    val cand = String(bytes, StandardCharsets.UTF_8)
+                    if (!cand.contains('\uFFFD') && cand.length < current.length) {
+                        repaired = cand
+                        break
+                    }
+                } catch (_: Exception) {}
+            }
+            if (repaired != null) {
+                current = repaired
+            } else {
+                break
+            }
+        }
+
+        return current.replace("\u00A0", " ").replace("\u200B", "").trim()
+    }
+}
 
 data class DesktopPlaylist(
     val id: String,
@@ -48,21 +93,28 @@ class DesktopDatabase private constructor() {
     private val _library = MutableStateFlow(loadLibrary())
     val library: StateFlow<DesktopLibrary> = _library.asStateFlow()
 
-    private fun loadLibrary(): DesktopLibrary {
+    fun loadLibrary(): DesktopLibrary {
         try {
             if (!libraryFile.exists()) return DesktopLibrary()
-            val text = libraryFile.readText(Charsets.UTF_8)
+            val text = libraryFile.readText(Charsets.UTF_8).removePrefix("\uFEFF").trim()
             if (text.isBlank()) return DesktopLibrary()
 
             val root = JSONObject(text)
             val playlistsArray = root.optJSONArray("playlists") ?: JSONArray()
             val playlists = mutableListOf<DesktopPlaylist>()
+            var hadMojibake = false
 
             for (i in 0 until playlistsArray.length()) {
                 val pObj = playlistsArray.optJSONObject(i) ?: continue
                 val id = pObj.optString("id", "")
-                val name = pObj.optString("name", "Untitled Playlist")
-                val desc = pObj.optString("description").takeIf { !it.isNullOrBlank() }
+                val rawName = pObj.optString("name", "Untitled Playlist")
+                val name = TextSanitizer.fixMojibake(rawName)
+                if (name != rawName) hadMojibake = true
+
+                val rawDesc = pObj.optString("description").takeIf { !it.isNullOrBlank() }
+                val desc = rawDesc?.let { TextSanitizer.fixMojibake(it) }
+                if (desc != rawDesc) hadMojibake = true
+
                 val cover = pObj.optString("cover_url").takeIf { !it.isNullOrBlank() }
                 val trackCount = pObj.optInt("track_count", 0)
 
@@ -70,13 +122,25 @@ class DesktopDatabase private constructor() {
                 val tracks = mutableListOf<TrackItem>()
                 for (j in 0 until tracksArray.length()) {
                     val tObj = tracksArray.optJSONObject(j) ?: continue
+                    val rawTitle = tObj.optString("title", "Unknown")
+                    val rawArtist = tObj.optString("artist", "Unknown")
+                    val rawAlbum = tObj.optString("album").takeIf { !it.isNullOrBlank() }
+
+                    val cleanTitle = TextSanitizer.fixMojibake(rawTitle)
+                    val cleanArtist = TextSanitizer.fixMojibake(rawArtist)
+                    val cleanAlbum = rawAlbum?.let { TextSanitizer.fixMojibake(it) }
+
+                    if (cleanTitle != rawTitle || cleanArtist != rawArtist || cleanAlbum != rawAlbum) {
+                        hadMojibake = true
+                    }
+
                     tracks.add(
                         TrackItem(
                             id = tObj.optString("id", ""),
                             videoId = tObj.optString("video_id", ""),
-                            title = tObj.optString("title", "Unknown"),
-                            artist = tObj.optString("artist", "Unknown"),
-                            album = tObj.optString("album").takeIf { !it.isNullOrBlank() },
+                            title = cleanTitle,
+                            artist = cleanArtist,
+                            album = cleanAlbum,
                             artworkUrl = tObj.optString("artwork_url", ""),
                             durationSeconds = tObj.optInt("duration_seconds", 0)
                         )
@@ -99,13 +163,25 @@ class DesktopDatabase private constructor() {
             val liked = mutableListOf<TrackItem>()
             for (k in 0 until likedArray.length()) {
                 val tObj = likedArray.optJSONObject(k) ?: continue
+                val rawTitle = tObj.optString("title", "Unknown")
+                val rawArtist = tObj.optString("artist", "Unknown")
+                val rawAlbum = tObj.optString("album").takeIf { !it.isNullOrBlank() }
+
+                val cleanTitle = TextSanitizer.fixMojibake(rawTitle)
+                val cleanArtist = TextSanitizer.fixMojibake(rawArtist)
+                val cleanAlbum = rawAlbum?.let { TextSanitizer.fixMojibake(it) }
+
+                if (cleanTitle != rawTitle || cleanArtist != rawArtist || cleanAlbum != rawAlbum) {
+                    hadMojibake = true
+                }
+
                 liked.add(
                     TrackItem(
                         id = tObj.optString("id", ""),
                         videoId = tObj.optString("video_id", ""),
-                        title = tObj.optString("title", "Unknown"),
-                        artist = tObj.optString("artist", "Unknown"),
-                        album = tObj.optString("album").takeIf { !it.isNullOrBlank() },
+                        title = cleanTitle,
+                        artist = cleanArtist,
+                        album = cleanAlbum,
                         artworkUrl = tObj.optString("artwork_url", ""),
                         durationSeconds = tObj.optInt("duration_seconds", 0)
                     )
@@ -113,7 +189,16 @@ class DesktopDatabase private constructor() {
             }
 
             val lastSynced = root.optLong("last_synced_at", 0L)
-            return DesktopLibrary(playlists = playlists, likedSongs = liked, lastSyncedAt = lastSynced)
+            val result = DesktopLibrary(playlists = playlists, likedSongs = liked, lastSyncedAt = lastSynced)
+
+            if (hadMojibake) {
+                println("[DesktopDatabase] Mojibake repaired across library. Persisting sanitized library.json...")
+                try {
+                    saveLibrary(playlists, liked)
+                } catch (_: Exception) {}
+            }
+
+            return result
         } catch (e: Exception) {
             println("[DesktopDatabase] Failed to load library.json: ${e.message}")
             return DesktopLibrary()
@@ -190,6 +275,80 @@ class DesktopDatabase private constructor() {
         _library.value = DesktopLibrary()
     }
 
+    fun isFavorite(trackIdOrVideoId: String): Boolean {
+        return _library.value.likedSongs.any { it.id == trackIdOrVideoId || it.videoId == trackIdOrVideoId }
+    }
+
+    fun toggleFavorite(track: TrackItem): Boolean {
+        val currentLiked = _library.value.likedSongs.toMutableList()
+        val exists = currentLiked.any { it.id == track.id || it.videoId == track.videoId }
+        val isNowFavorite = if (exists) {
+            currentLiked.removeAll { it.id == track.id || it.videoId == track.videoId }
+            false
+        } else {
+            currentLiked.add(0, track)
+            true
+        }
+        saveLibrary(_library.value.playlists, currentLiked)
+        return isNowFavorite
+    }
+
+    fun addTrackToPlaylist(playlistId: String, track: TrackItem): Boolean {
+        val currentPlaylists = _library.value.playlists.toMutableList()
+        val idx = currentPlaylists.indexOfFirst { it.id == playlistId }
+        if (idx != -1) {
+            val p = currentPlaylists[idx]
+            val currentTracks = p.tracks.toMutableList()
+            if (currentTracks.none { it.id == track.id || it.videoId == track.videoId }) {
+                currentTracks.add(track)
+                currentPlaylists[idx] = p.copy(
+                    tracks = currentTracks,
+                    trackCount = currentTracks.size,
+                    coverUrl = p.coverUrl ?: track.artworkUrl
+                )
+                saveLibrary(currentPlaylists, _library.value.likedSongs)
+                return true
+            }
+        }
+        return false
+    }
+
+    fun removeTrackFromPlaylist(playlistId: String, trackIdOrVideoId: String): Boolean {
+        val currentPlaylists = _library.value.playlists.toMutableList()
+        val idx = currentPlaylists.indexOfFirst { it.id == playlistId }
+        if (idx != -1) {
+            val p = currentPlaylists[idx]
+            val currentTracks = p.tracks.toMutableList()
+            val removed = currentTracks.removeAll { it.id == trackIdOrVideoId || it.videoId == trackIdOrVideoId }
+            if (removed) {
+                currentPlaylists[idx] = p.copy(
+                    tracks = currentTracks,
+                    trackCount = currentTracks.size
+                )
+                saveLibrary(currentPlaylists, _library.value.likedSongs)
+                return true
+            }
+        }
+        return false
+    }
+
+    fun createPlaylist(name: String, initialTrack: TrackItem?): DesktopPlaylist {
+        val currentPlaylists = _library.value.playlists.toMutableList()
+        val newId = "local_pl_" + System.currentTimeMillis()
+        val tracks = if (initialTrack != null) listOf(initialTrack) else emptyList()
+        val newPlaylist = DesktopPlaylist(
+            id = newId,
+            name = name.ifBlank { "New Playlist" },
+            description = "Created on UTA-WAVE Desktop",
+            trackCount = tracks.size,
+            coverUrl = initialTrack?.artworkUrl,
+            tracks = tracks
+        )
+        currentPlaylists.add(0, newPlaylist)
+        saveLibrary(currentPlaylists, _library.value.likedSongs)
+        return newPlaylist
+    }
+
     fun updatePlaylistTracks(playlistId: String, tracks: List<TrackItem>) {
         val current = _library.value.playlists.toMutableList()
         val index = current.indexOfFirst { it.id == playlistId }
@@ -220,8 +379,8 @@ class DesktopDatabase private constructor() {
                             TrackItem(
                                 id = "youtube:$vid",
                                 videoId = vid,
-                                title = obj.optString("title", "Unknown"),
-                                artist = obj.optString("artist", "Unknown"),
+                                title = TextSanitizer.fixMojibake(obj.optString("title", "Unknown")),
+                                artist = TextSanitizer.fixMojibake(obj.optString("artist", "Unknown")),
                                 artworkUrl = obj.optString("artworkUrl", ""),
                                 durationSeconds = obj.optInt("durationSeconds", 0)
                             )
@@ -235,8 +394,8 @@ class DesktopDatabase private constructor() {
                 for (i in 0 until playlistsArray.length()) {
                     val pObj = playlistsArray.optJSONObject(i) ?: continue
                     val pId = pObj.optString("id", java.util.UUID.randomUUID().toString())
-                    val pName = pObj.optString("name", "Mobile Playlist")
-                    val pDesc = pObj.optString("description").takeIf { !it.isNullOrBlank() }
+                    val pName = TextSanitizer.fixMojibake(pObj.optString("name", "Mobile Playlist"))
+                    val pDesc = pObj.optString("description").takeIf { !it.isNullOrBlank() }?.let { TextSanitizer.fixMojibake(it) }
 
                     val tracksArray = pObj.optJSONArray("tracks") ?: JSONArray()
                     val pTracks = mutableListOf<TrackItem>()
@@ -248,8 +407,8 @@ class DesktopDatabase private constructor() {
                                 TrackItem(
                                     id = "youtube:$vid",
                                     videoId = vid,
-                                    title = tObj.optString("title", "Unknown"),
-                                    artist = tObj.optString("artist", "Unknown"),
+                                    title = TextSanitizer.fixMojibake(tObj.optString("title", "Unknown")),
+                                    artist = TextSanitizer.fixMojibake(tObj.optString("artist", "Unknown")),
                                     artworkUrl = tObj.optString("artworkUrl", ""),
                                     durationSeconds = tObj.optInt("durationSeconds", 0)
                                 )

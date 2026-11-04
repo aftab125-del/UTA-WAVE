@@ -1,6 +1,9 @@
 package com.uta.wave.desktop
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.window.WindowDraggableArea
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,21 +30,34 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.loadImageBitmap
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+
 import com.uta.wave.audio.UnifiedPlaybackState
 import com.uta.wave.core.model.TrackItem
 import com.uta.wave.desktop.account.DesktopAccountManager
 import com.uta.wave.desktop.account.DesktopUserProfile
 import com.uta.wave.desktop.audio.WindowsAudioPlayerEngine
+import com.uta.wave.desktop.audio.NextTrackCandidate
 import com.uta.wave.desktop.data.DesktopDatabase
 import com.uta.wave.desktop.data.DesktopMusicService
 import com.uta.wave.desktop.data.DesktopPlaylist
-import com.uta.wave.desktop.ui.DesktopFloatingNavBar
+import com.uta.wave.desktop.ui.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,15 +75,19 @@ val TextPrimary = Color(0xFFF3F4F6)
 val TextSecondary = Color(0xFF9CA3AF)
 
 enum class DesktopNavTab(val label: String, val icon: @Composable () -> Unit) {
-    EXPLORE("Explore", { Icon(Icons.Filled.Explore, contentDescription = "Explore") }),
-    SEARCH("Search", { Icon(Icons.Filled.Search, contentDescription = "Search") }),
+    HOME("Home", { Icon(Icons.Filled.Home, contentDescription = "Home") }),
     LIBRARY("Library", { Icon(Icons.Filled.LibraryMusic, contentDescription = "Library") }),
-    CONNECT("UTA Connect", { Icon(Icons.Filled.Devices, contentDescription = "UTA Connect") }),
-    AI_STUDIO("AI Studio", { Icon(Icons.Filled.AutoAwesome, contentDescription = "AI Studio") }),
-    SETTINGS("Settings", { Icon(Icons.Filled.Settings, contentDescription = "Settings") })
+    SETTINGS("Settings", { Icon(Icons.Filled.Settings, contentDescription = "Settings") }),
+    SEARCH("Search", { Icon(Icons.Filled.Search, contentDescription = "Search") })
 }
 
-fun main() = application {
+fun main() {
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        System.err.println("[Fatal] Uncaught exception on ${thread.name}: ${throwable.message}")
+        kotlin.system.exitProcess(1)
+    }
+
+    application {
     val windowState = rememberWindowState(
         size = DpSize(1240.dp, 840.dp),
         position = WindowPosition(Alignment.Center)
@@ -77,6 +97,7 @@ fun main() = application {
     val musicService = remember { DesktopMusicService() }
     val accountManager = remember { DesktopAccountManager.getInstance() }
     val database = remember { DesktopDatabase.getInstance() }
+    val smtcManager = remember { WindowsSmtcManager() }
 
     val playbackState by audioEngine.state.collectAsState()
     val userProfile by accountManager.profile.collectAsState()
@@ -87,10 +108,200 @@ fun main() = application {
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var isSyncing by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
+    var isBottomBarCollapsed by remember { mutableStateOf(false) }
+    var isPlayerExpanded by remember { mutableStateOf(false) }
+    var previousWindowStatePlacement by remember { mutableStateOf(WindowPlacement.Floating) }
+
+    LaunchedEffect(isPlayerExpanded) {
+        if (isPlayerExpanded) {
+            previousWindowStatePlacement = windowState.placement
+            windowState.placement = WindowPlacement.Maximized
+        } else {
+            windowState.placement = previousWindowStatePlacement
+        }
+    }
+
+
+
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                if (delta < -8f && !isBottomBarCollapsed) {
+                    isBottomBarCollapsed = true
+                } else if (delta > 8f && isBottomBarCollapsed) {
+                    isBottomBarCollapsed = false
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     // Playlist Queue management
     var activeQueue by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
     var currentQueueIndex by remember { mutableStateOf(-1) }
+
+    // Smart Queue Management & Playback Modes
+    var repeatMode by remember { mutableStateOf(DesktopRepeatMode.OFF) }
+    var isShuffle by remember { mutableStateOf(false) }
+    var unshuffledQueue by remember { mutableStateOf<List<TrackItem>?>(null) }
+    var isQueueLocked by remember { mutableStateOf(false) }
+    var showQueueSheetModal by remember { mutableStateOf(false) }
+    var activeRadioVideoId by remember { mutableStateOf<String?>(null) }
+    var isFetchingRadioContinuation by remember { mutableStateOf(false) }
+
+    // 3-Dots Song Menu Dialog State
+    var activeSongMenuTrack by remember { mutableStateOf<TrackItem?>(null) }
+    var activeSongMenuPlaylistId by remember { mutableStateOf<String?>(null) }
+    var activeSongMenuIsInQueue by remember { mutableStateOf(false) }
+
+    fun playNext(track: TrackItem) {
+        val list = activeQueue.toMutableList()
+        val insertIdx = if (currentQueueIndex >= 0 && currentQueueIndex < list.size) currentQueueIndex + 1 else 0
+        list.add(insertIdx, track)
+        activeQueue = list
+        statusMessage = "Playing \"${track.title}\" next."
+    }
+
+    fun addToQueue(track: TrackItem) {
+        activeQueue = activeQueue + track
+        statusMessage = "Added \"${track.title}\" to queue."
+    }
+
+    fun shareTrack(track: TrackItem) {
+        val url = "https://music.youtube.com/watch?v=${track.videoId}"
+        try {
+            val selection = java.awt.datatransfer.StringSelection(url)
+            java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(selection, null)
+            statusMessage = "Link copied to clipboard: $url"
+        } catch (e: Exception) {
+            statusMessage = "Could not copy link to clipboard."
+        }
+    }
+
+    fun spreadByArtist(tracks: List<TrackItem>): List<TrackItem> {
+        if (tracks.size <= 2) return tracks
+        val grouped = tracks.groupBy { it.artist.trim().lowercase() }
+            .values
+            .sortedByDescending { it.size }
+            .map { it.toMutableList() }
+            .toMutableList()
+
+        val result = mutableListOf<TrackItem>()
+        var lastArtist: String? = null
+
+        while (grouped.isNotEmpty()) {
+            val candidateGroup = grouped.firstOrNull { it.first().artist.trim().lowercase() != lastArtist }
+                ?: grouped.first()
+
+            val nextTrack = candidateGroup.removeAt(0)
+            result.add(nextTrack)
+            lastArtist = nextTrack.artist.trim().lowercase()
+
+            if (candidateGroup.isEmpty()) {
+                grouped.remove(candidateGroup)
+            }
+            grouped.sortByDescending { it.size }
+        }
+        return result
+    }
+
+    fun smartShuffle(tracks: List<TrackItem>, currentTrack: TrackItem? = null): List<TrackItem> {
+        if (tracks.size <= 1) return tracks
+        val rest = if (currentTrack != null) {
+            tracks.filter { it.id != currentTrack.id && it.videoId != currentTrack.videoId }.toMutableList()
+        } else {
+            tracks.toMutableList()
+        }
+        val random = java.util.Random(System.nanoTime())
+        rest.shuffle(random)
+        val spread = spreadByArtist(rest)
+        return if (currentTrack != null) listOf(currentTrack) + spread else spread
+    }
+
+    fun toggleShuffle() {
+        if (activeQueue.isEmpty()) {
+            isShuffle = !isShuffle
+            return
+        }
+        val newShuffle = !isShuffle
+        if (newShuffle) {
+            unshuffledQueue = activeQueue
+            val currentTrack = activeQueue.getOrNull(currentQueueIndex)
+            val shuffled = smartShuffle(activeQueue, currentTrack)
+            activeQueue = shuffled
+            currentQueueIndex = 0
+            isShuffle = true
+        } else {
+            val restored = unshuffledQueue ?: activeQueue
+            unshuffledQueue = null
+            val currentTrack = activeQueue.getOrNull(currentQueueIndex)
+            val newIndex = if (currentTrack != null) {
+                restored.indexOfFirst { it.id == currentTrack.id || it.videoId == currentTrack.videoId }.coerceAtLeast(0)
+            } else 0
+            activeQueue = restored
+            currentQueueIndex = newIndex
+            isShuffle = false
+        }
+    }
+
+    fun toggleRepeat() {
+        repeatMode = when (repeatMode) {
+            DesktopRepeatMode.OFF -> DesktopRepeatMode.ALL
+            DesktopRepeatMode.ALL -> DesktopRepeatMode.ONE
+            DesktopRepeatMode.ONE -> DesktopRepeatMode.OFF
+        }
+        statusMessage = "Repeat mode: ${repeatMode.label}"
+    }
+
+    fun moveQueueTrack(fromIndex: Int, delta: Int) {
+        if (isQueueLocked) return
+        val toIndex = fromIndex + delta
+        if (fromIndex !in activeQueue.indices || toIndex !in activeQueue.indices) return
+        val list = activeQueue.toMutableList()
+        val currentTrack = activeQueue.getOrNull(currentQueueIndex)
+        val item = list.removeAt(fromIndex)
+        list.add(toIndex, item)
+        activeQueue = list
+        if (currentTrack != null) {
+            val newIdx = list.indexOfFirst { it.id == currentTrack.id || it.videoId == currentTrack.videoId }
+            if (newIdx >= 0) currentQueueIndex = newIdx
+        }
+    }
+
+    fun removeFromQueue(track: TrackItem) {
+        if (isQueueLocked) return
+        val cleanId = track.videoId.ifBlank { track.id }
+        val list = activeQueue.toMutableList()
+        val idx = list.indexOfFirst { it.videoId == cleanId || it.id == track.id }
+        if (idx >= 0) {
+            list.removeAt(idx)
+            activeQueue = list
+            if (currentQueueIndex > idx) currentQueueIndex--
+            else if (currentQueueIndex >= list.size) currentQueueIndex = list.size - 1
+            statusMessage = "Removed \"${track.title}\" from queue."
+        }
+    }
+
+    fun removeMultipleFromQueue(ids: Set<String>) {
+        if (isQueueLocked || ids.isEmpty()) return
+        val currentTrack = activeQueue.getOrNull(currentQueueIndex)
+        val filtered = activeQueue.filter { it.id !in ids && it.videoId !in ids }
+        activeQueue = filtered
+        val newIdx = if (currentTrack != null) {
+            filtered.indexOfFirst { it.id == currentTrack.id || it.videoId == currentTrack.videoId }.coerceAtLeast(0)
+        } else 0
+        currentQueueIndex = newIdx
+        statusMessage = "Removed ${ids.size} tracks from queue."
+    }
+
+    fun clearUpcomingQueue() {
+        if (isQueueLocked) return
+        val currentTrack = activeQueue.getOrNull(currentQueueIndex)
+        activeQueue = if (currentTrack != null) listOf(currentTrack) else emptyList()
+        currentQueueIndex = 0
+        statusMessage = "Upcoming queue cleared."
+    }
 
     fun playTrack(track: TrackItem) {
         statusMessage = "Resolving audio stream for \"${track.title}\"..."
@@ -118,7 +329,55 @@ fun main() = application {
     fun playQueueTrack(index: Int) {
         if (index in activeQueue.indices) {
             currentQueueIndex = index
-            playTrack(activeQueue[index])
+            val track = activeQueue[index]
+            playTrack(track)
+
+            // Auto-continuation for algorithmic radio stations
+            if (activeRadioVideoId != null && index >= activeQueue.size - 3 && !isFetchingRadioContinuation) {
+                scope.launch {
+                    isFetchingRadioContinuation = true
+                    try {
+                        val trending = musicService.getTrending()
+                        val currentKeys = activeQueue.map { it.videoId }.toSet()
+                        val more = trending.filter { it.videoId !in currentKeys }.take(8)
+                        if (more.isNotEmpty()) {
+                            activeQueue = activeQueue + more
+                        }
+                    } catch (e: Exception) {
+                        // ignore
+                    } finally {
+                        isFetchingRadioContinuation = false
+                    }
+                }
+            }
+        }
+    }
+
+    fun saveQueueAsPlaylist(name: String) {
+        if (activeQueue.isEmpty()) return
+        database.createPlaylist(name, null)
+        val playlists = database.loadLibrary().playlists
+        val created = playlists.firstOrNull { it.name == name }
+        if (created != null) {
+            activeQueue.forEach { database.addTrackToPlaylist(created.id, it) }
+            statusMessage = "Saved ${activeQueue.size} tracks to \"$name\"."
+        }
+    }
+
+    fun startRadio(track: TrackItem) {
+        activeRadioVideoId = track.videoId
+        statusMessage = "Starting \"${track.title}\" Radio..."
+        scope.launch {
+            try {
+                val trending = musicService.getTrending().filter { it.videoId != track.videoId }
+                val radioList = listOf(track) + trending
+                activeQueue = radioList
+                currentQueueIndex = 0
+                playTrack(track)
+                statusMessage = "Playing \"${track.title}\" Radio."
+            } catch (e: Exception) {
+                playTrack(track)
+            }
         }
     }
 
@@ -126,6 +385,26 @@ fun main() = application {
         if (playlist.tracks.isNotEmpty()) {
             activeQueue = playlist.tracks
             playQueueTrack(startIndex)
+        } else {
+            val cookie = userProfile.cookie
+            if (!cookie.isNullOrBlank()) {
+                scope.launch {
+                    statusMessage = "Loading \"${playlist.name}\" tracks..."
+                    try {
+                        val (_, tracks) = musicService.getPlaylist(playlist.id, cookie, userProfile.sapisid)
+                        if (tracks.isNotEmpty()) {
+                            database.updatePlaylistTracks(playlist.id, tracks)
+                            activeQueue = tracks
+                            playQueueTrack(startIndex)
+                            statusMessage = null
+                        } else {
+                            statusMessage = "No tracks found for \"${playlist.name}\"."
+                        }
+                    } catch (e: Exception) {
+                        statusMessage = "Error loading playlist: ${e.message}"
+                    }
+                }
+            }
         }
     }
 
@@ -133,16 +412,136 @@ fun main() = application {
         if (playlist.tracks.isNotEmpty()) {
             activeQueue = playlist.tracks.shuffled()
             playQueueTrack(0)
+        } else {
+            val cookie = userProfile.cookie
+            if (!cookie.isNullOrBlank()) {
+                scope.launch {
+                    statusMessage = "Loading \"${playlist.name}\" tracks..."
+                    try {
+                        val (_, tracks) = musicService.getPlaylist(playlist.id, cookie, userProfile.sapisid)
+                        if (tracks.isNotEmpty()) {
+                            database.updatePlaylistTracks(playlist.id, tracks)
+                            activeQueue = tracks.shuffled()
+                            playQueueTrack(0)
+                            statusMessage = null
+                        } else {
+                            statusMessage = "No tracks found for \"${playlist.name}\"."
+                        }
+                    } catch (e: Exception) {
+                        statusMessage = "Error loading playlist: ${e.message}"
+                    }
+                }
+            }
         }
     }
 
-    // Auto-advance to next track in queue when current track ends
-    LaunchedEffect(Unit) {
-        audioEngine.onTrackEnded = {
-            if (currentQueueIndex + 1 < activeQueue.size) {
-                playQueueTrack(currentQueueIndex + 1)
+    // Auto-advance & Mobile-Parity Equal-Power Crossfade Orchestration
+    LaunchedEffect(repeatMode, activeQueue, currentQueueIndex) {
+        audioEngine.streamUrlResolver = { videoId ->
+            musicService.resolveStreamUrl(videoId)
+        }
+
+        audioEngine.nextTrackProvider = {
+            if (activeQueue.isEmpty() || currentQueueIndex < 0) null
+            else {
+                val nextIndex = when (repeatMode) {
+                    DesktopRepeatMode.ONE -> currentQueueIndex
+                    DesktopRepeatMode.ALL -> (currentQueueIndex + 1) % activeQueue.size
+                    DesktopRepeatMode.OFF -> {
+                        if (currentQueueIndex + 1 < activeQueue.size) currentQueueIndex + 1 else -1
+                    }
+                }
+                if (nextIndex in activeQueue.indices) {
+                    val currentTrack = activeQueue.getOrNull(currentQueueIndex)
+                    val nextTrack = activeQueue[nextIndex]
+                    val isSameAlbum = !currentTrack?.album.isNullOrBlank() &&
+                            currentTrack?.album.equals(nextTrack.album, ignoreCase = true)
+                    NextTrackCandidate(
+                        track = nextTrack,
+                        queueIndex = nextIndex,
+                        isSameAlbum = isSameAlbum
+                    )
+                } else null
             }
         }
+
+        audioEngine.onTrackSwapped = { _, newIndex ->
+            currentQueueIndex = newIndex
+            // Auto-continuation check for algorithmic radio stations
+            if (activeRadioVideoId != null && newIndex >= activeQueue.size - 3 && !isFetchingRadioContinuation) {
+                scope.launch {
+                    isFetchingRadioContinuation = true
+                    try {
+                        val trending = musicService.getTrending()
+                        val currentKeys = activeQueue.map { it.videoId }.toSet()
+                        val more = trending.filter { it.videoId !in currentKeys }.take(8)
+                        if (more.isNotEmpty()) {
+                            activeQueue = activeQueue + more
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        isFetchingRadioContinuation = false
+                    }
+                }
+            }
+        }
+
+        audioEngine.onTrackEnded = {
+            when (repeatMode) {
+                DesktopRepeatMode.ONE -> {
+                    audioEngine.seekTo(0L)
+                    audioEngine.play()
+                }
+                DesktopRepeatMode.ALL -> {
+                    if (activeQueue.isNotEmpty()) {
+                        val nextIndex = (currentQueueIndex + 1) % activeQueue.size
+                        playQueueTrack(nextIndex)
+                    }
+                }
+                DesktopRepeatMode.OFF -> {
+                    if (currentQueueIndex + 1 < activeQueue.size) {
+                        playQueueTrack(currentQueueIndex + 1)
+                    }
+                }
+            }
+        }
+    }
+
+    // Connect Windows System Media Transport Controls (SMTC) for Dynamic Island & volume overlay
+    LaunchedEffect(activeQueue, currentQueueIndex) {
+        smtcManager.initSystemMediaTransportControls(
+            onPlayClicked = {
+                if (!playbackState.isPlaying) {
+                    audioEngine.play()
+                }
+            },
+            onPauseClicked = {
+                if (playbackState.isPlaying) {
+                    audioEngine.pause()
+                }
+            },
+            onNextClicked = {
+                if (currentQueueIndex + 1 < activeQueue.size) {
+                    playQueueTrack(currentQueueIndex + 1)
+                }
+            },
+            onPreviousClicked = {
+                if (playbackState.positionMs > 3000L) {
+                    audioEngine.seekTo(0L)
+                } else if (currentQueueIndex > 0) {
+                    playQueueTrack(currentQueueIndex - 1)
+                } else {
+                    audioEngine.seekTo(0L)
+                }
+            },
+            onStopClicked = {
+                audioEngine.pause()
+            }
+        )
+    }
+
+    LaunchedEffect(playbackState.title, playbackState.artist, playbackState.isPlaying, playbackState.artworkUrl) {
+        smtcManager.updateSmtcPlaybackState(playbackState)
     }
 
     fun triggerMobileSync() {
@@ -180,6 +579,7 @@ fun main() = application {
     Window(
         onCloseRequest = {
             try {
+                smtcManager.release()
                 audioEngine.release()
             } catch (_: Exception) {}
             exitApplication()
@@ -187,9 +587,11 @@ fun main() = application {
         },
         state = windowState,
         title = "UTA-WAVE — A Universe of Music",
-        undecorated = false
+        undecorated = true,
+        icon = painterResource("icon.png")
     ) {
         window.minimumSize = Dimension(960, 640)
+        val desktopBackdrop = rememberDesktopBackdrop()
 
         MaterialTheme(
             colorScheme = darkColorScheme(
@@ -203,54 +605,83 @@ fun main() = application {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(BackgroundDeep)
+                    .background(
+                        Brush.radialGradient(
+                            listOf(Color(0xFF160E26), Color(0xFF090A0F)),
+                            center = androidx.compose.ui.geometry.Offset(700f, 350f),
+                            radius = 1200f
+                        )
+                    )
             ) {
-                // Top Custom Header / Branding Bar
-                DesktopTopHeader(
-                    activeSessionDevice = "Windows PC",
-                    isCloudSynced = !isSyncing,
-                    userProfile = userProfile,
-                    onAccountClick = { showAccountDialog = true }
-                )
-
-                // Status Banner (if resolving or error)
-                if (statusMessage != null || playbackState.errorMessage != null) {
-                    val msg = statusMessage ?: playbackState.errorMessage
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Color(0xFF3B181E)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Filled.Info, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = msg ?: "", fontSize = 12.sp, color = Color(0xFFFCA5A5))
-                        }
+                // Top Custom Header / Window Control Bar (Hidden when in Fullscreen Player)
+                if (!isPlayerExpanded) {
+                    WindowDraggableArea {
+                        DesktopTopHeader(
+                            activeSessionDevice = "Windows PC",
+                            isCloudSynced = !isSyncing,
+                            userProfile = userProfile,
+                            onAccountClick = { showAccountDialog = true },
+                            onMinimize = { windowState.isMinimized = true },
+                            onMaximizeRestore = {
+                                windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {
+                                    WindowPlacement.Floating
+                                } else {
+                                    WindowPlacement.Maximized
+                                }
+                            },
+                            onClose = {
+                                try { audioEngine.release() } catch (_: Exception) {}
+                                exitApplication()
+                                kotlin.system.exitProcess(0)
+                            },
+                            isMaximized = windowState.placement == WindowPlacement.Maximized
+                        )
                     }
                 }
 
-                // Main Content Canvas with Floating Liquid Glass Navigation Dock
+
+
+                // Main Content Canvas with Floating Liquid Glass Navigation Dock & MiniPlayer
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
+                        .nestedScroll(nestedScrollConnection)
                 ) {
-                    // Full-Bleed Content Workspace
+                    // Full-Bleed Content Workspace (recorded into backdrop layer for live refraction)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .desktopBackdropLayer(desktopBackdrop)
                             .padding(horizontal = 24.dp, vertical = 16.dp)
-                            .padding(bottom = 72.dp) // Leave breathing room for the floating dock
                     ) {
                         when (currentTab) {
-                            DesktopNavTab.EXPLORE -> ExploreWorkspace(
-                                onPlayTrack = ::playTrack
+                            DesktopNavTab.HOME -> DesktopHomeScreen(
+                                musicService = musicService,
+                                library = libraryData,
+                                userProfile = userProfile,
+                                currentTrackId = playbackState.videoId,
+                                onPlayTrack = { track, queue ->
+                                    activeQueue = queue
+                                    val idx = queue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                                    playQueueTrack(idx)
+                                },
+                                onNavigateToLibrary = { currentTab = DesktopNavTab.LIBRARY },
+                                onNavigateToSearch = { currentTab = DesktopNavTab.SEARCH },
+                                onMoreClick = { track ->
+                                    activeSongMenuTrack = track
+                                    activeSongMenuPlaylistId = null
+                                    activeSongMenuIsInQueue = false
+                                }
                             )
                             DesktopNavTab.SEARCH -> SearchWorkspace(
                                 musicService = musicService,
-                                onPlayTrack = ::playTrack
+                                onPlayTrack = ::playTrack,
+                                onMoreClick = { track ->
+                                    activeSongMenuTrack = track
+                                    activeSongMenuPlaylistId = null
+                                    activeSongMenuIsInQueue = false
+                                }
                             )
                             DesktopNavTab.LIBRARY -> LibraryWorkspace(
                                 library = libraryData,
@@ -264,53 +695,99 @@ fun main() = application {
                                 onPlayTrackInPlaylist = { playlist, index ->
                                     activeQueue = playlist.tracks
                                     playQueueTrack(index)
+                                },
+                                onHydratePlaylist = { playlist ->
+                                    val cookie = userProfile.cookie
+                                    val sapisid = userProfile.sapisid
+                                    if (!cookie.isNullOrBlank()) {
+                                        val (_, tracks) = musicService.getPlaylist(playlist.id, cookie, sapisid)
+                                        if (tracks.isNotEmpty()) {
+                                            database.updatePlaylistTracks(playlist.id, tracks)
+                                        }
+                                    }
+                                },
+                                onTrackMoreClick = { track, playlist ->
+                                    activeSongMenuTrack = track
+                                    activeSongMenuPlaylistId = playlist?.id
+                                    activeSongMenuIsInQueue = false
                                 }
                             )
-                            DesktopNavTab.CONNECT -> ConnectWorkspace()
-                            DesktopNavTab.AI_STUDIO -> AiStudioWorkspace()
-                            DesktopNavTab.SETTINGS -> SettingsWorkspace()
+                            DesktopNavTab.SETTINGS -> DesktopSettingsScreen(
+                                userProfile = userProfile,
+                                database = database,
+                                onSyncNow = ::triggerMobileSync,
+                                onOpenAccountDialog = { showAccountDialog = true },
+                                onSignOut = {
+                                    accountManager.clearSession()
+                                    statusMessage = null
+                                }
+                            )
                         }
                     }
 
-                    // Iconic UTA-WAVE Liquid Glass Floating Navigation Bar (Docked Bottom-Center)
+                    val hasTrack = currentQueueIndex in activeQueue.indices || !playbackState.videoId.isNullOrBlank()
+                    val currentTrackItem = activeQueue.getOrNull(currentQueueIndex)
+
+                    // 1. Floating MiniPlayer (Docked above floating nav bar, collapsed on scroll)
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !isBottomBarCollapsed && hasTrack,
+                        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(tween(220)),
+                        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(tween(180)),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 86.dp)
+                    ) {
+                        DesktopMiniPlayer(
+                            playbackState = playbackState,
+                            onTogglePlayPause = {
+                                if (playbackState.isPlaying) {
+                                    audioEngine.pause()
+                                } else {
+                                    audioEngine.play()
+                                }
+                            },
+                            onNext = {
+                                if (currentQueueIndex + 1 < activeQueue.size) {
+                                    playQueueTrack(currentQueueIndex + 1)
+                                }
+                            },
+                            onPrevious = {
+                                if (currentQueueIndex > 0) {
+                                    playQueueTrack(currentQueueIndex - 1)
+                                } else {
+                                    audioEngine.seekTo(0L)
+                                }
+                            },
+                            onExpand = { isPlayerExpanded = true },
+                            onOpenQueue = { showQueueSheetModal = true },
+                            onVolumeChange = { audioEngine.setVolume(it) },
+                            onSeekTo = { audioEngine.seekTo(it) },
+                            backdrop = desktopBackdrop
+                        )
+                    }
+
+                    // 2. Iconic UTA-WAVE Liquid Glass Floating Navigation Bar (Docked Bottom-Center, Dual-Mode)
                     DesktopFloatingNavBar(
                         selectedTab = currentTab,
                         onTabSelected = { currentTab = it },
+                        isCollapsed = isBottomBarCollapsed,
+                        onExpandBar = { isBottomBarCollapsed = false },
+                        currentTrack = currentTrackItem,
+                        playbackState = playbackState,
+                        onTogglePlayPause = {
+                            if (playbackState.isPlaying) {
+                                audioEngine.pause()
+                            } else {
+                                audioEngine.play()
+                            }
+                        },
+                        onExpandPlayer = { isPlayerExpanded = true },
+                        backdrop = desktopBackdrop,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 12.dp)
+                            .padding(bottom = 18.dp)
                     )
                 }
-
-                // Bottom Persistent Playback Deck
-                DesktopPlayerDock(
-                    playbackState = playbackState,
-                    onPlayPause = {
-                        if (playbackState.isPlaying) {
-                            audioEngine.pause()
-                        } else {
-                            audioEngine.play()
-                        }
-                    },
-                    onSeek = { newPos ->
-                        audioEngine.seekTo(newPos)
-                    },
-                    onVolumeChange = { newVol ->
-                        audioEngine.setVolume(newVol)
-                    },
-                    onNext = {
-                        if (currentQueueIndex + 1 < activeQueue.size) {
-                            playQueueTrack(currentQueueIndex + 1)
-                        }
-                    },
-                    onPrev = {
-                        if (currentQueueIndex > 0) {
-                            playQueueTrack(currentQueueIndex - 1)
-                        } else {
-                            audioEngine.seekTo(0L)
-                        }
-                    }
-                )
             }
 
             // Account & Sync Modal Dialog
@@ -338,8 +815,140 @@ fun main() = application {
                     }
                 )
             }
+
+            // Fullscreen Cinematic Now-Playing Overlay
+            DesktopFullscreenPlayerOverlay(
+                visible = isPlayerExpanded,
+                playbackState = playbackState,
+                queue = activeQueue,
+                currentQueueIndex = currentQueueIndex,
+                onCollapse = { isPlayerExpanded = false },
+                onMinimize = { windowState.isMinimized = true },
+                onClose = {
+                    try { audioEngine.release() } catch (_: Exception) {}
+                    exitApplication()
+                    kotlin.system.exitProcess(0)
+                },
+                onTogglePlayPause = {
+                    if (playbackState.isPlaying) {
+                        audioEngine.pause()
+                    } else {
+                        audioEngine.play()
+                    }
+                },
+                onNext = {
+                    if (currentQueueIndex + 1 < activeQueue.size) {
+                        playQueueTrack(currentQueueIndex + 1)
+                    }
+                },
+                onPrevious = {
+                    if (currentQueueIndex > 0) {
+                        playQueueTrack(currentQueueIndex - 1)
+                    } else {
+                        audioEngine.seekTo(0L)
+                    }
+                },
+                onSeekTo = { audioEngine.seekTo(it) },
+                onVolumeChange = { audioEngine.setVolume(it) },
+                onSelectQueueTrack = { index -> playQueueTrack(index) },
+                isShuffle = isShuffle,
+                repeatMode = repeatMode,
+                isQueueLocked = isQueueLocked,
+                database = database,
+                musicService = musicService,
+                onToggleShuffle = ::toggleShuffle,
+                onToggleRepeat = ::toggleRepeat,
+                onToggleLock = { isQueueLocked = !isQueueLocked },
+                onMoveTrack = ::moveQueueTrack,
+                onRemoveFromQueue = ::removeFromQueue,
+                onRemoveMultipleFromQueue = ::removeMultipleFromQueue,
+                onClearQueue = ::clearUpcomingQueue,
+                onSaveQueueAsPlaylist = ::saveQueueAsPlaylist,
+                onInsertTrackNext = ::playNext,
+                onAddToQueue = ::addToQueue,
+                onTrackMoreClick = { track ->
+                    activeSongMenuTrack = track
+                    activeSongMenuPlaylistId = null
+                    activeSongMenuIsInQueue = true
+                }
+            )
+
+            // Floating / Windowed Queue Sheet Modal Dialog
+            if (showQueueSheetModal) {
+                DesktopQueueModalDialog(
+                    queue = activeQueue,
+                    currentQueueIndex = currentQueueIndex,
+                    isPlaying = playbackState.isPlaying,
+                    isShuffle = isShuffle,
+                    repeatMode = repeatMode,
+                    isLocked = isQueueLocked,
+                    database = database,
+                    musicService = musicService,
+                    onDismiss = { showQueueSheetModal = false },
+                    onSelectQueueTrack = ::playQueueTrack,
+                    onToggleShuffle = ::toggleShuffle,
+                    onToggleRepeat = ::toggleRepeat,
+                    onToggleLock = { isQueueLocked = !isQueueLocked },
+                    onMoveTrack = ::moveQueueTrack,
+                    onRemoveFromQueue = ::removeFromQueue,
+                    onRemoveMultipleFromQueue = ::removeMultipleFromQueue,
+                    onClearQueue = ::clearUpcomingQueue,
+                    onSaveQueueAsPlaylist = ::saveQueueAsPlaylist,
+                    onInsertTrackNext = ::playNext,
+                    onAddToQueue = ::addToQueue,
+                    onTrackMoreClick = { track ->
+                        activeSongMenuTrack = track
+                        activeSongMenuPlaylistId = null
+                        activeSongMenuIsInQueue = true
+                    }
+                )
+            }
+
+            // 3-Dots Contextual Song Menu Dialog (Parity with Mobile SongMenuBottomSheet)
+            val currentSongMenuTrack = activeSongMenuTrack
+            if (currentSongMenuTrack != null) {
+                DesktopSongMenuDialog(
+                    track = currentSongMenuTrack,
+                    database = database,
+                    isInQueue = activeSongMenuIsInQueue,
+                    playlistId = activeSongMenuPlaylistId,
+                    onDismiss = {
+                        activeSongMenuTrack = null
+                        activeSongMenuPlaylistId = null
+                        activeSongMenuIsInQueue = false
+                    },
+                    onPlayNext = { t ->
+                        playNext(t)
+                    },
+                    onAddToQueue = { t ->
+                        addToQueue(t)
+                    },
+                    onStartRadio = { t ->
+                        startRadio(t)
+                    },
+                    onShare = { t ->
+                        shareTrack(t)
+                    },
+                    onRemoveFromQueue = { t ->
+                        val list = activeQueue.toMutableList()
+                        val idx = list.indexOfFirst { it.videoId == t.videoId || it.id == t.id }
+                        if (idx >= 0) {
+                            list.removeAt(idx)
+                            activeQueue = list
+                            if (currentQueueIndex > idx) currentQueueIndex--
+                        }
+                    },
+                    onRemoveFromPlaylist = { pId, t ->
+                        database.removeTrackFromPlaylist(pId, t.id.ifBlank { t.videoId })
+                    },
+                    onViewArtist = { artistName ->
+                        currentTab = DesktopNavTab.SEARCH
+                    }
+                )
+            }
         }
     }
+}
 }
 
 // -----------------------------------------------------------------------------
@@ -351,7 +960,11 @@ fun DesktopTopHeader(
     activeSessionDevice: String,
     isCloudSynced: Boolean,
     userProfile: DesktopUserProfile,
-    onAccountClick: () -> Unit
+    onAccountClick: () -> Unit,
+    onMinimize: () -> Unit = {},
+    onMaximizeRestore: () -> Unit = {},
+    onClose: () -> Unit = {},
+    isMaximized: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -497,6 +1110,61 @@ fun DesktopTopHeader(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            // Window Action Buttons (Minimize, Maximize/Restore, Close)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Minimize
+                IconButton(
+                    onClick = onMinimize,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .pointerHoverIcon(PointerIcon.Hand)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(10.dp)
+                            .height(2.dp)
+                            .background(Color.White.copy(alpha = 0.75f), RoundedCornerShape(1.dp))
+                    )
+                }
+
+                // Maximize / Restore
+                IconButton(
+                    onClick = onMaximizeRestore,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .pointerHoverIcon(PointerIcon.Hand)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .border(1.5.dp, Color.White.copy(alpha = 0.75f), RoundedCornerShape(1.dp))
+                    )
+                }
+
+                // Close
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .pointerHoverIcon(PointerIcon.Hand)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White.copy(alpha = 0.75f),
+                        modifier = Modifier.size(14.dp)
                     )
                 }
             }
@@ -1045,24 +1713,58 @@ fun LibraryWorkspace(
     onSignInClick: () -> Unit,
     onPlayPlaylist: (DesktopPlaylist, Int) -> Unit,
     onShufflePlaylist: (DesktopPlaylist) -> Unit,
-    onPlayTrackInPlaylist: (DesktopPlaylist, Int) -> Unit
+    onPlayTrackInPlaylist: (DesktopPlaylist, Int) -> Unit,
+    onHydratePlaylist: (suspend (DesktopPlaylist) -> Unit)? = null,
+    onTrackMoreClick: ((TrackItem, DesktopPlaylist?) -> Unit)? = null
 ) {
     var selectedPlaylist by remember { mutableStateOf<DesktopPlaylist?>(null) }
+    var isHydrating by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     // If a playlist is selected, keep its reference updated if library re-syncs
     val activePlaylist = selectedPlaylist?.let { cur ->
         library.playlists.firstOrNull { it.id == cur.id } ?: cur
     }
 
+    // Auto-hydrate playlist tracks if selected playlist has 0 tracks but user is signed in
+    LaunchedEffect(activePlaylist?.id) {
+        if (activePlaylist != null && activePlaylist.tracks.isEmpty() && !userProfile.cookie.isNullOrBlank()) {
+            isHydrating = true
+            try {
+                onHydratePlaylist?.invoke(activePlaylist)
+            } catch (e: Exception) {
+                println("[LibraryWorkspace] Hydrate error: ${e.message}")
+            } finally {
+                isHydrating = false
+            }
+        }
+    }
+
     if (activePlaylist != null) {
         // Detailed Playlist View (matching Image 1)
         PlaylistDetailView(
             playlist = activePlaylist,
+            isHydrating = isHydrating,
             currentlyPlayingVideoId = currentlyPlayingVideoId,
             onBack = { selectedPlaylist = null },
             onPlayAll = { onPlayPlaylist(activePlaylist, 0) },
             onShuffle = { onShufflePlaylist(activePlaylist) },
-            onPlayTrack = { index -> onPlayTrackInPlaylist(activePlaylist, index) }
+            onPlayTrack = { index -> onPlayTrackInPlaylist(activePlaylist, index) },
+            onTrackMoreClick = { track -> onTrackMoreClick?.invoke(track, activePlaylist) },
+            onReload = {
+                if (!userProfile.cookie.isNullOrBlank()) {
+                    scope.launch {
+                        isHydrating = true
+                        try {
+                            onHydratePlaylist?.invoke(activePlaylist)
+                        } catch (e: Exception) {
+                            println("[LibraryWorkspace] Reload error: ${e.message}")
+                        } finally {
+                            isHydrating = false
+                        }
+                    }
+                }
+            }
         )
     } else if (!userProfile.isLoggedIn && library.playlists.isEmpty() && library.likedSongs.isEmpty()) {
         // Clean Signed-Out / Guest State for Library
@@ -1204,6 +1906,7 @@ fun LibraryWorkspace(
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 200.dp),
+                    contentPadding = PaddingValues(bottom = 96.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxSize()
@@ -1340,14 +2043,19 @@ fun PlaylistCard(
 @Composable
 fun PlaylistDetailView(
     playlist: DesktopPlaylist,
+    isHydrating: Boolean = false,
     currentlyPlayingVideoId: String?,
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
-    onPlayTrack: (Int) -> Unit
+    onPlayTrack: (Int) -> Unit,
+    onReload: () -> Unit = {},
+    onTrackMoreClick: ((TrackItem) -> Unit)? = null
 ) {
     val totalSeconds = playlist.tracks.sumOf { it.durationSeconds }
     val formattedDuration = formatPlaylistDuration(totalSeconds)
+    val displayTrackCount = if (playlist.tracks.isNotEmpty()) playlist.tracks.size else playlist.trackCount
+    val durationText = if (playlist.tracks.isNotEmpty()) " · $formattedDuration" else ""
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Back Navigation Button
@@ -1398,7 +2106,7 @@ fun PlaylistDetailView(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(playlist.name, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                 Spacer(modifier = Modifier.height(6.dp))
-                Text("${playlist.tracks.size} tracks · $formattedDuration", fontSize = 13.sp, color = TextSecondary)
+                Text("$displayTrackCount tracks$durationText", fontSize = 13.sp, color = TextSecondary)
 
                 Spacer(modifier = Modifier.height(18.dp))
 
@@ -1432,19 +2140,57 @@ fun PlaylistDetailView(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Tracks List
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            itemsIndexed(playlist.tracks) { index, track ->
-                val isPlaying = track.videoId == currentlyPlayingVideoId
-                PlaylistTrackRow(
-                    index = index + 1,
-                    track = track,
-                    isPlaying = isPlaying,
-                    onClick = { onPlayTrack(index) }
-                )
+        // Tracks List or Hydration Progress State
+        if (isHydrating) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(260.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = AccentPurple,
+                        modifier = Modifier.size(36.dp),
+                        strokeWidth = 3.dp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text("Loading tracks from Google Account...", color = TextSecondary, fontSize = 14.sp)
+                }
+            }
+        } else if (playlist.tracks.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(220.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("No tracks loaded for this playlist yet.", color = TextSecondary, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = onReload,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple)
+                    ) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null, tint = AccentPurple, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Fetch Tracks from Cloud", color = AccentPurple, fontSize = 13.sp)
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                itemsIndexed(playlist.tracks) { index, track ->
+                    val isPlaying = track.videoId == currentlyPlayingVideoId
+                    PlaylistTrackRow(
+                        index = index + 1,
+                        track = track,
+                        isPlaying = isPlaying,
+                        onClick = { onPlayTrack(index) },
+                        onMoreClick = { onTrackMoreClick?.invoke(track) }
+                    )
+                }
             }
         }
     }
@@ -1455,7 +2201,8 @@ fun PlaylistTrackRow(
     index: Int,
     track: TrackItem,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onMoreClick: (() -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier
@@ -1520,13 +2267,26 @@ fun PlaylistTrackRow(
                 }
             }
 
-            // Duration
-            if (track.durationSeconds > 0) {
-                Text(
-                    text = formatTime(track.durationSeconds * 1000L),
-                    fontSize = 12.sp,
-                    color = TextSecondary
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (track.durationSeconds > 0) {
+                    Text(
+                        text = formatTime(track.durationSeconds * 1000L),
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = { onMoreClick?.invoke() },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = "Track options",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }
@@ -1539,7 +2299,8 @@ fun PlaylistTrackRow(
 @Composable
 fun SearchWorkspace(
     musicService: DesktopMusicService,
-    onPlayTrack: (TrackItem) -> Unit
+    onPlayTrack: (TrackItem) -> Unit,
+    onMoreClick: ((TrackItem) -> Unit)? = null
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<TrackItem>>(emptyList()) }
@@ -1609,10 +2370,15 @@ fun SearchWorkspace(
         } else if (searchResults.isNotEmpty()) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(searchResults) { track ->
-                    TrackListItem(track = track, onPlay = { onPlayTrack(track) })
+                    TrackListItem(
+                        track = track,
+                        onPlay = { onPlayTrack(track) },
+                        onMoreClick = { onMoreClick?.invoke(track) }
+                    )
                 }
             }
         } else {
@@ -1639,7 +2405,10 @@ fun SearchWorkspace(
 }
 
 @Composable
-fun ExploreWorkspace(onPlayTrack: (TrackItem) -> Unit) {
+fun ExploreWorkspace(
+    onPlayTrack: (TrackItem) -> Unit,
+    onMoreClick: ((TrackItem) -> Unit)? = null
+) {
     val trendingTracks = remember {
         listOf(
             TrackItem(
@@ -1694,17 +2463,26 @@ fun ExploreWorkspace(onPlayTrack: (TrackItem) -> Unit) {
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(trendingTracks) { track ->
-                TrackListItem(track = track, onPlay = { onPlayTrack(track) })
+                TrackListItem(
+                    track = track,
+                    onPlay = { onPlayTrack(track) },
+                    onMoreClick = { onMoreClick?.invoke(track) }
+                )
             }
         }
     }
 }
 
 @Composable
-fun TrackListItem(track: TrackItem, onPlay: () -> Unit) {
+fun TrackListItem(
+    track: TrackItem,
+    onPlay: () -> Unit,
+    onMoreClick: (() -> Unit)? = null
+) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -1760,6 +2538,13 @@ fun TrackListItem(track: TrackItem, onPlay: () -> Unit) {
                 ) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = "Play", tint = AccentPurple, modifier = Modifier.size(20.dp))
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                IconButton(
+                    onClick = { onMoreClick?.invoke() },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = TextSecondary, modifier = Modifier.size(18.dp))
+                }
             }
         }
     }
@@ -1795,9 +2580,6 @@ fun NetworkThumbnail(url: String, modifier: Modifier = Modifier) {
     }
 }
 
-@Composable fun ConnectWorkspace() { WorkspaceCard("📱 UTA Connect (Remote Control)", "Control music playing on your phone or PC. Handoff playback between devices in real-time.") }
-@Composable fun AiStudioWorkspace() { WorkspaceCard("✨ AI Playlist Studio", "Generate prompt-curated playlists in seconds powered by Google Gemini 2.0 Flash.") }
-@Composable fun SettingsWorkspace() { WorkspaceCard("⚙️ Settings & Audio Engine", "Configure WASAPI bit-perfect output, equalizer, cloud account sync, and theme.") }
 
 @Composable
 fun WorkspaceCard(title: String, subtitle: String) {

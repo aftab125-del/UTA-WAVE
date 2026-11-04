@@ -38,6 +38,7 @@ compose.desktop {
             vendor = "UTA-VERSE"
 
             windows {
+                iconFile.set(project.file("src/main/resources/icon.ico"))
                 menuGroup = "UTA-VERSE"
                 upgradeUuid = "68c2d1b4-2b7e-4b2a-8951-6d7ef902b78a"
                 perUserInstall = true

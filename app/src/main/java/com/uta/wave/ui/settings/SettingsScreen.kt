@@ -4690,7 +4690,7 @@ private fun AboutSettingsSection(context: Context) {
                         "LRCLIB Synchronized Lyrics (MIT)"
                     )
                     licenses.forEach { lic ->
-                        Text(text = "â€¢ $lic", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp), color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(vertical = 3.dp))
+                        Text(text = "• $lic", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp), color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(vertical = 3.dp))
                     }
                 }
             },
@@ -4723,7 +4723,7 @@ private fun AboutSettingsSection(context: Context) {
         }
         Spacer(modifier = Modifier.height(12.dp))
         Text(text = "UTA-wave", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold), color = Color.White)
-        Text(text = "A Universe of Music â€¢ v1.1.5", style = MaterialTheme.typography.bodySmall, color = Color(0xFFF2AEC7))
+        Text(text = "A Universe of Music • v1.1.8", style = MaterialTheme.typography.bodySmall, color = Color(0xFFF2AEC7))
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "A cinematic, dark, futuristic music streaming platform built with Next.js architecture principles, ExoPlayer lossless audio, dynamic ambient flow lyrics, and Echo Music interface design.",
@@ -4769,7 +4769,7 @@ private fun AboutSettingsSection(context: Context) {
                     color = Color.White
                 )
                 Text(
-                    text = "Owner & Creator â€¢ UTA-WAVE",
+                    text = "Owner & Creator • UTA-WAVE",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFF2AEC7)
                 )
@@ -4785,6 +4785,71 @@ private fun AboutSettingsSection(context: Context) {
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp),
                     color = Color(0xFFF2AEC7)
                 )
+            }
+        }
+        SettingsItemDivider()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    val igUrl = "https://www.instagram.com/dhaniya0patta?cplk=MWt5bWR4cXN1OTdqYg=="
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(igUrl)).apply {
+                            setPackage("com.instagram.android")
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(igUrl)))
+                        } catch (e2: Exception) {
+                            Toast.makeText(context, "Could not open Instagram", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(id = com.uta.wave.R.drawable.ic_instagram),
+                contentDescription = "Instagram",
+                tint = Color(0xFFF2AEC7),
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Instagram",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFFF2AEC7)
+                )
+                Text(
+                    text = "@dhaniya0patta",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFF2AEC7).copy(alpha = 0.15f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "FOLLOW",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp),
+                        color = Color(0xFFF2AEC7)
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                        contentDescription = null,
+                        tint = Color(0xFFF2AEC7),
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
             }
         }
     }
