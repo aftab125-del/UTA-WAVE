@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
-import java.io.File
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
@@ -36,43 +35,6 @@ object DesktopImageCache {
             memoryCache.clear() // Prevent memory exhaustion on large sessions
         }
         memoryCache[url] = bitmap
-    }
-}
-
-/**
- * Safely loads raw image bytes from remote URLs (http/https), file:// URIs, or local Windows file paths.
- */
-fun loadDesktopImageBytes(urlOrPath: String): ByteArray? {
-    return try {
-        val trimmed = urlOrPath.trim()
-        if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
-            URI(trimmed).toURL().readBytes()
-        } else if (trimmed.startsWith("file://", ignoreCase = true)) {
-            File(URI(trimmed)).readBytes()
-        } else {
-            File(trimmed).readBytes()
-        }
-    } catch (_: Exception) {
-        null
-    }
-}
-
-/**
- * Suspending safe loader that queries memory cache, loads from IO, decodes Skia ImageBitmap, and stores in cache.
- */
-suspend fun loadDesktopImageBitmapSafe(urlOrPath: String?): ImageBitmap? {
-    if (urlOrPath.isNullOrBlank()) return null
-    val cached = DesktopImageCache.get(urlOrPath)
-    if (cached != null) return cached
-    return withContext(Dispatchers.IO) {
-        try {
-            val bytes = loadDesktopImageBytes(urlOrPath) ?: return@withContext null
-            val loaded = loadImageBitmap(ByteArrayInputStream(bytes))
-            DesktopImageCache.put(urlOrPath, loaded)
-            loaded
-        } catch (_: Exception) {
-            null
-        }
     }
 }
 
@@ -92,7 +54,14 @@ fun DesktopNetworkImage(
 
     LaunchedEffect(url) {
         if (bitmap == null && url.isNotBlank()) {
-            bitmap = loadDesktopImageBitmapSafe(url)
+            withContext(Dispatchers.IO) {
+                try {
+                    val bytes = URI(url).toURL().readBytes()
+                    val loaded = loadImageBitmap(ByteArrayInputStream(bytes))
+                    DesktopImageCache.put(url, loaded)
+                    bitmap = loaded
+                } catch (_: Exception) {}
+            }
         }
     }
 

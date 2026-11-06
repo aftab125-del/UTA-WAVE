@@ -110,7 +110,6 @@ fun main() {
     var showAccountDialog by remember { mutableStateOf(false) }
     var isBottomBarCollapsed by remember { mutableStateOf(false) }
     var isPlayerExpanded by remember { mutableStateOf(false) }
-    var isAmbientModeActive by remember { mutableStateOf(false) }
     var previousWindowStatePlacement by remember { mutableStateOf(WindowPlacement.Floating) }
 
     LaunchedEffect(isPlayerExpanded) {
@@ -640,8 +639,8 @@ fun main() {
                         )
                     )
             ) {
-                // Top Custom Header / Window Control Bar (Hidden when in Fullscreen or Ambient Mode)
-                if (!isPlayerExpanded && !isAmbientModeActive) {
+                // Top Custom Header / Window Control Bar (Hidden when in Fullscreen Player)
+                if (!isPlayerExpanded) {
                     WindowDraggableArea {
                         DesktopTopHeader(
                             activeSessionDevice = "Windows PC",
@@ -661,8 +660,7 @@ fun main() {
                                 exitApplication()
                                 kotlin.system.exitProcess(0)
                             },
-                            isMaximized = windowState.placement == WindowPlacement.Maximized,
-                            onToggleAmbientMode = { isAmbientModeActive = !isAmbientModeActive }
+                            isMaximized = windowState.placement == WindowPlacement.Maximized
                         )
                     }
                 }
@@ -898,57 +896,8 @@ fun main() {
                     activeSongMenuTrack = track
                     activeSongMenuPlaylistId = null
                     activeSongMenuIsInQueue = true
-                },
-                onOpenAmbientMode = {
-                    isPlayerExpanded = false
-                    isAmbientModeActive = true
                 }
             )
-
-            // Master Ambient Canvas Mode Overlay ("Floating Water Media Player")
-            if (isAmbientModeActive) {
-                DesktopAmbientModeOverlay(
-                    playbackState = playbackState,
-                    currentTrack = activeQueue.getOrNull(currentQueueIndex) ?: if (playbackState.title.isNotBlank()) {
-                        TrackItem(
-                            id = playbackState.videoId ?: "",
-                            videoId = playbackState.videoId ?: "",
-                            title = playbackState.title,
-                            artist = playbackState.artist,
-                            artworkUrl = playbackState.artworkUrl ?: "",
-                            durationSeconds = (playbackState.durationMs / 1000).toInt()
-                        )
-                    } else null,
-                    onPlayPause = {
-                        if (playbackState.isPlaying) {
-                            audioEngine.pause()
-                        } else {
-                            audioEngine.play()
-                        }
-                    },
-                    onSkipNext = {
-                        if (currentQueueIndex + 1 < activeQueue.size) {
-                            playQueueTrack(currentQueueIndex + 1)
-                        }
-                    },
-                    onSkipPrevious = {
-                        if (currentQueueIndex > 0) {
-                            playQueueTrack(currentQueueIndex - 1)
-                        } else {
-                            audioEngine.seekTo(0L)
-                        }
-                    },
-                    onSeek = { seconds ->
-                        audioEngine.seekTo((seconds * 1000).toLong())
-                    },
-                    onVolumeChange = { audioEngine.setVolume(it) },
-                    onToggleShuffle = ::toggleShuffle,
-                    onToggleRepeat = ::toggleRepeat,
-                    isShuffle = isShuffle,
-                    repeatMode = repeatMode,
-                    onExitAmbientMode = { isAmbientModeActive = false }
-                )
-            }
 
             // Floating / Windowed Queue Sheet Modal Dialog
             if (showQueueSheetModal) {
@@ -1041,8 +990,7 @@ fun DesktopTopHeader(
     onMinimize: () -> Unit = {},
     onMaximizeRestore: () -> Unit = {},
     onClose: () -> Unit = {},
-    isMaximized: Boolean = false,
-    onToggleAmbientMode: () -> Unit = {}
+    isMaximized: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -1204,37 +1152,6 @@ fun DesktopTopHeader(
             }
 
             Spacer(modifier = Modifier.width(14.dp))
-
-            // Ambient Canvas Mode Pill Button (Hope麻匪 Floating Water Player)
-            Surface(
-                shape = RoundedCornerShape(percent = 50),
-                color = Color(0xFF1E2230),
-                border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceBorder)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .clickable { onToggleAmbientMode() }
-                        .pointerHoverIcon(PointerIcon.Hand)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.AutoAwesome,
-                        contentDescription = "Ambient Mode",
-                        tint = AccentPurple,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = "Ambient Mode",
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
 
             // Window Action Buttons (Minimize, Maximize/Restore, Close)
             Row(
