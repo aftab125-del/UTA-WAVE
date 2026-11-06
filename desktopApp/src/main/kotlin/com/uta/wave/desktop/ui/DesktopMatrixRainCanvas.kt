@@ -10,10 +10,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import org.jetbrains.skia.Font
 import org.jetbrains.skia.FontMgr
 import org.jetbrains.skia.FontStyle
@@ -28,34 +32,37 @@ private data class MatrixRainColumn(
     val glyphs: CharArray
 )
 
-// Authentic Matrix Rain character set: Alphanumeric + Japanese Katakana
+// Authentic Matrix Rain character set: Alphanumeric + Japanese Katakana (matches Wallpaper Engine spritesheet 72)
 private val MATRIX_GLYPHS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ".toCharArray()
 
 /**
  * Authentic Matrix Digital Code Rain Background for UTA-WAVE Ambient Mode.
- * Replicates the `黑客` layer from Hope麻匪 Wallpaper Engine workshop (#2974757317).
- *
- * Renders large, crisp, legible vertical streams of falling digital code glyphs
- * matching the exact font size and column density of the real wallpaper.
+ * Exact replication of the `黑客` layer from Hope麻匪 Wallpaper Engine workshop (#2974757317):
+ * - Spawns vertical streaming columns from `matrix spritesheet 72`.
+ * - Replicates script `09_Matrix_Code_Rain_instanceoverride_colorn_script.js`:
+ *   Falling glyph tails synchronize with `secondaryColor` extracted from the current song's album art.
+ * - Font linkage to Windows native `MS Gothic` / `Segoe UI Symbol` for full Katakana & Unicode sharpness.
+ * - Continuous VSYNC frame-rate animation loop.
  */
 @Composable
 fun DesktopMatrixRainCanvas(
     modifier: Modifier = Modifier,
-    columnCount: Int = 24
+    columnCount: Int = 28,
+    secondaryColor: Color = Color(0xFF38BDF8)
 ) {
     val columns = remember(columnCount) {
         val rng = Random(42)
         val list = mutableListOf<MatrixRainColumn>()
         for (i in 0 until columnCount) {
-            val length = 10 + rng.nextInt(12)
+            val length = 12 + rng.nextInt(14)
             val chars = CharArray(length) { MATRIX_GLYPHS[rng.nextInt(MATRIX_GLYPHS.size)] }
-            // Distribute columns across the screen width with slight natural jitter
-            val x = (i.toFloat() + 0.5f + (rng.nextFloat() - 0.5f) * 0.4f) / columnCount.toFloat()
+            // Stagger columns horizontally across full viewport
+            val x = (i.toFloat() + 0.5f + (rng.nextFloat() - 0.5f) * 0.45f) / columnCount.toFloat()
             list.add(
                 MatrixRainColumn(
-                    xFraction = x.coerceIn(0.02f, 0.98f),
+                    xFraction = x.coerceIn(0.01f, 0.99f),
                     yFraction = rng.nextFloat(),
-                    speed = 0.0012f + rng.nextFloat() * 0.0022f,
+                    speed = 0.08f + rng.nextFloat() * 0.12f,
                     length = length,
                     glyphs = chars
                 )
@@ -64,7 +71,7 @@ fun DesktopMatrixRainCanvas(
         list
     }
 
-    // Try to load MS Gothic or Segoe UI Symbol for authentic Katakana + numbers support on Windows
+    // Load MS Gothic or Segoe UI Symbol for authentic Katakana + numbers support on Windows
     val font = remember {
         val typeface = try {
             FontMgr.default.matchFamilyStyle("MS Gothic", FontStyle.NORMAL)
@@ -73,9 +80,9 @@ fun DesktopMatrixRainCanvas(
             null
         }
         if (typeface != null) {
-            Font(typeface, 22f)
+            Font(typeface, 24f)
         } else {
-            Font().apply { size = 22f }
+            Font().apply { size = 24f }
         }
     }
 
@@ -92,32 +99,46 @@ fun DesktopMatrixRainCanvas(
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "matrixRainLoop")
-    val timeTick by infiniteTransition.animateFloat(
+    val framePhase by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 1000f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1000000, easing = LinearEasing),
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "rainTick"
+        label = "matrixFramePhase"
     )
 
+    var lastNanoTime by remember { mutableStateOf(System.nanoTime()) }
+
+    val secColorArgb = remember(secondaryColor) { secondaryColor.toArgb() }
+    val secR = (secColorArgb shr 16) and 0xFF
+    val secG = (secColorArgb shr 8) and 0xFF
+    val secB = secColorArgb and 0xFF
+
     Canvas(modifier = modifier.fillMaxSize()) {
+        // READ framePhase to force continuous re-draw every VSYNC frame!
+        val _phase = framePhase
+
+        val now = System.nanoTime()
+        val dt = ((now - lastNanoTime) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
+        lastNanoTime = now
+
         val w = size.width
         val h = size.height
-        val charSpacing = 26f
+        val charSpacing = 28f
 
         drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
 
             for (col in columns) {
-                // Update vertical falling position
-                col.yFraction = (col.yFraction + col.speed) % 1.0f
+                // Update vertical falling position with delta time
+                col.yFraction = (col.yFraction + col.speed * dt) % 1.0f
                 val headX = col.xFraction * w
                 val headY = col.yFraction * (h + col.length * charSpacing)
 
-                // Subtle random glyph mutation
-                if (System.nanoTime() % 23 == 0L) {
+                // Subtle random glyph mutation (matching original particle animation)
+                if (System.nanoTime() % 19 == 0L) {
                     val rndIdx = (col.yFraction * col.length).toInt().coerceIn(0, col.length - 1)
                     col.glyphs[rndIdx] = MATRIX_GLYPHS[(col.yFraction * 1000).toInt() % MATRIX_GLYPHS.size]
                 }
@@ -133,10 +154,14 @@ fun DesktopMatrixRainCanvas(
                         headPaint.color = 0xFFFFFFFF.toInt()
                         native.drawString(glyphStr, headX, glyphY, font, headPaint)
                     } else {
-                        // Tail character: Soft fading opacity matching Screenshot 1
+                        // Tail character: Fading opacity tinted with track's secondaryColor (matches Hope麻匪 script)
                         val trailFraction = 1.0f - (j.toFloat() / col.length.toFloat())
-                        val alpha = ((trailFraction * trailFraction) * 200f).toInt().coerceIn(0, 255)
-                        val colorInt = (alpha shl 24) or (210 shl 16) or (230 shl 8) or 255
+                        val alpha = ((trailFraction * trailFraction) * 220f).toInt().coerceIn(0, 255)
+                        // Blend between bright glyph tint and extracted secondaryColor
+                        val r = ((secR * 0.7f) + (230 * 0.3f)).toInt().coerceIn(0, 255)
+                        val g = ((secG * 0.7f) + (240 * 0.3f)).toInt().coerceIn(0, 255)
+                        val b = ((secB * 0.7f) + (255 * 0.3f)).toInt().coerceIn(0, 255)
+                        val colorInt = (alpha shl 24) or (r shl 16) or (g shl 8) or b
                         tailPaint.color = colorInt
                         native.drawString(glyphStr, headX, glyphY, font, tailPaint)
                     }

@@ -44,18 +44,13 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.uta.wave.audio.UnifiedPlaybackState
 import com.uta.wave.core.model.TrackItem
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
-import java.net.URI
 
 /**
  * Pixel-Perfect Ambient Mode for UTA-WAVE Desktop.
@@ -81,20 +76,17 @@ fun DesktopAmbientModeOverlay(
     modifier: Modifier = Modifier
 ) {
     // Load track artwork bitmap for background & foreground
-    val artworkUrl = currentTrack?.artworkUrl
+    val artworkUrl = currentTrack?.artworkUrl ?: playbackState.artworkUrl
+    val palette = rememberAlbumArtPalette(artworkUrl)
     var artworkBitmap by remember(artworkUrl) {
         mutableStateOf<ImageBitmap?>(artworkUrl?.let { DesktopImageCache.get(it) })
     }
 
     LaunchedEffect(artworkUrl) {
         if (!artworkUrl.isNullOrBlank() && artworkBitmap == null) {
-            withContext(Dispatchers.IO) {
-                try {
-                    val bytes = URI(artworkUrl).toURL().readBytes()
-                    val loaded = loadImageBitmap(ByteArrayInputStream(bytes))
-                    DesktopImageCache.put(artworkUrl, loaded)
-                    artworkBitmap = loaded
-                } catch (_: Exception) {}
+            val loaded = loadDesktopImageBitmapSafe(artworkUrl)
+            if (loaded != null) {
+                artworkBitmap = loaded
             }
         }
     }
@@ -181,7 +173,8 @@ fun DesktopAmbientModeOverlay(
         // =================================================================
         DesktopMatrixRainCanvas(
             modifier = Modifier.fillMaxSize(),
-            columnCount = 26
+            columnCount = 28,
+            secondaryColor = palette.secondaryColor
         )
 
         // =================================================================
@@ -196,43 +189,46 @@ fun DesktopAmbientModeOverlay(
         ) {
             Surface(
                 shape = RoundedCornerShape(percent = 50),
-                color = Color.Black.copy(alpha = 0.70f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.22f))
+                color = Color.Black.copy(alpha = 0.55f),
+                modifier = Modifier
+                    .shadow(12.dp, RoundedCornerShape(percent = 50), spotColor = Color.Black)
+                    .clickable { onExitAmbientMode() }
+                    .pointerHoverIcon(PointerIcon.Hand)
             ) {
                 Row(
-                    modifier = Modifier
-                        .clickable { onExitAmbientMode() }
-                        .pointerHoverIcon(PointerIcon.Hand)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
                         contentDescription = "Exit Ambient Mode",
-                        tint = Color.White,
-                        modifier = Modifier.size(15.dp)
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(14.dp)
                     )
                     Text(
                         text = "Exit Ambient",
+                        color = Color.White.copy(alpha = 0.9f),
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
         }
 
         // =================================================================
-        // 5. CENTER STAGE: FLOATING CARD (Hope麻匪 悬浮窗 Exact Replica)
+        // 5. MASTER FLOATING MEDIA CARD (Hope麻匪 浮窗背景)
+        // Center-aligned, edge-to-edge artwork, flowing liquid audio silhouette,
+        // and solid white footer card with MF circular avatar badge.
         // =================================================================
         Box(
-            modifier = Modifier.align(Alignment.Center),
-            contentAlignment = Alignment.Center
+            modifier = Modifier
+                .align(Alignment.Center)
+                .width(312.dp)
         ) {
             Surface(
                 modifier = Modifier
-                    .width(312.dp)
+                    .fillMaxWidth()
                     .shadow(
                         elevation = 40.dp,
                         shape = RoundedCornerShape(22.dp),
@@ -267,7 +263,7 @@ fun DesktopAmbientModeOverlay(
                             )
                     ) {
                         DesktopWaterRippleSurface(
-                            artworkUrl = currentTrack?.artworkUrl,
+                            artworkUrl = artworkUrl,
                             modifier = Modifier.fillMaxSize(),
                             topCornerRadius = 22.dp,
                             isPlaying = playbackState.isPlaying,
@@ -323,7 +319,7 @@ fun DesktopAmbientModeOverlay(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                text = currentTrack?.title ?: "No track playing",
+                                text = currentTrack?.title ?: if (playbackState.title.isNotBlank()) playbackState.title else "No track playing",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF111111),
@@ -334,7 +330,7 @@ fun DesktopAmbientModeOverlay(
                             Spacer(modifier = Modifier.height(2.dp))
 
                             Text(
-                                text = currentTrack?.artist ?: "UTA·WAVE Universe",
+                                text = currentTrack?.artist ?: if (playbackState.artist.isNotBlank()) playbackState.artist else "UTA·WAVE Universe",
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = Color(0xFF666666),

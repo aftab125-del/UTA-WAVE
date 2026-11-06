@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -26,13 +27,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
-import java.net.URI
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.max
 
@@ -54,6 +50,7 @@ data class RippleImpulse(
  * Requirements:
  * - At rest: Absolutely NO static circles, rings, or overlays. Artwork is 100% clean and pristine.
  * - On interaction: Mouse movement, hover, drag, or press triggers realistic liquid refraction caustics.
+ * - Smooth 60 FPS VSYNC propagation while ripples are active.
  */
 @Composable
 fun DesktopWaterRippleSurface(
@@ -73,8 +70,8 @@ fun DesktopWaterRippleSurface(
 
     fun addRipple(pos: Offset, strength: Float = 1.0f) {
         val now = System.currentTimeMillis()
-        // Throttle high-frequency mouse movements to prevent over-saturating wave solver (max 1 ripple per 45ms)
-        if (now - lastSpawnTime >= 45L || (pos - lastPointerPos).getDistance() > 25f) {
+        // Throttle high-frequency mouse movements to prevent over-saturating wave solver (max 1 ripple per 40ms)
+        if (now - lastSpawnTime >= 40L || (pos - lastPointerPos).getDistance() > 20f) {
             lastSpawnTime = now
             lastPointerPos = pos
             ripples.add(
@@ -93,19 +90,25 @@ fun DesktopWaterRippleSurface(
         }
     }
 
+    // Continuous VSYNC frame ticker that runs ONLY while ripples are active
+    var frameTicker by remember { mutableStateOf(0L) }
+    LaunchedEffect(ripples.size) {
+        while (ripples.isNotEmpty()) {
+            withFrameNanos { now ->
+                frameTicker = now
+            }
+        }
+    }
+
     var artworkBitmap by remember(artworkUrl) {
         mutableStateOf<ImageBitmap?>(artworkUrl?.let { DesktopImageCache.get(it) })
     }
 
     LaunchedEffect(artworkUrl) {
         if (!artworkUrl.isNullOrBlank() && artworkBitmap == null) {
-            withContext(Dispatchers.IO) {
-                try {
-                    val bytes = URI(artworkUrl).toURL().readBytes()
-                    val loaded = loadImageBitmap(ByteArrayInputStream(bytes))
-                    DesktopImageCache.put(artworkUrl, loaded)
-                    artworkBitmap = loaded
-                } catch (_: Exception) {}
+            val loaded = loadDesktopImageBitmapSafe(artworkUrl)
+            if (loaded != null) {
+                artworkBitmap = loaded
             }
         }
     }
@@ -130,10 +133,10 @@ fun DesktopWaterRippleSurface(
                         val change = event.changes.firstOrNull() ?: continue
                         when (event.type) {
                             PointerEventType.Move, PointerEventType.Enter -> {
-                                addRipple(change.position, strength = 0.85f)
+                                addRipple(change.position, strength = 0.9f)
                             }
                             PointerEventType.Press -> {
-                                addRipple(change.position, strength = 1.5f)
+                                addRipple(change.position, strength = 1.6f)
                             }
                         }
                     }
@@ -142,7 +145,7 @@ fun DesktopWaterRippleSurface(
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDrag = { change, _ ->
-                        addRipple(change.position, strength = 1.1f)
+                        addRipple(change.position, strength = 1.2f)
                     }
                 )
             }
@@ -164,6 +167,9 @@ fun DesktopWaterRippleSurface(
                         // 1. Draw base artwork cleanly
                         drawContent()
 
+                        // Reading frameTicker forces Compose to redraw smoothly while ripples are active
+                        val _tick = frameTicker
+
                         // 2. Draw fluid water ripple caustics ONLY if active ripples exist
                         val now = System.currentTimeMillis()
                         val durationMs = 1500L
@@ -179,8 +185,8 @@ fun DesktopWaterRippleSurface(
 
                                 // Wavefront propagation radius
                                 val waveRadius = progress * ripple.maxRadius
-                                val waveAlpha = ((1f - progress) * 0.35f * ripple.strength).coerceIn(0f, 0.55f)
-                                val waveWidth = 8f + (progress * 14f)
+                                val waveAlpha = ((1f - progress) * 0.38f * ripple.strength).coerceIn(0f, 0.6f)
+                                val waveWidth = 8f + (progress * 16f)
 
                                 // Specular Highlight Crest (Peak reflecting light)
                                 drawCircle(
@@ -195,7 +201,7 @@ fun DesktopWaterRippleSurface(
 
                                 // Subtle inner refraction echo
                                 if (waveRadius > 25f) {
-                                    val secondRadius = waveRadius * 0.75f
+                                    val secondRadius = waveRadius * 0.72f
                                     val secondAlpha = waveAlpha * 0.45f
                                     drawCircle(
                                         color = accentGlowColor.copy(alpha = secondAlpha),
@@ -213,7 +219,7 @@ fun DesktopWaterRippleSurface(
                 contentScale = ContentScale.Crop
             )
         } else {
-            // Elegant gradient placeholder when loading
+            // Elegant placeholder when loading
             Box(
                 modifier = Modifier
                     .fillMaxSize()
