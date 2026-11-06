@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -121,7 +122,8 @@ fun DesktopFullscreenPlayerOverlay(
     onAddToQueue: (TrackItem) -> Unit = {},
     onTrackMoreClick: ((TrackItem) -> Unit)? = null,
     onMinimize: () -> Unit = {},
-    onClose: () -> Unit = {}
+    onClose: () -> Unit = {},
+    onOpenAmbientMode: () -> Unit = {}
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -316,6 +318,33 @@ fun DesktopFullscreenPlayerOverlay(
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (rightPanelMode == FullscreenRightPanelMode.QUEUE) Color.White else Color.White.copy(alpha = 0.60f)
                                     )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(percent = 50))
+                                        .background(Color.Transparent)
+                                        .clickable { onOpenAmbientMode() }
+                                        .pointerHoverIcon(PointerIcon.Hand)
+                                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.AutoAwesome,
+                                            contentDescription = "Ambient Mode",
+                                            tint = Color(0xFF38BDF8),
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Text(
+                                            text = "Ambient",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF38BDF8)
+                                        )
+                                    }
                                 }
                             }
                         }
