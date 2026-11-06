@@ -3,6 +3,7 @@ package com.uta.wave.desktop.ui
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -37,28 +37,32 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.uta.wave.audio.UnifiedPlaybackState
 import com.uta.wave.core.model.TrackItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
+import java.net.URI
 
 /**
  * Pixel-Perfect Ambient Mode for UTA-WAVE Desktop.
- * Exact replication of Hope麻匪's Wallpaper Engine workshop (#2974757317):
- * - Edge-to-edge album artwork on top with zero inner margins.
- * - Dynamic liquid water ripple caustics on mouse interaction (crystal-clear when idle).
- * - Living solid-white liquid audio wave silhouette directly bridging artwork to footer.
- * - Solid crisp white footer card with circular avatar badge, bold black title, and grey artist name.
- * - Falling digital Matrix code rain streaming in the background.
- * - Clean, uncluttered canvas with zero clunky bottom bars or protruding discs.
+ * Exact 1:1 replication of Hope麻匪's Wallpaper Engine workshop (#2974757317):
+ * - BACKGROUND: Fullscreen album artwork ($mediaThumbnail) covered by dark scrim + falling Matrix code rain.
+ * - CENTER CARD: Edge-to-edge artwork + living solid-white liquid audio wave + solid white footer with circular badge.
+ * - INTERACTION: Dynamic liquid water ripples on mouse movement; click card to play/pause.
  */
 @Composable
 fun DesktopAmbientModeOverlay(
@@ -76,7 +80,26 @@ fun DesktopAmbientModeOverlay(
     onExitAmbientMode: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // 1. Auto-hiding exit HUD timer (fades out smoothly after 3.5s of mouse inactivity)
+    // Load track artwork bitmap for background & foreground
+    val artworkUrl = currentTrack?.artworkUrl
+    var artworkBitmap by remember(artworkUrl) {
+        mutableStateOf<ImageBitmap?>(artworkUrl?.let { DesktopImageCache.get(it) })
+    }
+
+    LaunchedEffect(artworkUrl) {
+        if (!artworkUrl.isNullOrBlank() && artworkBitmap == null) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val bytes = URI(artworkUrl).toURL().readBytes()
+                    val loaded = loadImageBitmap(ByteArrayInputStream(bytes))
+                    DesktopImageCache.put(artworkUrl, loaded)
+                    artworkBitmap = loaded
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // Auto-hiding HUD controls timer (fades out after 3.5s of mouse inactivity)
     var isControlsVisible by remember { mutableStateOf(true) }
     var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
 
@@ -114,39 +137,55 @@ fun DesktopAmbientModeOverlay(
             }
     ) {
         // =================================================================
-        // 1. BACKGROUND ATMOSPHERE: Matrix Glyph Rain + Subtle Deep Space
+        // 1. FULLSCREEN BACKGROUND: Unblurred Album Artwork (Hope麻匪 1比1 / $mediaThumbnail)
+        // =================================================================
+        if (artworkBitmap != null) {
+            Image(
+                bitmap = artworkBitmap!!,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else if (!artworkUrl.isNullOrBlank()) {
+            DesktopNetworkImage(
+                url = artworkUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            listOf(Color(0xFF181528), Color(0xFF090A10), Color(0xFF040407))
+                        )
+                    )
+            )
+        }
+
+        // =================================================================
+        // 2. BLACK MASK / SCRIM (Hope麻匪 黑色遮罩)
+        // Dims the fullscreen background so the center card stands out with high contrast
         // =================================================================
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFF141622),
-                            Color(0xFF090A10),
-                            Color(0xFF050508)
-                        ),
-                        radius = 1200f
-                    )
-                )
-        )
-
-        // Matrix Digital Code Rain streams (Replicates the `黑客` layer)
-        DesktopMatrixRainCanvas(
-            modifier = Modifier.fillMaxSize(),
-            columnCount = 55
-        )
-
-        // Subtle drifting firefly particles
-        DesktopFireflyCanvas(
-            modifier = Modifier.fillMaxSize(),
-            particleCount = 28,
-            accentColor = Color(0xFF38BDF8),
-            secondaryColor = Color(0xFFA78BFA)
+                .background(Color.Black.copy(alpha = 0.52f))
         )
 
         // =================================================================
-        // 2. TOP-RIGHT EXIT PILL (HUD with Auto-Hide)
+        // 3. MATRIX CODE RAIN (Hope麻匪 黑客 layer)
+        // Streaming falling digital glyphs (katakana, letters, numbers) across the background
+        // =================================================================
+        DesktopMatrixRainCanvas(
+            modifier = Modifier.fillMaxSize(),
+            columnCount = 26
+        )
+
+        // =================================================================
+        // 4. TOP-RIGHT EXIT PILL (HUD with Auto-Hide)
         // =================================================================
         Row(
             modifier = Modifier
@@ -157,8 +196,8 @@ fun DesktopAmbientModeOverlay(
         ) {
             Surface(
                 shape = RoundedCornerShape(percent = 50),
-                color = Color.Black.copy(alpha = 0.65f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
+                color = Color.Black.copy(alpha = 0.70f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.22f))
             ) {
                 Row(
                     modifier = Modifier
@@ -185,7 +224,7 @@ fun DesktopAmbientModeOverlay(
         }
 
         // =================================================================
-        // 3. CENTER STAGE: FLOATING CARD (Hope麻匪 悬浮窗 Exact Replica)
+        // 5. CENTER STAGE: FLOATING CARD (Hope麻匪 悬浮窗 Exact Replica)
         // =================================================================
         Box(
             modifier = Modifier.align(Alignment.Center),
@@ -195,10 +234,10 @@ fun DesktopAmbientModeOverlay(
                 modifier = Modifier
                     .width(312.dp)
                     .shadow(
-                        elevation = 36.dp,
+                        elevation = 40.dp,
                         shape = RoundedCornerShape(22.dp),
                         ambientColor = Color.Black,
-                        spotColor = Color.Black.copy(alpha = 0.75f)
+                        spotColor = Color.Black.copy(alpha = 0.85f)
                     )
                     .clickable {
                         reportUserInteraction()
@@ -259,7 +298,7 @@ fun DesktopAmbientModeOverlay(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Circular Avatar / Logo Badge (Hope麻匪 MF / UTA-WAVE Badge)
+                        // Circular Avatar / Logo Badge (Hope麻匪 MF Badge)
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
@@ -284,7 +323,7 @@ fun DesktopAmbientModeOverlay(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                text = currentTrack?.title ?: "Sunflower (Spider-Man: Into the Spider-Verse)",
+                                text = currentTrack?.title ?: "No track playing",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF111111),
@@ -295,7 +334,7 @@ fun DesktopAmbientModeOverlay(
                             Spacer(modifier = Modifier.height(2.dp))
 
                             Text(
-                                text = currentTrack?.artist ?: "Post Malone, Swae Lee",
+                                text = currentTrack?.artist ?: "UTA·WAVE Universe",
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = Color(0xFF666666),
