@@ -55,9 +55,13 @@ import kotlinx.coroutines.delay
 /**
  * Pixel-Perfect Ambient Mode for UTA-WAVE Desktop.
  * Exact 1:1 replication of Hope麻匪's Wallpaper Engine workshop (#2974757317):
- * - BACKGROUND: Fullscreen album artwork ($mediaThumbnail) covered by dark scrim + falling Matrix code rain.
- * - CENTER CARD: Edge-to-edge artwork + living solid-white liquid audio wave + solid white footer with circular badge.
- * - INTERACTION: Dynamic liquid water ripples on mouse movement; click card to play/pause.
+ * - BACKGROUND: Fullscreen album artwork ($mediaThumbnail) with real-time beat scale pulse (04_Background_1_by_1_scale_script.js)
+ *   covered by 52% dark scrim (黑色遮罩).
+ * - MATRIX RAIN: Falling digital code glyphs (黑客 layer) whose falling velocity and radiance surge with audio bass
+ *   (09_Matrix_Code_Rain_instanceoverride_rate_script.js), dissolving smoothly into the background.
+ * - CENTER CARD: Edge-to-edge artwork with real GPU UV pixel distortion warp in response to mouse (cursorripple_combine.frag)
+ *   + living solid-white liquid audio wave + solid white footer with circular badge.
+ * - INTERACTION: Dynamic liquid gel deformation on mouse hover/drag; click card to play/pause.
  */
 @Composable
 fun DesktopAmbientModeOverlay(
@@ -75,6 +79,9 @@ fun DesktopAmbientModeOverlay(
     onExitAmbientMode: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Real-time audio energy & beat tracker
+    val bassPulse = rememberAudioBeatPulse(playbackState)
+
     // Load track artwork bitmap for background & foreground
     val artworkUrl = currentTrack?.artworkUrl ?: playbackState.artworkUrl
     val palette = rememberAlbumArtPalette(artworkUrl)
@@ -129,32 +136,43 @@ fun DesktopAmbientModeOverlay(
             }
     ) {
         // =================================================================
-        // 1. FULLSCREEN BACKGROUND: Unblurred Album Artwork (Hope麻匪 1比1 / $mediaThumbnail)
+        // 1. FULLSCREEN BACKGROUND: Unblurred Album Artwork with Beat Reactivity
+        // Replicates Hope麻匪 1比1 & 04_Background_1_by_1_scale_script.js
+        // Pulses subtly outward on each musical bass kick / beat
         // =================================================================
-        if (artworkBitmap != null) {
-            Image(
-                bitmap = artworkBitmap!!,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        } else if (!artworkUrl.isNullOrBlank()) {
-            DesktopNetworkImage(
-                url = artworkUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            listOf(Color(0xFF181528), Color(0xFF090A10), Color(0xFF040407))
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = 1.0f + (bassPulse * 0.055f)
+                    scaleY = 1.0f + (bassPulse * 0.055f)
+                }
+        ) {
+            if (artworkBitmap != null) {
+                Image(
+                    bitmap = artworkBitmap!!,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else if (!artworkUrl.isNullOrBlank()) {
+                DesktopNetworkImage(
+                    url = artworkUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.radialGradient(
+                                listOf(Color(0xFF181528), Color(0xFF090A10), Color(0xFF040407))
+                            )
                         )
-                    )
-            )
+                )
+            }
         }
 
         // =================================================================
@@ -168,13 +186,15 @@ fun DesktopAmbientModeOverlay(
         )
 
         // =================================================================
-        // 3. MATRIX CODE RAIN (Hope麻匪 黑客 layer)
-        // Streaming falling digital glyphs (katakana, letters, numbers) across the background
+        // 3. BEAT-REACTIVE MATRIX CODE RAIN (Hope麻匪 黑客 layer)
+        // Streaming falling digital glyphs (katakana, letters, numbers) across the background.
+        // Speed surges and head radiance flashes with audio kicks, dissolving into background.
         // =================================================================
         DesktopMatrixRainCanvas(
             modifier = Modifier.fillMaxSize(),
             columnCount = 28,
-            secondaryColor = palette.secondaryColor
+            secondaryColor = palette.secondaryColor,
+            bassPulse = bassPulse
         )
 
         // =================================================================
@@ -218,8 +238,8 @@ fun DesktopAmbientModeOverlay(
 
         // =================================================================
         // 5. MASTER FLOATING MEDIA CARD (Hope麻匪 浮窗背景)
-        // Center-aligned, edge-to-edge artwork, flowing liquid audio silhouette,
-        // and solid white footer card with MF circular avatar badge.
+        // Center-aligned, edge-to-edge artwork with GPU UV pixel distortion,
+        // flowing liquid audio silhouette, and solid white footer card with MF avatar badge.
         // =================================================================
         Box(
             modifier = Modifier
@@ -247,7 +267,8 @@ fun DesktopAmbientModeOverlay(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     // -------------------------------------------------------------
-                    // UPPER: Edge-to-Edge Artwork with Water Ripple Caustic Surface
+                    // UPPER: Edge-to-Edge Artwork with Interactive UV Pixel Distortion
+                    // Replicates Hope麻匪 cursorripple_combine.frag
                     // -------------------------------------------------------------
                     Box(
                         modifier = Modifier
@@ -262,13 +283,10 @@ fun DesktopAmbientModeOverlay(
                                 )
                             )
                     ) {
-                        DesktopWaterRippleSurface(
+                        DesktopDistortionAlbumArt(
                             artworkUrl = artworkUrl,
                             modifier = Modifier.fillMaxSize(),
-                            topCornerRadius = 22.dp,
-                            isPlaying = playbackState.isPlaying,
-                            beatPulseScale = 1.0f,
-                            accentGlowColor = Color.White
+                            topCornerRadius = 22.dp
                         )
 
                         // ---------------------------------------------------------
